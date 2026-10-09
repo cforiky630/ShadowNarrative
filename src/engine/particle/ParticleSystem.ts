@@ -16,16 +16,23 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  LinearFilter,
+  Mesh,
+  MeshBasicMaterial,
   PerspectiveCamera,
+  PlaneGeometry,
   Points,
   Scene,
   ShaderMaterial,
+  SRGBColorSpace,
+  Texture,
   Vector2,
   Vector3,
   WebGLRenderer,
   NormalBlending,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { DUR, EASE, ensureGsap } from "@/lib/gsap";
 
 import {
   TIER_ORDER,
@@ -60,6 +67,16 @@ const BENCHMARK_COUNT = 20_000;
 const CAMERA_FOV = 30;
 /** 画布留白，避免粒子贴边 */
 const FIT_PADDING = 1.18;
+
+/**
+ * 显示模式。
+ *
+ * 规格：`16-ALBUM_SPACE.md` §8
+ *
+ * 进入照片时默认 `photo`（清晰的原图），点 View Memory 才切到 `particle`。
+ * 状态**不持久化** —— 每次进入都是原图，这样粒子的第一次出现才有分量。
+ */
+export type DisplayMode = "photo" | "particle";
 
 export interface EngineStats {
   fps: number;
@@ -114,6 +131,19 @@ export class ParticleSystem {
   private points: Points | null = null;
   private geometry: BufferGeometry | null = null;
   private material: ShaderMaterial | null = null;
+
+  /** 原图四边形。与粒子云占据同一块空间，用于「原图模式」。 */
+  private quad: Mesh | null = null;
+  private quadGeometry: PlaneGeometry | null = null;
+  private quadMaterial: MeshBasicMaterial | null = null;
+  private quadTexture: Texture | null = null;
+  /** 当前贴图对应的 bitmap，用来判断是否需要换贴图 */
+  private quadBitmap: ImageBitmap | null = null;
+  /** 模式切换的 GSAP 补间，dispose 时要杀掉 */
+  private modeTween: ReturnType<typeof import("gsap").gsap.to> | null = null;
+
+  /** 当前显示模式 */
+  private mode: DisplayMode = "photo";
 
   private probe: CapabilityProbe | null = null;
   private monitor: RuntimeMonitor | null = null;
@@ -414,7 +444,12 @@ export class ParticleSystem {
   // 图像
   // -------------------------------------------------------------------------
 
-  /** 首次载入图像。直接成型，不做 Morph。 */
+  /**
+   * 首次载入图像。直接成型，不做 Morph。
+   *
+   * **所有权转移**：调用方在这之后**不能** `bitmap.close()` ——
+   * 贴图会引用它。引擎在换图或 dispose 时自己关。
+   */
   async setImage(bitmap: ImageBitmap): Promise<void> {
     // 等定档完成，否则粒子数会按默认档位算错
     await this.initPromise;
@@ -437,6 +472,12 @@ export class ParticleSystem {
     this.writeBuffer("aPositionB", "aColorB", "aSizeB", sample, perm);
     this.morphing = false;
     if (this.material) this.material.uniforms.uProgress.value = 0;
+
+    this.syncQuad();
+    // 只把当前模式直接应用到新几何体上，**不重置模式**。
+    // setImage 也会被「改密度」「降档」这类操作间接触发，
+    // 在这里重置会让用户调个滑块就被踢回原图。
+    this.setMode(this.mode, { immediate: true });
 
     this.resize();
   }
@@ -492,6 +533,9 @@ export class ParticleSystem {
     this.morphing = false;
     this.currentSample = this.pendingSample;
     this.pendingSample = null;
+
+    // 目标图现在成了当前图，同步原图四边形（尺寸与贴图都可能变了）
+    this.syncQuad();
   }
 
   // -------------------------------------------------------------------------
@@ -797,6 +841,148 @@ export class ParticleSystem {
     this.scene.add(this.points);
   }
 
+  // -------------------------------------------------------------------------
+  // 原图 ⇄ 粒子
+  // -------------------------------------------------------------------------
+
+  /**
+   * 把原图贴进场景。
+   *
+   * 四边形与粒子云占据**完全相同的矩形** —— 采样时坐标就是映射到
+   * [-halfW, halfW] × [-halfH, halfH]，所以两者天然对齐，切换不需要额外换算。
+   */
+  private syncQuad(): void {
+    if (!this.scene || !this.currentBitmap) return;
+
+    const aspect = this.currentSample?.aspect ?? 1;
+    const halfW = aspect >= 1 ? 1 : aspect;
+    const halfH = aspect >= 1 ? 1 / aspect : 1;
+
+    this.quadGeometry?.dispose();
+    this.quadGeometry = new PlaneGeometry(halfW * 2, halfH * 2);
+
+    if (!this.quad) {
+      this.quadMaterial = new MeshBasicMaterial({
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+      });
+      this.quad = new Mesh(this.quadGeometry, this.quadMaterial);
+      // 必须画在粒子之前：两者都关了深度测试，靠 renderOrder 决定层次
+      this.quad.renderOrder = -1;
+      this.scene.add(this.quad);
+    } else {
+      this.quad.geometry = this.quadGeometry;
+    }
+
+    // 换一张图就换一张贴图。
+    // 必须比对来源 —— setImage 也会被「改密度」「降档」触发，
+    // 每次都重建纹理会白白重传一遍全尺寸图像。
+    if (this.quadBitmap !== this.currentBitmap) {
+      this.quadTexture?.dispose();
+      const tex = new Texture(this.currentBitmap);
+      // 原图是 sRGB 编码的，必须标注，否则渲染出来会发暗
+      tex.colorSpace = SRGBColorSpace;
+      // 不生成 mipmap：这张图基本是 1:1 显示，省一次全尺寸的降采样
+      tex.generateMipmaps = false;
+      tex.minFilter = LinearFilter;
+      tex.magFilter = LinearFilter;
+      tex.needsUpdate = true;
+      this.quadTexture = tex;
+      this.quadBitmap = this.currentBitmap;
+
+      if (this.quadMaterial) {
+        this.quadMaterial.map = tex;
+        this.quadMaterial.needsUpdate = true;
+      }
+
+      // 旧图现在没有任何引用了，可以关掉。
+      // 不能更早关：贴图指着它，WebGL 上下文丢失重建时会重新读源。
+      const old = this.quadBitmap;
+      this.quadBitmap = this.currentBitmap;
+      if (old && old !== this.currentBitmap) old.close();
+    }
+  }
+
+  /**
+   * 切换显示模式。
+   *
+   * 规格：`16-ALBUM_SPACE.md` §8.2
+   *
+   * **不是简单的同时淡入淡出。** 粒子必须在中途才成形（`uGather` 0→1），
+   * 否则看起来像叠了两张图；反过来切回原图时粒子要散开淡出，像沙粒被吹走。
+   *
+   * 用 GSAP 驱动而不是自己写缓动 —— `sn-morph` 是从设计 token 换算来的，
+   * 与以后相册的镜头编排共用同一套曲线，动效性格不会分裂。
+   */
+  setMode(mode: DisplayMode, options?: { immediate?: boolean }): void {
+    if (mode === this.mode && !options?.immediate) return;
+
+    const from = this.mode;
+    this.mode = mode;
+
+    const toParticle = mode === "particle";
+
+    // 缓动不能直接作用在 Three 的对象上，用代理对象承载中间值
+    const proxy = {
+      quad: from === "particle" ? 0 : 1,
+      point: from === "particle" ? 1 : 0,
+      gather: from === "particle" ? 1 : 0,
+    };
+
+    const apply = () => {
+      if (this.quadMaterial) this.quadMaterial.opacity = proxy.quad;
+      if (this.material) {
+        this.material.uniforms.uOpacity.value = proxy.point;
+        this.material.uniforms.uGather.value = proxy.gather;
+      }
+    };
+
+    const gsap = ensureGsap();
+    gsap.killTweensOf(proxy);
+
+    // 原图是零厚度的平面，转到侧面会变成一条线。所以旋转只在粒子模式下开放
+    // （粒子有 z 厚度，转起来有体积）。
+    // 放在 immediate 分支之前 —— 这条在两种路径下都必须生效。
+    if (this.controls) this.controls.enableRotate = toParticle;
+
+    // immediate 用于初始化，以及 prefers-reduced-motion
+    if (options?.immediate) {
+      proxy.quad = toParticle ? 0 : 1;
+      proxy.point = toParticle ? 1 : 0;
+      proxy.gather = toParticle ? 1 : 0;
+      apply();
+      if (this.quad) this.quad.visible = proxy.quad > 0.001;
+      return;
+    }
+
+    if (this.quad) this.quad.visible = true;
+
+    // 切回原图时如果视角是歪的，把它带回来。直接跳回去太生硬。
+    if (!toParticle && !this.isFrontView()) {
+      this.returnToFront();
+    }
+
+    this.modeTween?.kill();
+    this.modeTween = gsap.to(proxy, {
+      quad: toParticle ? 0 : 1,
+      point: toParticle ? 1 : 0,
+      gather: toParticle ? 1 : 0,
+      duration: DUR.morph,
+      ease: EASE.morph,
+      onUpdate: apply,
+      onComplete: () => {
+        // 完全透明时把四边形摘出渲染，省一次全屏纹理采样
+        if (this.quad) this.quad.visible = proxy.quad > 0.001;
+      },
+    });
+  }
+
+  /** 当前模式 */
+  get currentMode(): DisplayMode {
+    return this.mode;
+  }
+
   private applyParamsToMaterial(): void {
     if (!this.material) return;
     const u = this.material.uniforms;
@@ -857,11 +1043,45 @@ export class ParticleSystem {
 
   /** 当前是否处于正视角（供 UI 决定要不要显示「复位」） */
   isFrontView(): boolean {
-    if (!this.camera) return true;
+    if (!this.camera) return false;
     return (
-      Math.abs(this.camera.position.x) < 1e-4 &&
-      Math.abs(this.camera.position.y - this.targetY) < 1e-4
+      Math.abs(this.camera.position.x - 0) < 1e-3 &&
+      Math.abs(this.camera.position.y - this.targetY) < 1e-3
     );
+  }
+
+  /**
+   * 平滑地把相机带回正视角。
+   *
+   * 不直接 snap：切回原图时如果用户正转着一个奇怪的角度，
+   * 瞬间跳回去会很突兀。用与模式切换同一条缓动。
+   */
+  private returnToFront(): void {
+    const cam = this.camera;
+    const controls = this.controls;
+    if (!cam) return;
+
+    // 补间期间要夺走控制权，否则 OrbitControls 的阻尼会和它打架
+    if (controls) controls.enabled = false;
+
+    const from = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
+    const to = { x: 0, y: this.targetY, z: this.fitDistance };
+
+    ensureGsap().to(from, {
+      ...to,
+      duration: DUR.morph,
+      ease: EASE.morph,
+      onUpdate: () => cam.position.set(from.x, from.y, from.z),
+      onComplete: () => {
+        if (controls) {
+          controls.target.set(0, this.targetY, 0);
+          controls.enabled = true;
+          controls.update();
+        }
+        this.lastRotated = false;
+        this.onViewChange?.(false);
+      },
+    });
   }
 
   dispose(): void {
@@ -878,6 +1098,26 @@ export class ParticleSystem {
 
     this.geometry?.dispose();
     this.material?.dispose();
+
+    // 原图四边形相关
+    this.modeTween?.kill();
+    this.modeTween = null;
+    this.quadGeometry?.dispose();
+    this.quadMaterial?.dispose();
+    this.quadTexture?.dispose();
+    this.quadBitmap = null;
+    if (this.scene && this.quad) this.scene.remove(this.quad);
+    this.quad = null;
+    this.quadGeometry = null;
+    this.quadMaterial = null;
+    this.quadTexture = null;
+
+    // 当前图如果没人引用了就释放
+    if (this.currentBitmap && this.currentBitmap !== this.quadBitmap) {
+      this.currentBitmap.close();
+    }
+    this.currentBitmap = null;
+
     this.renderer?.dispose();
 
     this.geometry = null;
@@ -940,6 +1180,9 @@ function buildMaterial(): ShaderMaterial {
     uniforms: {
       uProgress: { value: 0 },
       uScatter: { value: 1 },
+      // 初始为「完全散开」—— 引擎启动时是原图模式，粒子不可见；
+      // 切到粒子模式时 uGather 0→1 让它在中途成形
+      uGather: { value: 0 },
       uTime: { value: 0 },
       uPointer: { value: new Vector2(999, 999) },
       uMouseRadius: { value: 0.22 },

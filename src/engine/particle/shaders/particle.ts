@@ -40,6 +40,7 @@ attribute float aRandom;
 
 uniform float uProgress;
 uniform float uScatter;
+uniform float uGather;
 uniform float uTime;
 uniform vec2  uPointer;
 uniform float uMouseRadius;
@@ -75,6 +76,16 @@ void main() {
   float lift = sin(m * 3.14159265);
   pos += jitter * lift * uScatter * 0.045;
   pos.z += lift * uScatter * 0.05;
+
+  // --- 聚拢度（原图 ⇄ 粒子切换）---
+  // uGather: 1 = 完全聚拢到位，0 = 完全散开。
+  //
+  // 这个 uniform 存在的原因是一个具体的视觉要求：切换时**粒子必须中途才成形**。
+  // 如果粒子在起点就已经就位、只是淡入，画面看起来会像叠了两张图；
+  // 必须让它在淡入的同时从散开态收敛，才像"照片碎成沙粒"。
+  float ungathered = 1.0 - uGather;
+  pos += jitter * ungathered * 0.42;
+  pos.z += sin(aRandom * 19.3) * ungathered * 0.30;
 
   // --- 呼吸（06 §7）---
   float ph = aRandom * 6.2831853;

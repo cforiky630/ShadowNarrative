@@ -10,7 +10,10 @@ import { ParticleControls } from "@/components/ParticleControls";
 import { DebugOverlay } from "@/components/DebugOverlay";
 import { SAMPLE_MEMORY } from "@/lib/sampleMemory";
 import type { MemorySummary } from "@/services/memoryService";
-import type { EngineStats } from "@/engine/particle/ParticleSystem";
+import type {
+  DisplayMode,
+  EngineStats,
+} from "@/engine/particle/ParticleSystem";
 
 /**
  * Memory Space —— 首页的客户端部分。
@@ -47,6 +50,13 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
   const [notice, setNotice] = useState<string | null>(null);
   /** 删除是两步确认：第一次点击进入待确认，不弹模态框（07 §1 不要重 UI） */
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /**
+   * 显示模式。
+   *
+   * 进入照片默认**原图**（`16-ALBUM_SPACE.md` §8.1），点 View Memory 才切粒子。
+   * 状态不持久化 —— 每次进入都是原图，这样粒子的第一次出现才有分量。
+   */
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("photo");
 
   /**
    * 记住「画布上现在显示的是哪张图」。
@@ -82,8 +92,8 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
           return;
         }
         loadedUrlRef.current = imageUrl;
+        // 注意：不 close() —— 所有权转给引擎，贴图会引用它（见 ParticleSystem.setImage）
         await canvasRef.current?.setImage(bitmap);
-        bitmap.close();
       } catch {
         // 示例图或首张照片加载失败不是致命问题，页面保持空态即可
       }
@@ -105,10 +115,10 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
       setNotice(null);
 
       try {
-        // 先用本地文件直接 Morph —— 不等网络往返，手感即时
+        // 先用本地文件直接成型 —— 不等网络往返，手感即时
+        // 不 close()：所有权转给引擎
         const bitmap = await createImageBitmap(file);
         await canvasRef.current?.morphTo(bitmap);
-        bitmap.close();
 
         const form = new FormData();
         form.append("file", file);
@@ -172,7 +182,7 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
       const bitmap = await createImageBitmap(await sampleRes.blob());
       loadedUrlRef.current = SAMPLE_MEMORY.imageUrl;
       await canvasRef.current?.setImage(bitmap);
-      bitmap.close();
+      setDisplayMode("photo");
 
       setConfirmDelete(false);
       router.refresh();
@@ -187,6 +197,20 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
   const onViewChange = useCallback((isRotated: boolean) => {
     setRotated(isRotated);
   }, []);
+
+  /** 切换原图 / 粒子。 */
+  const toggleMode = useCallback(() => {
+    const next: DisplayMode = displayMode === "photo" ? "particle" : "photo";
+    setDisplayMode(next);
+    canvasRef.current?.setMode(next);
+  }, [displayMode]);
+
+  /** View Memory：自动切到粒子（`16-ALBUM_SPACE.md` §8.3）。已在粒子态则无操作。 */
+  const enterParticle = useCallback(() => {
+    if (displayMode === "particle") return;
+    setDisplayMode("particle");
+    canvasRef.current?.setMode("particle");
+  }, [displayMode]);
 
   if (unsupported) {
     return (
@@ -230,13 +254,28 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
       >
         <p className="text-meta text-text-primary/55">{date}</p>
         <h1 className="text-title mt-2 text-text-primary/95">{title}</h1>
-        <button
-          type="button"
-          className="text-meta pointer-events-auto mt-6 text-text-primary/45 transition-opacity duration-[350ms] hover:opacity-90 focus-visible:opacity-90"
-          style={{ transitionTimingFunction: "var(--ease-enter)" }}
-        >
-          View Memory →
-        </button>
+
+        <div className="pointer-events-auto mt-6 flex items-baseline gap-6">
+          <button
+            type="button"
+            onClick={enterParticle}
+            className="text-meta text-text-primary/45 transition-opacity duration-[350ms] hover:opacity-90 focus-visible:opacity-90"
+            style={{ transitionTimingFunction: "var(--ease-enter)" }}
+          >
+            View Memory →
+          </button>
+
+          {/* 手动切换。低存在感 —— 主操作是 View Memory，这个是补充路径。 */}
+          <button
+            type="button"
+            onClick={toggleMode}
+            aria-label={displayMode === "photo" ? "切换到粒子" : "切换到原图"}
+            className="text-micro text-text-primary/30 transition-opacity duration-[350ms] hover:opacity-70 focus-visible:opacity-70"
+            style={{ transitionTimingFunction: "var(--ease-enter)" }}
+          >
+            {displayMode === "photo" ? "粒子" : "原图"}
+          </button>
+        </div>
       </div>
 
       {/* 左下角：旋转提示 / 复位 / 删除 / 状态。

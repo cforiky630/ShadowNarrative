@@ -28,7 +28,7 @@ Next.js 16 + React 19 + TS strict + Tailwind 4 + 设计 token + 目录骨架。�
 
 ---
 
-## Round 4 — 原图 ⇄ 粒子
+## Round 4 — 原图 ⇄ 粒子 ✅
 
 这是新架构的第一个改动：现在只有粒子，需要先有「原图」这一层。
 
@@ -38,6 +38,7 @@ Next.js 16 + React 19 + TS strict + Tailwind 4 + 设计 token + 目录骨架。�
 - 双模式共存与交叉切换（`16-ALBUM_SPACE.md` §8）
 - 手动切换入口
 - GSAP 引入与缓动换算（`16-ALBUM_SPACE.md` §11.2）
+- 原图模式关闭旋转；切回时相机平滑转正（§8.5）
 
 验收：
 
@@ -45,6 +46,8 @@ Next.js 16 + React 19 + TS strict + Tailwind 4 + 设计 token + 目录骨架。�
 - 点 View Memory 后 1200ms 内完成过渡
 - **中间态不能像叠了两张图** —— 粒子要中途才成形
 - 切换可逆、可打断
+
+实测：中间态 `gather` 与透明度同步推进（0.391 / 0.391），确实是「中途成形」。
 
 ## Round 5 — Album（斜轴相册）
 

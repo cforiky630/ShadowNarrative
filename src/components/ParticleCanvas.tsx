@@ -3,6 +3,7 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import {
   ParticleSystem,
+  type DisplayMode,
   type EngineStats,
 } from "@/engine/particle/ParticleSystem";
 import { selectEffectiveTier, useExperience } from "@/store/experience";
@@ -11,6 +12,8 @@ import type { PerformanceTier } from "@/types";
 export interface ParticleCanvasHandle {
   setImage: (bitmap: ImageBitmap) => Promise<void>;
   morphTo: (bitmap: ImageBitmap) => Promise<void>;
+  /** 原图 ⇄ 粒子。见 `16-ALBUM_SPACE.md` §8 */
+  setMode: (mode: DisplayMode, options?: { immediate?: boolean }) => void;
   /** 回到正视角。旋转是探索，但用户需要随时能回到「照片」。 */
   resetView: () => void;
 }
@@ -75,6 +78,9 @@ export function ParticleCanvas({
       },
       morphTo: async (bitmap: ImageBitmap) => {
         await engineRef.current?.morphTo(bitmap);
+      },
+      setMode: (mode, options) => {
+        engineRef.current?.setMode(mode, options);
       },
       resetView: () => {
         engineRef.current?.resetView();
