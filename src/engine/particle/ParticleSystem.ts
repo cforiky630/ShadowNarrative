@@ -861,11 +861,12 @@ export class ParticleSystem {
     const halfW = aspect >= 1 ? 1 : aspect;
     const halfH = aspect >= 1 ? 1 / aspect : 1;
 
-    // 溶解场必须两边用同一个坐标系：四边形用 UV，粒子从世界坐标反推 UV。
-    // 这里把半宽半高交给粒子着色器，换算才对得上。
-    if (this.material) {
-      (this.material.uniforms.uHalf.value as Vector2).set(halfW, halfH);
-    }
+    // 溶解场用世界坐标算半径，两层都要知道归一化用的最大半径。
+    // 用勾股而不是 max(halfW, halfH)：波前要扩散到**四角**才算走完，
+    // 否则角落会剩一块没溶解的照片。
+    const maxR = Math.hypot(halfW, halfH);
+    if (this.material) this.material.uniforms.uMaxR.value = maxR;
+    if (this.quadMaterial) this.quadMaterial.uniforms.uMaxR.value = maxR;
 
     this.quadGeometry?.dispose();
     this.quadGeometry = new PlaneGeometry(halfW * 2, halfH * 2);
@@ -892,6 +893,7 @@ export class ParticleSystem {
         uniforms: {
           uMap: { value: null },
           uDissolve: { value: 0 },
+          uMaxR: { value: 1.5 },
         },
         transparent: true,
         depthTest: false,
@@ -1215,8 +1217,8 @@ function buildMaterial(): ShaderMaterial {
       uScatter: { value: 1 },
       // 0 = 完全照片，1 = 完全粒子。四边形与粒子共用这一个值
       uDissolve: { value: 0 },
-      // 粒子云半宽半高，用来从世界坐标反推 UV（溶解场要用同一个坐标系）
-      uHalf: { value: new Vector2(1, 1) },
+      // 中心到最远角的距离，溶解场用来归一化半径
+      uMaxR: { value: 1.5 },
       uTime: { value: 0 },
       uPointer: { value: new Vector2(999, 999) },
       uMouseRadius: { value: 0.22 },

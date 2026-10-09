@@ -8,17 +8,20 @@
  * texture2D 拿到的是原始 sRGB 值，这里**不做任何转换**，直接写给画布
  * 就是正确显示。不要加 `#include <colorspace_fragment>` —— 那会再编码一次，
  * 图像会发灰发白。
- *
- * 粒子那边走的是另一条路（JS 里转成线性 → 着色器输出线性 → 由
- * colorspace_fragment 编码回 sRGB），两条路径最终的显示结果一致。
  */
 
 import { DISSOLVE_GLSL } from "./dissolve";
 
 export const quadVertexShader = /* glsl */ `
+  varying vec2 vWorld;
   varying vec2 vUv;
 
   void main() {
+    // vWorld 传世界坐标而不是 UV：UV 空间被图片宽高比拉伸，
+    // 在那里算半径得到的是椭圆。见 dissolve.ts 的说明。
+    vWorld = position.xy;
+    // vUv 用的是几何体上那份**已翻转**的 UV（修 Three 对 ImageBitmap
+    // 跳过 UNPACK_FLIP_Y 的问题，见 ParticleSystem.syncQuad）
     vUv = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
@@ -27,16 +30,18 @@ export const quadVertexShader = /* glsl */ `
 export const quadFragmentShader = /* glsl */ `
   uniform sampler2D uMap;
   uniform float uDissolve;
+  uniform float uMaxR;
 
+  varying vec2 vWorld;
   varying vec2 vUv;
 
   ${DISSOLVE_GLSL}
 
   void main() {
-    // 进度越过这个碎块，它就碎掉消失。
-    // 粒子用的是同一个场，会在**同一个位置**接手 —— 这才是"解散"，
-    // 而不是"淡出"。
-    if (snDissolveField(vUv) > uDissolve) discard;
+    // 中心先消失，向外扩散。
+    // 粒子用的是同一个场、同一个阈值方向，会在**同一个位置**接手 ——
+    // 这才是「解散」而不是「淡出」。
+    if (snDissolveField(vWorld, uMaxR) < uDissolve) discard;
 
     gl_FragColor = texture2D(uMap, vUv);
   }

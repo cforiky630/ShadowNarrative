@@ -262,7 +262,7 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
             className="text-meta text-text-primary/45 transition-opacity duration-[350ms] hover:opacity-90 focus-visible:opacity-90"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
-            View Memory →
+            翻开这一天
           </button>
 
           {/* 手动切换。低存在感 —— 主操作是 View Memory，这个是补充路径。 */}

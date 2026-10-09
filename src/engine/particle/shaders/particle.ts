@@ -43,7 +43,7 @@ attribute float aRandom;
 uniform float uProgress;
 uniform float uScatter;
 uniform float uDissolve;
-uniform vec2  uHalf;
+uniform float uMaxR;
 uniform float uTime;
 uniform vec2  uPointer;
 uniform float uMouseRadius;
@@ -83,20 +83,17 @@ void main() {
   pos.z += lift * uScatter * 0.05;
 
   // --- 溶解（照片 ⇄ 粒子）---
-  // 用与四边形**完全相同**的空间场，保证粒子出现在照片刚消失的位置。
-  // 四边形在 d > uDissolve 处 discard，粒子在 d > uDissolve 处出现 ——
-  // 严丝合缝互补，这才是「照片自己解散」。
+  // 用与四边形**完全相同**的场，保证粒子出现在照片刚消失的位置。
   //
-  // 用 aPositionA 算 UV 而不是 pos：pos 会被指针场与呼吸扰动，
+  // 用 aPositionA 算而不是 pos：pos 会被指针场与呼吸扰动，
   // 那样粒子还没出现就已经离开原位，接不上碎块。
-  vec2 puv = aPositionA.xy / (uHalf * 2.0) + 0.5;
-  float dfield = snDissolveField(puv);
+  float dfield = snDissolveField(aPositionA.xy, uMaxR);
 
-  // ⚠️ 阈值必须**紧贴在 d 右侧**，不能居中。
-  // 居中（smoothstep(d-0.1, d+0.1, ·)）意味着粒子在照片碎块消失之前就开始出现，
-  // 两者重叠 → 又变成「叠了两张图」。
-  // 四边形在 d > uDissolve 处 discard，所以粒子必须在 uDissolve 刚越过 d 时才出现。
-  float appear = smoothstep(dfield, dfield + 0.03, uDissolve);
+  // ⚠️ 阈值必须紧贴波前**内侧**，不能居中。
+  // 居中（smoothstep(d-0.03, d+0.03, ·)）意味着粒子在照片碎块消失之前
+  // 就开始出现，两者重叠 → 又变成「叠了两张图」。
+  // 四边形在 d < uDissolve 处 discard，所以粒子要在 d 刚小于 uDissolve 时出现。
+  float appear = 1.0 - smoothstep(uDissolve - 0.03, uDissolve, dfield);
 
   // 刚出现时带一点随机偏移，落定才稳 —— 像碎屑落下，而不是凭空点亮
   pos += jitter * (1.0 - appear) * 0.16;
