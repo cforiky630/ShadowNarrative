@@ -126,7 +126,7 @@ aRandom    float  4B      aHilbert   float  4B
 2. 降 DPR（2.0 → 1.5 → 1.0）              ← 画面变软，但不改变构图
 3. 降粒子数（按 §4 跳档）
 4. 降采样分辨率（重新采样纹理）
-5. 简化转场（跳过 SCATTER 的 z excursion 与 FREE 阶段，缩短 Morph 时长）
+5. 简化转场（缩短 Morph 时长，拂动幅度减半）
 6. 退化为静态照片浏览（无粒子）
 ```
 
@@ -151,7 +151,12 @@ aRandom    float  4B      aHilbert   float  4B
 **Low 及以上**还必须：
 
 - [ ] 鼠标场有明确的 repel 手感
-- [ ] Morph 有可感知的中间散开阶段
+- [ ] Morph 有可感知的中间过渡，不是 fade
+
+**Ultra / High** 还必须：
+
+- [ ] 拖拽可旋转、滚轮可缩放、可一键复位回正视角
+- [ ] 旋转到侧视时粒子层有厚度，不是一条零厚度的线
 
 ## 7. 静态降级（无 WebGL2 或软件渲染）
 

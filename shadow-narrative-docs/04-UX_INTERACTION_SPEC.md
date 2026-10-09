@@ -13,13 +13,21 @@ REST
 EXPLORE
 FOCUS
 INTERACT
-SCATTER
+ORBIT
 MORPHING
-ASSEMBLE
 STORY
 JOURNAL
 CONVERSATION
 ```
+
+### ORBIT
+
+用户拖拽把照片当成有体积的物体转起来（`06-PARTICLE_ENGINE.md` §15）。
+
+- 只由用户主动发起，默认永远是正视角
+- 有惯性、有阻尼
+- 必须能一键复位回正视角
+- 与 EXPLORE / INTERACT 正交：旋转过程中指针场依然生效
 
 ## 3. Pointer Rules
 
@@ -139,7 +147,7 @@ Space     允许暂停/继续可暂停动画
 
 | 转场 | 机制 | 时长 | token |
 |---|---|---|---|
-| Photo → Photo | Particle Morph（六阶段，见 `06-PARTICLE_ENGINE.md` §12） | 1200ms | `--duration-morph` |
+| Photo → Photo | Particle Morph（原地滑动，见 `06-PARTICLE_ENGINE.md` §12） | 1200ms | `--duration-morph` |
 | Field → Theater | Node Focus → particle converge → Theater | 800ms | `--duration-scene` |
 | Theater → Journal | 背景粒子减弱，文字层级增强 | 800ms | `--duration-scene` |
 | Journal → Conversation | 文字空间保持，加入当前 Memory 的视觉源 | 350ms | `--duration-ui` |
@@ -168,7 +176,7 @@ AI 对话退到背景，照片重新成为主体。
 ### 降级档位下的转场
 
 Low / Minimal 档或 `prefers-reduced-motion` 时，`Photo → Photo` 缩短到 **600ms**，
-且跳过 z excursion 与 FREE 阶段，但**必须保留粒子位置插值**，不得退化成 fade。
+且滑动中段的拂动幅度减半，但**必须保留粒子位置插值**，不得退化成 fade。
 详见 `06-PARTICLE_ENGINE.md` §12 与 `15-DEVICE_ADAPTATION.md` §5。
 
 ## 12. Loading Interaction

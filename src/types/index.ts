@@ -13,14 +13,19 @@
 // 体验状态机（04 §2）
 // ---------------------------------------------------------------------------
 
+/**
+ * 体验状态机。
+ *
+ * 定义在 04-UX_INTERACTION_SPEC.md §2 与 05-TECH_ARCHITECTURE.md §9，三处必须一致。
+ * 原设计里的 SCATTER / ASSEMBLE 两个阶段已随「原地滑动」的转场决定取消。
+ */
 export type ExperienceMode =
   | "rest"
   | "explore"
   | "focus"
   | "interact"
-  | "scatter"
+  | "orbit"
   | "morphing"
-  | "assemble"
   | "story"
   | "journal"
   | "conversation";

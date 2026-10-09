@@ -170,13 +170,15 @@ IDLE
   → EXPLORE
   → FOCUS
   → INTERACT
-  → SCATTER
+  → ORBIT
   → MORPHING
-  → ASSEMBLE
   → STORY
   → JOURNAL
   → CONVERSATION
 ```
+
+状态的完整定义见 `04-UX_INTERACTION_SPEC.md` §2。类型定义在 `src/types/index.ts`
+的 `ExperienceMode`，三处必须一致。
 
 ## 10. Route/Spatial Architecture
 

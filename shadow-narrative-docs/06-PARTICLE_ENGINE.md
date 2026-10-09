@@ -52,13 +52,25 @@ targetOffset: vec3
 
 图片以 normalized coordinate 映射到 3D 平面。
 
-建议：
+规则：
 
 - 保持图片宽高比
 - 以视觉中心对齐
-- 在 z 轴加入非常轻微层次
+- 长边落在 −1..1
+- **z 轴要给粒子层厚度**，见下
 
 不做强透视畸变。
+
+### z 轴厚度
+
+画布支持 3D 旋转（§15），零厚度的平面转侧会退化成一条线。因此每个粒子的 z 取：
+
+```text
+z = random(-1, 1) * 0.07  +  (luma - 0.5) * 0.02
+    └─ 厚度，提供体积感      └─ 亮度层次，越亮越靠前
+```
+
+厚度只影响侧视。正视角下 z 不参与投影，因此不影响照片的可识别度。
 
 ## 5. Sampling
 
@@ -211,13 +223,22 @@ Morph progress：
 mix(source, target, easing)
 ```
 
-中间阶段加入少量：
+### 转场形态：原地滑动
 
-- scatter
-- noise
-- z excursion
+**用户 2026-10-09 的产品决定**：转场是**原地滑动**，不是「先散成云再重新聚拢」。
 
-但不能变成爆炸。
+粒子从 A 的位置直接滑到 B 的位置，不离开原位。因为有 §14 的 Hilbert 对应关系，
+每个粒子走最短路径，整体看起来是沙粒重新排列成另一张图。
+
+中间阶段只允许加入**极少量**扰动，目的是避免退化成机械插值：
+
+```text
+滑动中段的拂动：幅度 ≈ 云宽的 2%，中段最大、两端归零
+z 抬升：中段最大，让过程有一点体积变化
+```
+
+**不允许**整体散开、向外推、爆炸式位移。写这段代码时最容易犯的错是「径向向外推」——
+所有粒子从原点向外推会形成一个空心的同心环，那是爆炸不是重排。
 
 ### 完整 attribute 布局
 
@@ -237,8 +258,8 @@ aHilbert     float   空间排序后的秩，用于调试与排序校验
 ### Uniform
 
 ```text
-uProgress      float   Morph 进度 0→1
-uScatter       float   SCATTER 阶段强度 0→1
+uProgress      float   滑动进度 0→1
+uScatter       float   滑动中段拂动强度 0→1（降级档位减半）
 uTime          float   秒，驱动呼吸噪声
 uPointer       vec2    指针位置，归一化坐标
 uMouseRadius   float
@@ -251,10 +272,7 @@ uOpacity       float   全局透明度，用于转场淡出
 
 ```text
 PREPARE
-SCATTER
-FREE
-REMAPPING
-ASSEMBLE
+SLIDE
 SETTLE
 ```
 
@@ -263,20 +281,18 @@ SETTLE
 | 阶段 | 起止 | 做什么 |
 |---|---|---|
 | PREPARE | 0–80ms | 冻结输入，准备目标缓冲，不移动粒子 |
-| SCATTER | 80–380ms | 向外散开 + z excursion + 噪声 |
-| FREE | 380–560ms | 无目标自由漂浮 |
-| REMAPPING | 560–620ms | 交换 source/target 缓冲（§14 的排序在此生效） |
-| ASSEMBLE | 620–1060ms | 向目标收敛（§10 的指数平滑） |
+| SLIDE | 80–1060ms | 从 A 滑到 B（easeInOutCubic） |
 | SETTLE | 1060–1200ms | 阻尼到静止 |
+
+SLIDE 在 `uProgress` 上对应 `0.067 – 0.883`，用 `smoothstep` 本身完成缓动。
 
 ### 降级版本
 
 Low / Minimal 档或 `prefers-reduced-motion` 时：
 
-- 跳过 z excursion
-- 跳过 FREE 阶段
 - 总时长缩短到 600ms
-- **仍必须保留 PREPARE → SCATTER → ASSEMBLE → SETTLE**，否则会退化成 fade
+- 滑动中段的拂动幅度减半
+- **仍必须保留三步**，否则会退化成 fade
 
 ## 13. Morph Matching
 
@@ -346,28 +362,48 @@ K = 64
 
 ## 15. Camera
 
-默认保持非常平的摄影语言。
+**用户 2026-10-09 的产品决定，推翻了本节此前的写法。**
 
-可有：
+原文要求「保持非常平的摄影语言，避免大幅旋转」。现在改为：
+**画布可以像建模软件一样 3D 旋转**。
 
-- tiny parallax
-- tiny dolly
-- tiny scale
+### 交互
 
-避免：
+| 操作 | 行为 |
+|---|---|
+| 拖拽（鼠标左键 / 单指） | 绕原点旋转 |
+| 滚轮 / 双指捏合 | 缩放 |
+| 复位视角 | 回到正对画面的位置 |
 
-- 大幅旋转
-- 游戏镜头
-- VR 展厅感
+实现用 `OrbitControls`。
 
-### 量化
+### 参数
 
 ```text
-parallax   ≤ 视口宽 2%
-dolly      ≤ 3% 景深方向位移
-scale      ≤ 1.02 倍
-旋转       0（不使用）
+FOV              30°        窄视角＝接近正交，保持「平」的底子
+enablePan        false      平移会让画面跑出视野，对沉浸体验是破坏性的
+enableDamping    true       有惯性，符合 02 §10
+dampingFactor    0.075
+rotateSpeed      0.45
+zoomSpeed        0.7
+minDistance      fitDistance × 0.30
+maxDistance      fitDistance × 2.60
 ```
+
+`fitDistance` 是把整个粒子云装进画布所需的距离，由容器宽高比与图片宽高比算出。
+
+### 三条必须守住的约束
+
+1. **必须有复位视角** —— 否则用户转到奇怪角度后找不回「照片」
+2. **resize 时保持用户的旋转与缩放** —— 按 `fitDistance` 的比例缩放当前距离，
+   不要重置相机位置
+3. **粒子必须有 z 向厚度**（§4）—— 零厚度平面转侧会变成一条线
+
+### 指针场与旋转的关系
+
+指针场（§8）需要屏幕坐标 → z=0 平面的世界坐标。**不能用简单的按距离缩放**，
+那只在正视时成立。必须用射线求交（`Vector3.unproject` 后与 z=0 平面求交），
+否则转过之后指针场会与光标错位。
 
 ## 16. Post Processing
 
