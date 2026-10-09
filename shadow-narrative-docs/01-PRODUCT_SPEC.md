@@ -33,116 +33,147 @@ Shadow Narrative 是一个面向个人照片与生活记忆的沉浸式数字记
 - 不喧闹
 - 不游戏化
 
-## 4. 核心对象：Memory
+## 4. 核心对象：Photo（照片）
 
-Memory 不是一张图片。
+**照片是主实体，不是记忆的附属。**
 
-一条 Memory 是：
+每一次上传生成一张独立的 Photo。它自带文件、时间、AI 理解、对话和日志。
+用户可以像用相册一样把若干张照片归到一个 Memory（分组），但**分组是可选的**
+—— 不分组不影响任何功能。
+
+```text
+Photo
+├── 文件（原图 / 缩略图）
+├── 尺寸 · 大小 · 拍摄时间（EXIF）
+├── favorite          收藏 → 出现在斜轴相册
+├── caption           用户自己写的说明（可选）
+├── AI understanding  看图结果，按 Observed / Inferred 分级
+├── conversation      字幕（第一条）+ 之后的对话
+└── journal           整理好的日志（可选）
+```
+
+### Memory 是可选分组，不是容器
 
 ```text
 Memory
 ├── title
-├── date
-├── location
-├── photos
-├── optional video
-├── user notes
-├── AI understanding
-├── conversation
-├── diary
-├── tags
-└── particle preset
+├── summary
+├── memoryDate
+└── photos[]     多对多：一张照片可以同时属于多个分组
 ```
 
-一个 Memory 可以包含多张照片。
+**为什么改成这样**：AI 在每张照片上传时就独立开口，本来就不需要一个容器当前提。
+把照片降级成「记忆的一部分」会让「这张照片的对话挂在哪」变成一个没有答案的问题。
+
+### 一句话对比
+
+| | 改之前 | 改之后 |
+|---|---|---|
+| 主实体 | Memory | **Photo** |
+| 照片的角色 | 记忆的一部分 | **独立实体** |
+| 分组的角色 | 必须 | **可选，像相册** |
+| AI 开口时机 | 整理记忆时 | **上传即开口** |
+| 收藏粒度 | — | **照片** |
 
 ## 5. 核心空间
 
-### Memory Space
+产品是 **7 个体验状态**，不是 7 个割裂的页面：
 
-产品入口。以当前推荐/最近记忆作为粒子主体。
+| 空间 | 作用 | 入口 |
+|---|---|---|
+| **Album** | 收藏的照片沿一条斜轴排布在 3D 空间里 | **第一屏** |
+| **Photo View** | 看一张照片。默认原图，可切换粒子 | 点相册里的照片 |
+| **Photo Particle** | 照片粒子化后的交互状态 | Photo View 里点 View Memory |
+| **Conversation** | 字幕 + 对话 | 照片下方 |
+| **Journal** | 沉浸式文字阅读 / 编辑 | 用户主动触发 |
+| **Library** | 全部照片，按时间的侧边列表 | 左侧抽屉 |
+| **Memory Theater** | 一条分组的完整故事 | 从 Library 或分组进入 |
 
-### Memory Field
+详细规格见 `16-ALBUM_SPACE.md`。
 
-探索所有 Memory 的空间。
+### 关于 Memory Field 的说明
 
-### Memory Theater
-
-查看某一个 Memory 的完整故事。
-
-### Photo Particle
-
-照片粒子化后的核心交互状态。
-
-### Memory Conversation
-
-针对当前 Memory 的 AI 对话。
-
-### Journal
-
-当前 Memory 的沉浸式文字阅读/编辑状态。
+原设计里有一个 Memory Field（「探索所有 Memory 的空间」）。斜轴相册加上侧边
+Library 之后，**它在功能上已经重复**——两者都是「在空间里浏览很多记忆」。
+本项目暂时不做 Memory Field，等真出现它才能满足的需求时再重新考虑。
 
 ## 6. 主要用户流程
 
-### 创建记忆
+### 上传一张照片
 
 ```text
-Create
-↓
-选择照片
-↓
-输入可选信息
-↓
-生成 Memory
-↓
-照片粒子化
-↓
-进入 Memory Theater
+拖入照片
+    ↓
+立刻原图成型（不等网络往返）
+    ↓
+后台发给 AI
+    ↓
+字幕浮现 —— AI 的第一句话        ← 记忆在这里诞生
+    ↓
+可以接着聊
+    ↓
+（可选）收藏 → 进入斜轴相册
+    ↓
+（可选）归入某个分组
 ```
 
-### 浏览记忆
+### 从斜轴相册进入某张照片
 
 ```text
-Memory Field
-↓
-Hover Memory
-↓
-Preview
-↓
-Focus
-↓
-Open
+Album（斜轴，收藏的照片）
+    ↓
+拖拽 / 滚动沿轴移动，焦点落在某张
+    ↓
+点击
+    ↓
+相机推进，丝滑过渡
+    ↓
+Photo View —— 默认原图模式
+    ↓
+点 View Memory
+    ↓
+原图 → 粒子，无缝切换
+    ↓
+（可选）展开对话 / 写日志
 ```
 
-### 故事流程
+### 找回没收藏的照片
 
 ```text
-Memory Theater
-↓
-View Story
-↓
-Scene 01
-↓
-Scene 02
-↓
-Scene 03
-↓
-Journal / Conversation
+左侧抽屉展开
+    ↓
+按时间的纯文字列表（不是平铺网格）
+    ↓
+点某一条 → Photo View
+```
+
+### 整理
+
+```text
+Photo View
+    ↓
+对话聊过一些
+    ↓
+用户主动点「整理成日志」
+    ↓
+AI 起草，用户定稿
+    ↓
+日志留在照片上，随时可读
 ```
 
 ## 7. MVP 必须完成
 
-- 创建 Memory
-- 图片上传
-- Photo → Particle
+- 照片上传（拖入 + 点击选择）
+- 原图 ⇄ 粒子的双向切换
+- Photo → Particle / Particle Morph
 - Particle interaction
-- Particle Morph
-- Memory Space
-- Memory Field
-- Memory Theater
-- Journal 阅读
-- Mock AI Conversation
-- 本地/持久化数据结构
+- **斜轴相册**（收藏的照片）
+- **Photo View**（默认原图模式）
+- 左侧抽屉 Library
+- 字幕 + AI 对话
+- 日志阅读与生成
+- 收藏
+- 本地 SQLite 持久化
 - Mobile 基础适配
 
 ## 8. 明确不做的方向
@@ -164,15 +195,19 @@ Journal / Conversation
 
 ## 9. 不允许的产品漂移
 
-不要把产品的重点改成：
+**不要把产品的重点改成「AI 自动帮你写日记」。**
 
-“AI 自动帮你写日记”。
+日志必须由用户主动触发。AI 可以起草，但「要不要把这段对话收拢成文字」是用户
+的决定 —— 这是过程与结果的边界，不能由 AI 代劳。
+
+同样不允许的：**AI 替用户定义这段记忆是什么。** AI 可以观察、可以问，但不能
+下结论说「这一定是你最难忘的一天」。
 
 真正主角仍是：
 
-**记忆本身 + 照片 + 粒子 + 沉浸式浏览。**
+**照片本身 + 粒子 + 沉浸式浏览。**
 
-AI 是辅助能力。
+AI 是辅助能力 —— 一个愿意开口、接得住话的辅助者，但它不拥有这段记忆。
 
 ## 10. 成功标准
 

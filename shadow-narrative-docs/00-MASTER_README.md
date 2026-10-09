@@ -19,10 +19,13 @@
 本项目最重要的视觉和产品锚点来自参考视频所体现的体验方向。即使后续没有视频文件，Agent 也必须始终遵守以下描述：
 
 - 深黑背景、大片留白、极简白色文字。
+- **第一屏是斜轴相册**：收藏的照片沿一条斜轴排在 3D 空间里，不是平铺网格。
 - 照片不是普通卡片，而是由大量微小的沙粒一样的粒子组成。
+- 进入一张照片先看到**真实的原图**，点 View Memory 才变成粒子。
 - 鼠标/触摸接近照片时，粒子会产生柔和的空间扰动。
 - 照片 A → 沙粒重新排列 → 照片 B 是核心转场，而不是普通淡入淡出。
 - 照片可以被当成一个有体积的物体，像建模软件一样拖着转起来看。
+- **上传一张照片，AI 就开口说一句话**，以字幕的形式浮在照片下方。
 - 右侧可出现轻量粒子参数控制面板，但默认隐藏，不抢画面。
 - 记忆浏览、日记、AI 对话应该像同一空间的不同状态。
 - AI 不是产品主角；AI 是帮助用户理解、整理、讲述记忆的辅助者，也是一个温柔、安静的心灵好友（详见 `09-AI_SPEC.md`）。
@@ -45,7 +48,7 @@
 - 炫目的霓虹赛博朋克
 - 强烈的 3D 科幻 Dashboard
 
-**Memory Field 可以有“记忆星图”的空间感，但它不是一个炫目的银河游戏。**
+**斜轴相册可以有「在空间里穿行」的感觉，但它不是一个炫目的 3D 展厅。**
 
 ## 2. 强制读取顺序
 
@@ -68,12 +71,15 @@
 13-DEPLOYMENT.md
 14-QA_ACCEPTANCE.md
 15-DEVICE_ADAPTATION.md
+16-ALBUM_SPACE.md
+17-SELF_HOSTING.md
+18-BACKUP_PROTOCOL.md
 ```
 
 ## 3. 读取规则
 
 1. 不允许只读取自己认为“有用”的文件。
-2. 在读取完 `00-14` 前，不开始大规模编码。
+2. 在读取完 `00-18` 前，不开始大规模编码。
 3. 如果文档之间存在冲突，以以下优先级处理：
    - `00-MASTER_README.md` 的原始愿景约束
    - `02-DESIGN_SYSTEM.md` 的视觉规则
@@ -103,6 +109,9 @@
 | 13 | 本地、预览、生产部署与环境变量 |
 | 14 | 最终完整验收清单 |
 | 15 | 设备能力探测、性能档位矩阵与降级策略 |
+| 16 | 斜轴相册、Library、Photo View、原图⇄粒子切换 |
+| 17 | 自托管交付形态、数据目录、AI 凭据 |
+| 18 | 备份协议（只定协议，不实现后端） |
 
 ## 5. 默认技术决策
 
@@ -113,67 +122,75 @@
 - **Three.js（原生，不用 React Three Fiber）** —— 理由见 `05-TECH_ARCHITECTURE.md` §18
 - WebGL Shader
 - Zustand
-- Motion for React
+- **GSAP** —— 只用于镜头编排（`16-ALBUM_SPACE.md` §11）
+- Motion for React —— 只用于 UI 微交互
 - shadcn/ui
 - Tailwind CSS 4
-- PostgreSQL + Prisma
-- S3 兼容对象存储（生产图片存储）
-- **Python + FastAPI**（仅图像管线与本地 AI，见 `05-TECH_ARCHITECTURE.md` §2）
+- **SQLite + Prisma**（自托管，一个文件，零配置）
+- **备份后端用 PostgreSQL**（协议见 `18-BACKUP_PROTOCOL.md`）
+- **Python + FastAPI**（仅图像管线，见 `05-TECH_ARCHITECTURE.md` §2）
 
 如果项目已有成熟技术栈，Agent 可以保留现有技术，只要不破坏本项目的核心架构边界。
 
 ## 6. 核心空间
 
-产品只需要理解为 6 个主要体验状态：
+产品只需要理解为 **7 个主要体验状态**：
 
-1. Memory Space
-2. Memory Field
-3. Memory Theater
-4. Photo Particle
-5. Memory Conversation
-6. Journal
+1. Album
+2. Photo View
+3. Photo Particle
+4. Conversation
+5. Journal
+6. Library
+7. Memory Theater
 
-这些不是 6 个割裂的网站页面，而是同一个空间的不同状态。
+这些不是 7 个割裂的网站页面，而是同一个空间的不同状态。
+详细规格见 `16-ALBUM_SPACE.md`。
 
 ## 7. 核心链路
 
 ```text
 进入 Shadow Narrative
     ↓
-照片 / 粒子
+Album（斜轴相册，收藏的照片）
     ↓
-鼠标或触摸探索
+拖拽沿轴移动，焦点落在某张
     ↓
-选择记忆
+点击 → 相机推进
     ↓
-Memory Theater
+Photo View（原图模式）
     ↓
-Story
+点 View Memory → 原图变粒子
     ↓
-Journal / Conversation
+拖拽旋转 / 指针扰动
     ↓
-保存
+字幕 / Conversation
     ↓
-返回 Memory Field
+（用户主动）整理成日志
+    ↓
+返回 Album
 ```
 
 ## 8. 开发顺序
 
 先完成：
 
-1. Particle Engine
-2. Photo → Particle
-3. Particle Interaction
-4. Particle Morph
-5. Memory Space
-6. Memory Field
-7. Memory Theater
-8. Journal
-9. AI Conversation
-10. 持久化和真实 AI
-11. Mobile
-12. Performance
-13. Visual Polish
+1. Particle Engine ✅
+2. Photo → Particle ✅
+3. Particle Interaction ✅
+4. Particle Morph ✅
+5. 原图 ⇄ 粒子切换
+6. Photo View
+7. 斜轴相册（Album）
+8. Library 抽屉
+9. 字幕与 AI 对话
+10. 日志
+11. 收藏与分组
+12. SQLite 迁移与自托管形态
+13. 备份（`18-BACKUP_PROTOCOL.md`）
+14. Mobile
+15. Performance
+16. Visual Polish
 
 ## 9. Agent 工作方式
 
