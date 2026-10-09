@@ -861,6 +861,21 @@ export class ParticleSystem {
     this.quadGeometry?.dispose();
     this.quadGeometry = new PlaneGeometry(halfW * 2, halfH * 2);
 
+    // ⚠️ 必须手动翻转 V 坐标。
+    //
+    // Three 的 WebGLTextures 里有一段：
+    //     if ( isImageBitmap === false ) { pixelStorei(UNPACK_FLIP_Y_WEBGL, texture.flipY) }
+    // 也就是说**贴图源是 ImageBitmap 时整个跳过 UNPACK_FLIP_Y_WEBGL**，
+    // 图像数据不翻转地上传，结果四边形上的图是上下颠倒的。
+    // 而粒子的采样（ImageSampler）是显式翻过 Y 的，于是两者正好反着 ——
+    // 照片模式猫是倒的，粒子模式猫是正的。
+    //
+    // 不能靠 texture.flipY = false 修，因为那个标志根本不会被读到。
+    // 翻 UV 是零成本的（一次性）。
+    const uv = this.quadGeometry.getAttribute("uv") as BufferAttribute;
+    for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+    uv.needsUpdate = true;
+
     if (!this.quad) {
       this.quadMaterial = new MeshBasicMaterial({
         transparent: true,
