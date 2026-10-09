@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "shadow-narrative",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "scripts\\dev-claude-preview.cmd"],
+      "port": 3000
+    }
+  ]
+}
