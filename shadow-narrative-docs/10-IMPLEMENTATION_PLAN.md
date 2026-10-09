@@ -6,7 +6,10 @@
 
 不要一次性实现全部产品。
 
-**Round 0–3 已完成**（见 git 历史）。从 Round 4 开始。
+**进度**：Round 0–4、7、10 已完成（见各标题的 ✅）。下一步是 Round 5。
+
+Round 10 是**提前**做的 —— 它是 Round 5/6/7/8/9 的地基（那几轮全都写在新 schema
+上，照原顺序做会让每一轮都建在错的数据模型上）。Round 7 跟在它后面一起做了。
 
 ## Round 0 — Design & Technical Recon ✅
 
@@ -85,7 +88,7 @@ Next.js 16 + React 19 + TS strict + Tailwind 4 + 设计 token + 目录骨架。�
 - 键盘可完整操作
 - 打开时不遮挡斜轴
 
-## Round 7 — 上传与字幕
+## Round 7 — 上传与字幕 ✅
 
 完成：
 
@@ -129,7 +132,7 @@ Next.js 16 + React 19 + TS strict + Tailwind 4 + 设计 token + 目录骨架。�
 - 收藏后出现在斜轴
 - 删除分组**不删照片**
 
-## Round 10 — SQLite 迁移与自托管
+## Round 10 — SQLite 迁移与自托管 ✅
 
 完成：
 
@@ -144,6 +147,11 @@ Next.js 16 + React 19 + TS strict + Tailwind 4 + 设计 token + 目录骨架。�
 - 从零跑通：clone → install → setup → start → 打开就能用
 - 数据全部落在数据目录里
 - 不需要装任何数据库服务
+
+实测（2026-10-09）：`npm run setup` 端到端跑通（建目录 → `migrate deploy` →
+生成 `secrets.json` 模板 → 打印地址），可重复执行。重启 dev server 后照片、
+`aiState`、字幕全在，确认落的是 `.data/shadow-narrative.db` 而不是内存。
+**「从零 clone」这条没有真正做过**（工作区一直是脏的），做 Round 12 时补一次。
 
 ## Round 11 — 备份
 
