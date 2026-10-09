@@ -18,13 +18,12 @@ import {
   BufferGeometry,
   LinearFilter,
   Mesh,
-  MeshBasicMaterial,
+  NoColorSpace,
   PerspectiveCamera,
   PlaneGeometry,
   Points,
   Scene,
   ShaderMaterial,
-  SRGBColorSpace,
   Texture,
   Vector2,
   Vector3,
@@ -33,6 +32,10 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { DUR, EASE, ensureGsap } from "@/lib/gsap";
+import {
+  quadFragmentShader,
+  quadVertexShader,
+} from "./shaders/quad";
 
 import {
   TIER_ORDER,
@@ -135,7 +138,7 @@ export class ParticleSystem {
   /** 原图四边形。与粒子云占据同一块空间，用于「原图模式」。 */
   private quad: Mesh | null = null;
   private quadGeometry: PlaneGeometry | null = null;
-  private quadMaterial: MeshBasicMaterial | null = null;
+  private quadMaterial: ShaderMaterial | null = null;
   private quadTexture: Texture | null = null;
   /** 当前贴图对应的 bitmap，用来判断是否需要换贴图 */
   private quadBitmap: ImageBitmap | null = null;
@@ -858,6 +861,12 @@ export class ParticleSystem {
     const halfW = aspect >= 1 ? 1 : aspect;
     const halfH = aspect >= 1 ? 1 / aspect : 1;
 
+    // 溶解场必须两边用同一个坐标系：四边形用 UV，粒子从世界坐标反推 UV。
+    // 这里把半宽半高交给粒子着色器，换算才对得上。
+    if (this.material) {
+      (this.material.uniforms.uHalf.value as Vector2).set(halfW, halfH);
+    }
+
     this.quadGeometry?.dispose();
     this.quadGeometry = new PlaneGeometry(halfW * 2, halfH * 2);
 
@@ -877,7 +886,13 @@ export class ParticleSystem {
     uv.needsUpdate = true;
 
     if (!this.quad) {
-      this.quadMaterial = new MeshBasicMaterial({
+      this.quadMaterial = new ShaderMaterial({
+        vertexShader: quadVertexShader,
+        fragmentShader: quadFragmentShader,
+        uniforms: {
+          uMap: { value: null },
+          uDissolve: { value: 0 },
+        },
         transparent: true,
         depthTest: false,
         depthWrite: false,
@@ -896,8 +911,15 @@ export class ParticleSystem {
     if (this.quadBitmap !== this.currentBitmap) {
       this.quadTexture?.dispose();
       const tex = new Texture(this.currentBitmap);
-      // 原图是 sRGB 编码的，必须标注，否则渲染出来会发暗
-      tex.colorSpace = SRGBColorSpace;
+      // ⚠️ 标成 NoColorSpace，不是 SRGBColorSpace。
+      //
+      // 标 SRGBColorSpace 时 Three 会用 SRGB8_ALPHA8 内部格式，采样返回线性值，
+      // 需要着色器再编码回 sRGB。但我们是自定义着色器，不包含
+      // colorspace_fragment，那段编码不会发生 —— 结果是整体偏暗。
+      //
+      // 标 NoColorSpace 则用普通 RGBA8，texture2D 拿到原始 sRGB 值，
+      // 直接写画布即为正确显示。最少活动部件。
+      tex.colorSpace = NoColorSpace;
       // 不生成 mipmap：这张图基本是 1:1 显示，省一次全尺寸的降采样
       tex.generateMipmaps = false;
       tex.minFilter = LinearFilter;
@@ -907,8 +929,7 @@ export class ParticleSystem {
       this.quadBitmap = this.currentBitmap;
 
       if (this.quadMaterial) {
-        this.quadMaterial.map = tex;
-        this.quadMaterial.needsUpdate = true;
+        this.quadMaterial.uniforms.uMap.value = tex;
       }
 
       // 旧图现在没有任何引用了，可以关掉。
@@ -938,18 +959,18 @@ export class ParticleSystem {
 
     const toParticle = mode === "particle";
 
-    // 缓动不能直接作用在 Three 的对象上，用代理对象承载中间值
-    const proxy = {
-      quad: from === "particle" ? 0 : 1,
-      point: from === "particle" ? 1 : 0,
-      gather: from === "particle" ? 1 : 0,
-    };
+    // 缓动不能直接作用在 Three 的对象上，用代理对象承载中间值。
+    // 只有一个数：0 = 完全照片，1 = 完全粒子。
+    // 四边形和粒子读同一个 uDissolve，所以它们的消失与出现天然互补 ——
+    // 这就是「照片自己解散」而不是「照片淡出 + 粒子淡入」的原因。
+    const proxy = { dissolve: from === "particle" ? 1 : 0 };
 
     const apply = () => {
-      if (this.quadMaterial) this.quadMaterial.opacity = proxy.quad;
+      if (this.quadMaterial) {
+        this.quadMaterial.uniforms.uDissolve.value = proxy.dissolve;
+      }
       if (this.material) {
-        this.material.uniforms.uOpacity.value = proxy.point;
-        this.material.uniforms.uGather.value = proxy.gather;
+        this.material.uniforms.uDissolve.value = proxy.dissolve;
       }
     };
 
@@ -963,14 +984,14 @@ export class ParticleSystem {
 
     // immediate 用于初始化，以及 prefers-reduced-motion
     if (options?.immediate) {
-      proxy.quad = toParticle ? 0 : 1;
-      proxy.point = toParticle ? 1 : 0;
-      proxy.gather = toParticle ? 1 : 0;
+      proxy.dissolve = toParticle ? 1 : 0;
       apply();
-      if (this.quad) this.quad.visible = proxy.quad > 0.001;
+      if (this.quad) this.quad.visible = proxy.dissolve < 0.999;
       return;
     }
 
+    // 四边形在 dissolve=1 时全部被 discard，那时才有必要摘出渲染。
+    // 反方向一启动就要重新挂上。
     if (this.quad) this.quad.visible = true;
 
     // 切回原图时如果视角是歪的，把它带回来。直接跳回去太生硬。
@@ -980,15 +1001,12 @@ export class ParticleSystem {
 
     this.modeTween?.kill();
     this.modeTween = gsap.to(proxy, {
-      quad: toParticle ? 0 : 1,
-      point: toParticle ? 1 : 0,
-      gather: toParticle ? 1 : 0,
+      dissolve: toParticle ? 1 : 0,
       duration: DUR.morph,
       ease: EASE.morph,
       onUpdate: apply,
       onComplete: () => {
-        // 完全透明时把四边形摘出渲染，省一次全屏纹理采样
-        if (this.quad) this.quad.visible = proxy.quad > 0.001;
+        if (this.quad) this.quad.visible = proxy.dissolve < 0.999;
       },
     });
   }
@@ -1195,9 +1213,10 @@ function buildMaterial(): ShaderMaterial {
     uniforms: {
       uProgress: { value: 0 },
       uScatter: { value: 1 },
-      // 初始为「完全散开」—— 引擎启动时是原图模式，粒子不可见；
-      // 切到粒子模式时 uGather 0→1 让它在中途成形
-      uGather: { value: 0 },
+      // 0 = 完全照片，1 = 完全粒子。四边形与粒子共用这一个值
+      uDissolve: { value: 0 },
+      // 粒子云半宽半高，用来从世界坐标反推 UV（溶解场要用同一个坐标系）
+      uHalf: { value: new Vector2(1, 1) },
       uTime: { value: 0 },
       uPointer: { value: new Vector2(999, 999) },
       uMouseRadius: { value: 0.22 },

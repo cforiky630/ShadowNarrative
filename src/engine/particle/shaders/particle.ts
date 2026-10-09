@@ -15,6 +15,8 @@
  *   文档 06 需要同步更新。
  */
 
+import { DISSOLVE_GLSL } from "./dissolve";
+
 /**
  * 滑动区间在 uProgress(0..1) 上的位置，由 06 §12 的毫秒预算换算（总时长 1200ms）。
  *
@@ -40,7 +42,8 @@ attribute float aRandom;
 
 uniform float uProgress;
 uniform float uScatter;
-uniform float uGather;
+uniform float uDissolve;
+uniform vec2  uHalf;
 uniform float uTime;
 uniform vec2  uPointer;
 uniform float uMouseRadius;
@@ -55,6 +58,8 @@ uniform float uOpacity;
 
 varying vec3  vColor;
 varying float vAlpha;
+
+${DISSOLVE_GLSL}
 
 void main() {
   // --- 滑动进度 ---
@@ -77,15 +82,24 @@ void main() {
   pos += jitter * lift * uScatter * 0.045;
   pos.z += lift * uScatter * 0.05;
 
-  // --- 聚拢度（原图 ⇄ 粒子切换）---
-  // uGather: 1 = 完全聚拢到位，0 = 完全散开。
+  // --- 溶解（照片 ⇄ 粒子）---
+  // 用与四边形**完全相同**的空间场，保证粒子出现在照片刚消失的位置。
+  // 四边形在 d > uDissolve 处 discard，粒子在 d > uDissolve 处出现 ——
+  // 严丝合缝互补，这才是「照片自己解散」。
   //
-  // 这个 uniform 存在的原因是一个具体的视觉要求：切换时**粒子必须中途才成形**。
-  // 如果粒子在起点就已经就位、只是淡入，画面看起来会像叠了两张图；
-  // 必须让它在淡入的同时从散开态收敛，才像"照片碎成沙粒"。
-  float ungathered = 1.0 - uGather;
-  pos += jitter * ungathered * 0.42;
-  pos.z += sin(aRandom * 19.3) * ungathered * 0.30;
+  // 用 aPositionA 算 UV 而不是 pos：pos 会被指针场与呼吸扰动，
+  // 那样粒子还没出现就已经离开原位，接不上碎块。
+  vec2 puv = aPositionA.xy / (uHalf * 2.0) + 0.5;
+  float dfield = snDissolveField(puv);
+
+  // ⚠️ 阈值必须**紧贴在 d 右侧**，不能居中。
+  // 居中（smoothstep(d-0.1, d+0.1, ·)）意味着粒子在照片碎块消失之前就开始出现，
+  // 两者重叠 → 又变成「叠了两张图」。
+  // 四边形在 d > uDissolve 处 discard，所以粒子必须在 uDissolve 刚越过 d 时才出现。
+  float appear = smoothstep(dfield, dfield + 0.03, uDissolve);
+
+  // 刚出现时带一点随机偏移，落定才稳 —— 像碎屑落下，而不是凭空点亮
+  pos += jitter * (1.0 - appear) * 0.16;
 
   // --- 呼吸（06 §7）---
   float ph = aRandom * 6.2831853;
@@ -122,7 +136,7 @@ void main() {
   vColor = clamp(vColor + chroma * uColorVariation * 0.12, 0.0, 1.0);
 
   // B 略实一点，让「落定」这一步有收束感
-  vAlpha = uOpacity * (0.72 + 0.28 * m);
+  vAlpha = uOpacity * appear * (0.72 + 0.28 * m);
 
   float size = mix(aSizeA, aSizeB, m);
   gl_PointSize = uSize * uDpr * size;
