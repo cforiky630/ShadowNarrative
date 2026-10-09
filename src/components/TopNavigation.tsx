@@ -23,11 +23,18 @@ import { useExperience } from "@/store/experience";
  *   - 用与溶解**同一条缓动和时长**交叉淡化，让它成为这个镜头的一部分，
  *     而不是突然出现的 chrome
  */
-const NAV_ITEMS = [
-  { href: "/", label: "Memories" },
-  { href: "/journal", label: "Journal" },
-  { href: "/create", label: "Create" },
-] as const;
+/**
+ * 顶部导航的空间入口。
+ *
+ * 2026-10-09 删掉了 `/journal` 与 `/create` —— **两个路由都不存在**，点进去是 404。
+ * 它们是上一版设计留下的：`Journal` 在 `01-PRODUCT_SPEC.md` §5 里是体验状态
+ * （从照片主动触发进入），不是顶层导航目的地；`Create` 在任何文档里都没有定义。
+ *
+ * 现在只剩 `Memories`，看着稀疏，但这是产品的真实状态 ——
+ * Album / Library 属于 Round 5/6，等真做出来再加。
+ * 有意的：**入口宁可少，也不要留点不动的**。
+ */
+const NAV_ITEMS = [{ href: "/", label: "Memories" }] as const;
 
 /** 与溶解同步的交叉淡化 */
 const CROSSFADE = "opacity var(--duration-morph) var(--ease-morph)";
@@ -125,6 +132,20 @@ export function TopNavigation() {
         >
           参数
         </button>
+
+        {/*
+          设置刻意**不放进 NAV_ITEMS**：那个数组是「空间」，而设置不在
+          `01-PRODUCT_SPEC.md` §5 的 7 个体验状态里 —— 它是体验之外的配置层
+          （07-UI_PAGE_SPECS.md §11.1）。放在最外侧，与其余入口分开。
+        */}
+        <Link
+          href="/settings"
+          aria-current={pathname === "/settings" ? "page" : undefined}
+          className="text-micro text-text-primary/40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"
+          style={{ transitionTimingFunction: "var(--ease-enter)" }}
+        >
+          设置
+        </Link>
       </nav>
     </header>
   );

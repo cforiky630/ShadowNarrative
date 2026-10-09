@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { resolveSecretsPath } from "./dataDir";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { resolveDataDir, resolveSecretsPath } from "./dataDir";
 
 /**
  * 本机凭据。
@@ -62,4 +62,65 @@ export async function getAiCredentials(): Promise<AiCredentials | null> {
     baseUrl: pick(secrets.aiBaseUrl, "AI_BASE_URL") ?? "https://api.deepseek.com",
     model: pick(secrets.aiModel, "AI_MODEL") ?? "deepseek-flash",
   };
+}
+
+/**
+ * 设置页需要的 AI 信息：**只回答「配没配」，不回传 key 本身**。
+ *
+ * 不该拿到明文 —— 能显示就说明它出现在某个响应里过，那它就会进日志、
+ * 进浏览器缓存、进任何一次抓包（12 §10）。
+ *
+ * `configured` 与 `fromEnv` 必须分开报：设置页只能改 `secrets.json`，
+ * 而环境变量是另一条回退路径。合成一个布尔值的话，用户点了「清除」会发现
+ * 什么都没变（环境变量还在供应），看起来像坏了。
+ */
+export async function getAiPublicInfo(): Promise<{
+  configured: boolean;
+  fromEnv: boolean;
+  baseUrl: string;
+  model: string;
+}> {
+  const secrets = await readSecrets();
+  const fromSecrets = Boolean(secrets.aiApiKey?.trim());
+
+  return {
+    configured: fromSecrets,
+    fromEnv: !fromSecrets && Boolean(process.env.AI_API_KEY?.trim()),
+    baseUrl: pick(secrets.aiBaseUrl, "AI_BASE_URL") ?? "https://api.deepseek.com",
+    model: pick(secrets.aiModel, "AI_MODEL") ?? "deepseek-flash",
+  };
+}
+
+/**
+ * 写入 AI key。空字符串表示**清除**。
+ *
+ * 读-改-写而不是整份覆盖：secrets.json 里还有备份令牌与端到端加密密钥
+ * （17 §3、18 §7），整份覆盖会把它们抹掉。
+ */
+export async function setAiApiKey(apiKey: string): Promise<void> {
+  const current = await readSecrets();
+  const trimmed = apiKey.trim();
+
+  const next: Secrets = { ...current };
+  if (trimmed) {
+    next.aiApiKey = trimmed;
+  } else {
+    delete next.aiApiKey;
+  }
+
+  await writeSecrets(next);
+}
+
+/**
+ * 落盘 secrets.json（17 §3：0600，只有本用户可读）。
+ *
+ * 同时保证数据目录存在 —— 首次运行时设置页可能先于 `npm run setup` 被打开。
+ */
+async function writeSecrets(secrets: Secrets): Promise<void> {
+  await mkdir(resolveDataDir(), { recursive: true });
+  await writeFile(
+    resolveSecretsPath(),
+    `${JSON.stringify(secrets, null, 2)}\n`,
+    { mode: 0o600 },
+  );
 }

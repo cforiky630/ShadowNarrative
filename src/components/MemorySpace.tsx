@@ -42,9 +42,16 @@ const POLL_TIMEOUT_MS = 30_000;
 
 interface MemorySpaceProps {
   photo: PhotoDetail | null;
+  /**
+   * 上传后是否自动把照片发给模型（`09 §21.2`）。
+   *
+   * 关掉时 `pending` 的含义从「正在分析」变成「还没发出去」，
+   * 客户端据此决定要不要轮询、要不要给手动入口。
+   */
+  autoAnalyze: boolean;
 }
 
-export function MemorySpace({ photo }: MemorySpaceProps) {
+export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
   const canvasRef = useRef<ParticleCanvasHandle>(null);
   const router = useRouter();
 
@@ -67,6 +74,17 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     photo?.subtitle?.content ?? null,
   );
   const [aiState, setAiState] = useState<AiState>(photo?.aiState ?? "done");
+
+  /**
+   * 是否正在等一次分析的结果。
+   *
+   * 不能只看 `aiState === "pending"`：关掉自动分析（`09 §21.2`）时 pending 表示
+   * 「还没发出去、等用户点」，那时候空轮询 30 秒再把它标成 failed 是错的。
+   * 所以单独记「我们请求过分析、还没等到结果」—— 上传（开关开着）和手动触发都置位。
+   */
+  const [awaiting, setAwaiting] = useState(
+    (photo?.aiState ?? "done") === "pending" && autoAnalyze,
+  );
 
   /**
    * 当前正在显示哪张照片。
@@ -94,7 +112,8 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     setActiveId(serverId);
     setSubtitle(photo?.subtitle?.content ?? null);
     setAiState(photo?.aiState ?? "done");
-  }, [photo]);
+    setAwaiting((photo?.aiState ?? "done") === "pending" && autoAnalyze);
+  }, [photo, autoAnalyze]);
 
   /**
    * 显示模式。
@@ -158,7 +177,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
    * 30 秒还没结果就停；服务端也会在同一个阈值上兜底改判 failed。
    */
   useEffect(() => {
-    if (!activeId || aiState !== "pending") return;
+    if (!activeId || !awaiting) return;
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -169,6 +188,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
 
       if (Date.now() > deadline) {
         setAiState("failed");
+        setAwaiting(false);
         return;
       }
 
@@ -189,7 +209,8 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
           if (next?.subtitle?.content) setSubtitle(next.subtitle.content);
           if (next?.aiState && next.aiState !== "pending") {
             setAiState(next.aiState);
-            return; // 终态，停止轮询
+            setAwaiting(false); // 终态，停止轮询
+            return;
           }
         }
       } catch {
@@ -204,7 +225,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [activeId, aiState]);
+  }, [activeId, awaiting]);
 
   /** 拖入照片 → 先本地成型（即时反馈），再上传落库。 */
   const acceptFile = useCallback(
@@ -250,6 +271,9 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
           setActiveId(newId);
           setSubtitle(null);
           setAiState("pending");
+          // 服务端只有在自动分析开着时才会触发（09 §21.2）——
+          // 关着的时候这里不该开始等，否则会空轮询到超时
+          setAwaiting(autoAnalyze);
         }
 
         // 让服务端把新的照片数据带回来（日期等元信息）
@@ -260,7 +284,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
         setBusy(false);
       }
     },
-    [router],
+    [router, autoAnalyze],
   );
 
   // 进入待确认后 4 秒自动撤回，避免按钮一直停在危险状态
@@ -310,11 +334,12 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     }
   }, [activeId, router, setDisplayMode]);
 
-  /** 手动重试分析（08 §10）。也是关掉自动分析后唯一的发送入口（09 §21.2）。 */
+  /** 请求分析。失败重试与「关掉自动分析后手动看一眼」走同一条路（08 §10、09 §21.2）。 */
   const handleRetry = useCallback(async () => {
     if (!activeId) return;
     setSubtitle(null);
     setAiState("pending");
+    setAwaiting(true);
 
     try {
       const res = await fetch(`/api/photos/${activeId}/analyze`, {
@@ -323,6 +348,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
       if (!res.ok) throw new Error("重试失败");
     } catch {
       setAiState("failed");
+      setAwaiting(false);
     }
   }, [activeId]);
 
@@ -393,7 +419,8 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
           <Subtitle
             content={subtitle}
             state={aiState}
-            onRetry={() => void handleRetry()}
+            awaitingManualTrigger={!autoAnalyze}
+            onRequest={() => void handleRetry()}
           />
         ) : (
           <h1 className="text-title mt-2 text-text-primary/95">

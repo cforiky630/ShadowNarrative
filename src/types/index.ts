@@ -305,3 +305,22 @@ export interface Memory {
   createdAt: string;
   updatedAt: string;
 }
+
+/**
+ * 设置页的数据（07 §11）。
+ *
+ * ⚠️ `aiKeyConfigured` 是布尔值而不是 key —— 服务端**从不回传** key 本身。
+ * 能回传就说明它出现在某个响应里过，那它就会进日志、进浏览器缓存、进抓包（12 §10）。
+ */
+export interface SettingsView {
+  autoAnalyze: boolean;
+  /** `secrets.json` 里配了 key —— 这是设置页唯一能改的那份 */
+  aiKeyConfigured: boolean;
+  /**
+   * `secrets.json` 没配，但环境变量（`.env.local`）在供应 —— 开发期的回退。
+   * 必须和上面那个分开报，否则用户点「清除」会发现状态没变，像是坏了。
+   */
+  aiKeyFromEnv: boolean;
+  aiBaseUrl: string;
+  aiModel: string;
+}

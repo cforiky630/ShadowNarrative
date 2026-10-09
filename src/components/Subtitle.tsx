@@ -18,13 +18,44 @@ import type { AiState } from "@/types";
 interface SubtitleProps {
   content: string | null;
   state: AiState;
-  onRetry?: () => void;
+  /**
+   * 关掉自动分析时（`09 §21.2`），`pending` 的含义变了：
+   * 不再是「正在分析中」，而是「还没发出去，等用户点」。
+   * 这时必须给一个入口，否则关掉开关等于让新照片永远无法被分析。
+   */
+  awaitingManualTrigger?: boolean;
+  /** 请求分析。失败重试与手动触发走同一条路。 */
+  onRequest?: () => void;
 }
 
 /** 一句占位的高度，等于一行 text-body（1.7 line-height）。 */
 const ONE_LINE = "1.7em";
 
-export function Subtitle({ content, state, onRetry }: SubtitleProps) {
+export function Subtitle({
+  content,
+  state,
+  awaitingManualTrigger = false,
+  onRequest,
+}: SubtitleProps) {
+  // 关掉自动分析：照片还没有被发出去，等用户决定。
+  // 文案不用「分析」这种系统词 —— 说的是这件事本身。
+  if (state === "pending" && awaitingManualTrigger && !content) {
+    return (
+      <p
+        className="text-meta mt-2 text-center text-text-primary/35"
+        style={{ minHeight: ONE_LINE }}
+      >
+        <button
+          type="button"
+          onClick={onRequest}
+          className="pointer-events-auto underline-offset-4 hover:text-text-primary/70 hover:underline"
+        >
+          看一眼
+        </button>
+      </p>
+    );
+  }
+
   // 失败：一行低存在感的文案 + 点击重试。不弹提示、不用红色 ——
   // 这套配色里表达「注意」的方式是提亮，不是染色。
   if (state === "failed" && !content) {
@@ -35,7 +66,7 @@ export function Subtitle({ content, state, onRetry }: SubtitleProps) {
       >
         <button
           type="button"
-          onClick={onRetry}
+          onClick={onRequest}
           className="pointer-events-auto underline-offset-4 hover:text-text-primary/60 hover:underline"
         >
           没能看清这张照片。再看一次？

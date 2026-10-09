@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { MemorySpace } from "@/components/MemorySpace";
 import { getLatestPhoto, getPhotoDetail } from "@/services/photoService";
-import { getLocalUserId } from "@/services/userService";
+import { getLocalUserId, getSettings } from "@/services/userService";
 
 /**
  * 首页 —— 最新的一张照片。
@@ -36,8 +36,12 @@ async function PhotoLoader() {
   await connection();
 
   const userId = await getLocalUserId();
-  const latest = await getLatestPhoto(userId);
+  // 设置与照片并行取 —— 客户端要用 autoAnalyze 判断该轮询还是等用户点（09 §21.2）
+  const [settings, latest] = await Promise.all([
+    getSettings(userId),
+    getLatestPhoto(userId),
+  ]);
   const photo = latest ? await getPhotoDetail(userId, latest.id) : null;
 
-  return <MemorySpace photo={photo} />;
+  return <MemorySpace photo={photo} autoAnalyze={settings.autoAnalyze} />;
 }
