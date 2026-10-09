@@ -8,6 +8,9 @@
 !.yarn/releases
 !.yarn/versions
 
+# testing
+/coverage
+
 # next.js
 /.next/
 /out/
@@ -18,8 +21,8 @@ next-env.d.ts
 
 # misc
 .DS_Store
-*.pem
 Thumbs.db
+*.pem
 
 # debug
 npm-debug.log*
@@ -30,6 +33,7 @@ yarn-error.log*
 # env files
 .env
 .env*.local
+!.env.example
 
 # vercel
 .vercel
@@ -38,7 +42,8 @@ yarn-error.log*
 *.tsbuildinfo
 
 # prisma
-/prisma/migrations/dev.db*
+/prisma/*.db
+/prisma/*.db-journal
 
 # editors
 .idea/
