@@ -18,9 +18,15 @@ export interface ParticleCanvasHandle {
 interface ParticleCanvasProps {
   ref?: Ref<ParticleCanvasHandle>;
   className?: string;
+  /** 粒子云占视口高度的比例。首页用约 0.62，给下方文字留位置（07 §1）。 */
+  fillHeight?: number;
+  /** 垂直偏移，视口高度的比例。正数把画面往上推（07 §1 要求 4%）。 */
+  offsetY?: number;
   /** 设备不支持 WebGL2 / 软件渲染时触发，调用方应走静态降级（15 §7） */
   onUnsupported?: () => void;
   onStats?: (s: EngineStats) => void;
+  /** 视角在「正对」与「已旋转」之间切换时触发 */
+  onViewChange?: (rotated: boolean) => void;
 }
 
 /**
@@ -33,8 +39,11 @@ interface ParticleCanvasProps {
 export function ParticleCanvas({
   ref,
   className,
+  fillHeight = 1,
+  offsetY = 0,
   onUnsupported,
   onStats,
+  onViewChange,
 }: ParticleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<ParticleSystem | null>(null);
@@ -50,10 +59,12 @@ export function ParticleCanvas({
   // 只在 effect 里写 —— React 19 的 lint 规则禁止在渲染期访问 ref.current。
   const onStatsRef = useRef(onStats);
   const onUnsupportedRef = useRef(onUnsupported);
+  const onViewChangeRef = useRef(onViewChange);
   useEffect(() => {
     onStatsRef.current = onStats;
     onUnsupportedRef.current = onUnsupported;
-  }, [onStats, onUnsupported]);
+    onViewChangeRef.current = onViewChange;
+  }, [onStats, onUnsupported, onViewChange]);
 
   useImperativeHandle(
     ref,
@@ -84,9 +95,12 @@ export function ParticleCanvas({
       // 直接读 store 的当前值，不经过 ref —— 避免 init 时序依赖
       params: useExperience.getState().params,
       tierOverride: readTierOverride(),
+      fillHeight,
+      offsetY,
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       onUnsupported: () => onUnsupportedRef.current?.(),
       onStats: (s) => onStatsRef.current?.(s),
+      onViewChange: (r) => onViewChangeRef.current?.(r),
       // 引擎自己降档时回报给 store，让 UI（debug overlay、控制面板）同步
       onTierChange: (t) => setTier(t),
     });

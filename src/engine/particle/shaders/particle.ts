@@ -48,6 +48,7 @@ uniform float uSize;
 uniform float uMotion;
 uniform float uTurbulence;
 uniform float uNoiseSpeed;
+uniform float uColorVariation;
 uniform float uDpr;
 uniform float uOpacity;
 
@@ -99,6 +100,16 @@ void main() {
 
   // --- 输出 ---
   vColor = mix(aColorA, aColorB, m);
+
+  // 色彩扰动：每个粒子在自己的颜色上做一点偏移，让画面更像沙粒而不是印刷网点。
+  // 幅度刻意压得很小 —— 06 §3 要求粒子颜色必须来自照片本身，不能加统一滤镜。
+  vec3 chroma = vec3(
+    sin(aRandom * 41.0),
+    cos(aRandom * 37.0),
+    sin(aRandom * 53.0)
+  );
+  vColor = clamp(vColor + chroma * uColorVariation * 0.12, 0.0, 1.0);
+
   // B 略实一点，让「落定」这一步有收束感
   vAlpha = uOpacity * (0.72 + 0.28 * m);
 

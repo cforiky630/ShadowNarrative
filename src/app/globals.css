@@ -1,1 +1,8 @@
+/* 所有 @import 必须集中在入口文件的最前面。
+   CSS 规范要求 @import 出现在其他规则之前，否则解析器会**静默丢弃**它。
+   tokens.css 自己带 @import "tailwindcss"，一旦它被内联进来，
+   后面再写 @import 就踩到这条规则了 —— 表现是样式凭空消失、控制台的
+   元素却查不到任何报错。 */
+@import "tailwindcss";
 @import "../styles/tokens.css";
+@import "../styles/components.css";

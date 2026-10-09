@@ -1,0 +1,63 @@
+/* ==========================================================================
+   Shadow Narrative — 组件样式
+   只放无法用 Tailwind 工具类干净表达的东西（原生控件、伪元素等）。
+   ========================================================================== */
+
+@layer components {
+  /* 极简滑块。用原生 <input type="range">：零依赖、键盘可达、
+     读屏器原生支持 —— 比自绘滑块更符合 04 §14 的无障碍要求。 */
+  .sn-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 16px;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .sn-range:focus-visible {
+    outline: none;
+  }
+
+  .sn-range::-webkit-slider-runnable-track {
+    height: 1px;
+    background: var(--border-subtle);
+  }
+
+  .sn-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 9px;
+    height: 9px;
+    margin-top: -4px;
+    border-radius: var(--radius-pill);
+    background: var(--text-primary);
+    opacity: 0.7;
+    transition: opacity var(--duration-micro) var(--ease-enter);
+  }
+
+  .sn-range:hover::-webkit-slider-thumb,
+  .sn-range:focus-visible::-webkit-slider-thumb {
+    opacity: 1;
+  }
+
+  .sn-range::-moz-range-track {
+    height: 1px;
+    background: var(--border-subtle);
+  }
+
+  .sn-range::-moz-range-thumb {
+    width: 9px;
+    height: 9px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--text-primary);
+    opacity: 0.7;
+    transition: opacity var(--duration-micro) var(--ease-enter);
+  }
+
+  .sn-range:hover::-moz-range-thumb,
+  .sn-range:focus-visible::-moz-range-thumb {
+    opacity: 1;
+  }
+}

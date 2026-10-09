@@ -76,8 +76,22 @@ export interface ParticleSystemOptions {
   /** 强制档位（?tier=），非空时跳过自动探测 */
   tierOverride?: PerformanceTier | null;
   params: ParticleParams;
+  /**
+   * 粒子云占视口高度的比例，默认 1（尽量填满）。
+   *
+   * 调试台用 1；首页按 07-UI_PAGE_SPECS.md §1 用约 0.62，
+   * 给下方的日期/标题/操作留出位置。
+   */
+  fillHeight?: number;
+  /**
+   * 垂直偏移，视口高度的比例。正数把画面往上推（07 §1 要求「垂直偏上 4%」）。
+   * 实现方式是让相机看向云心下方一点，而不是移动云本身 —— 这样旋转依然绕云心。
+   */
+  offsetY?: number;
   onStats?: (stats: EngineStats) => void;
   onTierChange?: (tier: PerformanceTier) => void;
+  /** 视角在「正对」与「已旋转」之间切换时触发，供 UI 决定复位按钮的显隐 */
+  onViewChange?: (rotated: boolean) => void;
   /** 无法创建 WebGL 上下文时为 true，调用方应走静态降级 */
   onUnsupported?: () => void;
   reducedMotion?: boolean;
@@ -87,6 +101,9 @@ export class ParticleSystem {
   private readonly canvas: HTMLCanvasElement;
   private readonly onStats?: (s: EngineStats) => void;
   private readonly onTierChange?: (t: PerformanceTier) => void;
+  private readonly onViewChange?: (rotated: boolean) => void;
+  /** 上一次通知过的旋转状态，避免每帧都回调 */
+  private lastRotated = false;
   private readonly onUnsupported?: () => void;
   private reducedMotion: boolean;
   private readonly tierOverride: PerformanceTier | null;
@@ -114,6 +131,14 @@ export class ParticleSystem {
   private controls: OrbitControls | null = null;
   /** 装下整个粒子云所需的相机距离。resize 时按比例调整，以保留用户当前的缩放。 */
   private fitDistance = 0;
+  /** 粒子云占视口高度的比例 */
+  private readonly fillHeight: number;
+  /** 垂直偏移，视口高度的比例 */
+  private readonly offsetY: number;
+  /** 相机看向的点在 y 上的偏移（世界单位），由 offsetY 换算而来 */
+  private targetY = 0;
+  /** 上一次 resize 时 controls.target 的值，用来在重排时保持用户的旋转方向 */
+  private readonly controlsTargetPrev = new Vector3(0, 0, 0);
 
   private rafId: number | null = null;
   private disposed = false;
@@ -173,9 +198,12 @@ export class ParticleSystem {
     this.params = opts.params;
     this.onStats = opts.onStats;
     this.onTierChange = opts.onTierChange;
+    this.onViewChange = opts.onViewChange;
     this.onUnsupported = opts.onUnsupported;
     this.reducedMotion = opts.reducedMotion ?? false;
     this.tierOverride = opts.tierOverride ?? null;
+    this.fillHeight = Math.min(1, Math.max(0.1, opts.fillHeight ?? 1));
+    this.offsetY = opts.offsetY ?? 0;
   }
 
   // -------------------------------------------------------------------------
@@ -482,6 +510,7 @@ export class ParticleSystem {
       u.uMouseRadius.value = params.mouseRadius;
       u.uMouseForce.value = params.mouseForce;
       u.uNoiseSpeed.value = params.noiseSpeed;
+      u.uColorVariation.value = params.colorVariation;
     }
 
     // 密度变了要重新采样 —— 粒子池大小是固定的（06 §13）
@@ -659,6 +688,13 @@ export class ParticleSystem {
     // 开了阻尼就必须每帧 update，否则惯性不会衰减
     this.controls?.update();
 
+    // 只在状态真正翻转时通知，不要每帧回调
+    const rotated = !this.isFrontView();
+    if (rotated !== this.lastRotated) {
+      this.lastRotated = rotated;
+      this.onViewChange?.(rotated);
+    }
+
     this.renderer.render(this.scene, this.camera);
 
     // --- 统计 ---
@@ -703,22 +739,32 @@ export class ParticleSystem {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
 
-    // 装下整个粒子云所需的最小距离：竖直与水平两个方向都要满足，取更远的
+    // 装下整个粒子云所需的最小距离：竖直与水平两个方向都要满足，取更远的。
+    // fillHeight 让云只占视口高度的一部分（首页要留出下方文字的位置）。
     const tan = Math.tan((CAMERA_FOV * Math.PI) / 360);
-    const dV = (halfH * FIT_PADDING) / tan;
-    const dH = (halfW * FIT_PADDING) / ((w / h) * tan);
+    const dV = (halfH * FIT_PADDING) / (tan * this.fillHeight);
+    const dH = (halfW * FIT_PADDING) / ((w / h) * tan * this.fillHeight);
     const nextFit = Math.max(dV, dH);
 
-    // 保持用户的旋转与缩放：只按 fit 的比例缩放当前射线距离，
-    // 这样重新布局不会把用户转到的角度或缩放级别重置掉。
     const prevFit = this.fitDistance;
     this.fitDistance = nextFit;
 
-    if (prevFit <= 0 || this.camera.position.lengthSq() < 1e-8) {
-      this.camera.position.set(0, 0, nextFit); // 首次：正对画面
+    // offsetY 换算成世界单位。相机看向云心下方一点，画面就整体上移，
+    // 同时保持旋转仍以云心为轴。
+    this.targetY = -(this.offsetY * nextFit * tan * 2);
+    const newTarget = new Vector3(0, this.targetY, 0);
+
+    // 保持用户的旋转方向与相对缩放：只缩放「从目标点到相机」的偏移向量
+    const dir = this.camera.position.clone().sub(this.controlsTargetPrev);
+    if (prevFit <= 0 || dir.lengthSq() < 1e-8) {
+      dir.set(0, 0, nextFit); // 首次：正对画面
     } else {
-      this.camera.position.multiplyScalar(nextFit / prevFit);
+      dir.multiplyScalar(nextFit / prevFit);
     }
+
+    this.camera.position.copy(newTarget).add(dir);
+    this.controls?.target.copy(newTarget);
+    this.controlsTargetPrev.copy(newTarget);
 
     if (this.controls) {
       this.controls.minDistance = nextFit * 0.30;
@@ -760,6 +806,7 @@ export class ParticleSystem {
     u.uMouseRadius.value = this.params.mouseRadius;
     u.uMouseForce.value = this.params.mouseForce;
     u.uNoiseSpeed.value = this.params.noiseSpeed;
+    u.uColorVariation.value = this.params.colorVariation;
     u.uDpr.value = Math.min(window.devicePixelRatio || 1, TIER_SPECS[this.tier].maxDpr);
   }
 
@@ -785,8 +832,9 @@ export class ParticleSystem {
       const j = perm[i];
       p.setXYZ(i, src[j * 3], src[j * 3 + 1], src[j * 3 + 2]);
       c.setXYZ(i, cols[j * 3], cols[j * 3 + 1], cols[j * 3 + 2]);
-      // 亮部粒子略大，暗部略小 —— 让主体更实（06 §6 的视觉延伸）
-      s.setX(i, 0.75 + 0.5 * luma[j]);
+      // 亮部粒子略大。范围刻意收窄 —— 尺寸差会叠加在密度差上，
+      // 用 0.75–1.25 那种幅度会把暗部进一步推得看不见。
+      s.setX(i, 0.9 + 0.2 * luma[j]);
     }
 
     p.needsUpdate = true;
@@ -802,15 +850,18 @@ export class ParticleSystem {
    */
   resetView(): void {
     if (!this.camera) return;
-    this.camera.position.set(0, 0, this.fitDistance);
-    this.controls?.target.set(0, 0, 0);
+    this.camera.position.set(0, this.targetY, this.fitDistance);
+    this.controls?.target.set(0, this.targetY, 0);
     this.controls?.update();
   }
 
   /** 当前是否处于正视角（供 UI 决定要不要显示「复位」） */
   isFrontView(): boolean {
     if (!this.camera) return true;
-    return this.camera.position.x === 0 && this.camera.position.y === 0;
+    return (
+      Math.abs(this.camera.position.x) < 1e-4 &&
+      Math.abs(this.camera.position.y - this.targetY) < 1e-4
+    );
   }
 
   dispose(): void {
@@ -897,6 +948,7 @@ function buildMaterial(): ShaderMaterial {
       uMotion: { value: 0.35 },
       uTurbulence: { value: 0.12 },
       uNoiseSpeed: { value: 1.0 },
+      uColorVariation: { value: 0 },
       uDpr: { value: 1 },
       uOpacity: { value: 1 },
     },

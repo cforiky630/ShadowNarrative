@@ -24,7 +24,8 @@ export function DebugOverlay({ stats }: { stats: EngineStats | null }) {
   ];
 
   return (
-    <div className="text-micro pointer-events-none fixed bottom-6 left-12 z-30 flex flex-col gap-1 font-mono text-text-primary/45">
+    // 放在顶部导航下方的左侧：底部左侧要留给旋转提示与「复位视角」
+    <div className="text-micro pointer-events-none fixed left-12 top-24 z-30 flex flex-col gap-1 font-mono text-text-primary/45">
       {rows.map(([k, v]) => (
         <div key={k} className="flex gap-3">
           <span className="w-20 opacity-60">{k}</span>

@@ -3,9 +3,10 @@
    Source of truth: shadow-narrative-docs/02-DESIGN_SYSTEM.md
    这里的每一个值都必须能在 02-DESIGN_SYSTEM.md 里找到对应条目。
    改这里之前先改文档。
-   ========================================================================== */
 
-@import "tailwindcss";
+   注意：不要在本文件里写 @import —— 入口 src/app/globals.css 已经
+   集中导入，这里再写会因为「@import 必须在其他规则之前」而被丢弃。
+   ========================================================================== */
 
 :root {
   /* --- Color / Background (02 §2) --- */
