@@ -141,8 +141,14 @@ export class ParticleSystem {
   };
 
   private readonly onVisibilityChange = () => {
-    if (document.hidden) this.pauseRaf();
-    else if (this.running) this.resumeRaf();
+    if (document.hidden) {
+      this.pauseRaf();
+    } else if (this.running) {
+      // 刚回到前台的前几帧必然偏慢（纹理重传、着色器重编译、GC），
+      // 丢掉旧样本重新累积，否则这几帧会直接触发一次误降档。
+      this.monitor?.reset();
+      this.resumeRaf();
+    }
   };
 
   private readonly onContextLost = (e: Event) => {
@@ -620,7 +626,10 @@ export class ParticleSystem {
     this.lastFrameMs = now;
 
     // --- L3 运行时监测（15 §3）---
-    if (this.monitor && !this.tierOverride) {
+    // 页面不可见时不采样：隐藏标签页里 rAF 被节流，帧时间会被拉得很大，
+    // L3 会把它误判成性能不足而错误降档（实测过：切走一会儿再回来，
+    // 档位已经从 medium 掉到 low）。
+    if (this.monitor && !this.tierOverride && !document.hidden) {
       if (this.monitor.push(frameMs, now)) {
         const idx = TIER_ORDER.indexOf(this.tier);
         if (idx >= 0 && idx < TIER_ORDER.length - 1) {

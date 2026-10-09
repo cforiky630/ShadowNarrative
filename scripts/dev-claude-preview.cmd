@@ -1,16 +1,26 @@
 @echo off
-REM ---------------------------------------------------------------------------
-REM 仅供 Claude 桌面应用的预览功能使用。你自己的终端不需要这个脚本。
+REM ===========================================================================
+REM Only for the Claude desktop app's preview feature.
+REM You do NOT need this script in your own terminal.
 REM
-REM 背景：在 Claude 容器内，%APPDATA% 被虚拟化重定向到 C:\WpSystem\...，
-REM Next.js 写全局配置（%APPDATA%\nextjs-nodejs\Config\config.json）时用的
-REM 是「临时文件 + 原子 rename」，跨重定向边界会失败并报 EXDEV，dev server 崩溃。
+REM Why: inside the Claude container %APPDATA% is virtualized/redirected to
+REM C:\WpSystem\..., and Next.js writes its global config
+REM (%APPDATA%\nextjs-nodejs\Config\config.json) using a temp-file + atomic
+REM rename, which fails across that redirect boundary with EXDEV, crashing
+REM the dev server.
 REM
-REM 把 APPDATA 指向一个普通目录即可绕开。这只影响 Next 的全局配置位置，
-REM 不影响项目本身。
+REM Pointing APPDATA at a plain directory works around it. This only changes
+REM where Next keeps its global config; the project itself is untouched.
 REM
-REM 详见 shadow-narrative-docs/recon/environment.md §6.1
-REM ---------------------------------------------------------------------------
+REM See shadow-narrative-docs/recon/environment.md section 6.1
+REM
+REM NOTE: keep this file ASCII-only. cmd.exe reads .cmd in the OEM codepage
+REM (GBK on Chinese Windows), so UTF-8 comments get mis-parsed as commands.
+REM ===========================================================================
+
+REM Switch to the project root (this script lives in <root>\scripts\).
+REM Required, otherwise npm looks for package.json in the wrong directory.
+cd /d "%~dp0.."
 
 set "APPDATA=%USERPROFILE%\.cache\appdata"
 if not exist "%APPDATA%" mkdir "%APPDATA%"

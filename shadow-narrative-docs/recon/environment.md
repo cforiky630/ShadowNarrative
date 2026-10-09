@@ -143,6 +143,21 @@ npm install-scripts approve prisma @prisma/engines
 `Shadow-Narrative` 含大写字母，npm 包名规范不允许。已采用的方案是脚手架建到
 临时目录再合并。后续如需重建，同样处理。
 
+**最终状态**：项目根目录已改为全小写的 `shadow-narrative`
+（Windows 上大小写改名要两步走：先改成临时名，再改成目标名，
+直接改会被当成「移动到自身的子目录」而失败）。
+
+注意：**npm 只读 `package.json` 的 `name` 字段**，目录名不影响包的合法性，
+只影响 `create-next-app` 这类工具的一次性校验。
+
+### 6.5 `.cmd` 脚本必须是纯 ASCII
+
+`scripts/dev-claude-preview.cmd` 第一版写了中文注释，结果 `cmd.exe` 在中文 Windows 上
+按 OEM 代码页（GBK）读取 `.cmd`，UTF-8 的中文注释被拆错字节，**其中一部分被当成命令执行**，
+报出一堆「不是内部或外部命令」，脚本整体跑飞。
+
+**规则：`.cmd` / `.bat` 只写 ASCII 注释。** 需要中文说明就放在同目录的 `.md` 里。
+
 ## 7. 环境验证结果
 
 | 检查项 | 结果 |
