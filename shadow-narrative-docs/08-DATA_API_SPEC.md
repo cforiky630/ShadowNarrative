@@ -71,7 +71,10 @@ model Photo {
   // --- 文件 ---
   storageKey   String  @unique   // 原图
   thumbnailKey String?           // 斜轴与列表用
-  // SHA-256，用于备份去重与完整性校验（见 18-BACKUP_PROTOCOL.md §4）
+  // 明文文件字节的 SHA-256（`sha256:<hex>`）。本地身份、完整性校验、本地去重。
+  // ⚠️ 不能直接当备份上行的 blob id —— 那会给后端一个确认预言机
+  //    （拿已知照片算哈希去比对）。上行 id 须为
+  //    HMAC-SHA256(用户密钥, contentHash)，见 18-BACKUP_PROTOCOL.md §2 §11。
   contentHash  String
 
   mimeType String
@@ -232,13 +235,14 @@ model UserSettings {
   particlePreset   String @default("calm")
   particleParams   String?   // JSON
 
-  // 上传后是否自动把照片发给模型分析（09 §22）
+  // 上传后是否自动把照片发给模型分析（09 §21.2）
   autoAnalyze      Boolean @default(true)
 
   // 备份（18-BACKUP_PROTOCOL.md）
+  // 刻意**没有** backupToken：凭据只存 secrets.json。放进业务表的话，
+  // 快照清单（§3）会把整行带走 —— 等于把备份令牌备份到备份后端上。
   backupAuto       Boolean @default(false)
   backupEndpoint   String?
-  backupToken      String?
 
   updatedAt DateTime @updatedAt
 }

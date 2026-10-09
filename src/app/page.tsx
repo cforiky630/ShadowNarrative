@@ -1,10 +1,11 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { MemorySpace } from "@/components/MemorySpace";
-import { LOCAL_USER_ID, getLatestMemory } from "@/services/memoryService";
+import { getLatestPhoto, getPhotoDetail } from "@/services/photoService";
+import { getLocalUserId } from "@/services/userService";
 
 /**
- * 首页。
+ * 首页 —— 最新的一张照片。
  *
  * 这是一个 Server Component，只负责取数据；画布、交互、状态全在
  * <MemorySpace>（客户端）里。
@@ -18,17 +19,25 @@ import { LOCAL_USER_ID, getLatestMemory } from "@/services/memoryService";
  * 为什么包 <Suspense>：
  *   cacheComponents 要求请求期渲染的部分有 Suspense 边界，
  *   这样页面的静态外壳可以先流式送达。
+ *
+ * 为什么取的是 PhotoDetail 而不是 Photo：
+ *   重新打开时字幕要立刻在，不能先空着再等轮询 —— 那会显得像是丢了。
+ *   只有 aiState 还是 pending 时客户端才需要轮询。
  */
 export default function Page() {
   return (
     <Suspense fallback={<main className="min-h-dvh" />}>
-      <MemoryLoader />
+      <PhotoLoader />
     </Suspense>
   );
 }
 
-async function MemoryLoader() {
+async function PhotoLoader() {
   await connection();
-  const memory = await getLatestMemory(LOCAL_USER_ID);
-  return <MemorySpace memory={memory} />;
+
+  const userId = await getLocalUserId();
+  const latest = await getLatestPhoto(userId);
+  const photo = latest ? await getPhotoDetail(userId, latest.id) : null;
+
+  return <MemorySpace photo={photo} />;
 }

@@ -16,10 +16,10 @@ import {
   TIER_SPECS,
   type DisplayMode,
   type ExperienceMode,
-  type Memory,
   type ParticleParams,
   type ParticlePresetName,
   type PerformanceTier,
+  type Photo,
 } from "@/types";
 
 interface UiState {
@@ -34,9 +34,9 @@ interface ExperienceState {
   mode: ExperienceMode;
   setMode: (mode: ExperienceMode) => void;
 
-  // --- 当前记忆 ---
-  currentMemory: Memory | null;
-  setCurrentMemory: (memory: Memory | null) => void;
+  // --- 当前照片 ---
+  currentPhoto: Photo | null;
+  setCurrentPhoto: (photo: Photo | null) => void;
 
   // --- 粒子参数 ---
   params: ParticleParams;
@@ -85,8 +85,8 @@ export const useExperience = create<ExperienceState>((set, get) => ({
   mode: "rest",
   setMode: (mode) => set({ mode }),
 
-  currentMemory: null,
-  setCurrentMemory: (currentMemory) => set({ currentMemory }),
+  currentPhoto: null,
+  setCurrentPhoto: (currentPhoto) => set({ currentPhoto }),
 
   params: { ...DEFAULT_PARTICLE_PARAMS },
   activePreset: "calm",

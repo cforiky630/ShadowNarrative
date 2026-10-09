@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   PARTICLE_PARAM_RANGES,
   type ParticleParams,
@@ -44,6 +44,10 @@ export function ParticleControls() {
   const resetParams = useExperience((s) => s.resetParams);
   const activePreset = useExperience((s) => s.activePreset);
 
+  const panelRef = useRef<HTMLElement>(null);
+  /** 打开面板前焦点在谁身上 —— 收起时还给它 */
+  const openerRef = useRef<HTMLElement | null>(null);
+
   // Esc 关闭浮层（04-UX_INTERACTION_SPEC.md §7 的退出顺序第一层）
   useEffect(() => {
     if (!open) return;
@@ -54,10 +58,35 @@ export function ParticleControls() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, setOpen]);
 
+  /**
+   * 展开时把焦点移进面板，收起时还给打开它的那个控件。
+   *
+   * 收起态的 `inert` 已经保证键盘进不来（07 §3：面板默认隐藏），但它同时
+   * 会把面板里原有的焦点丢回 body —— 不还回去的话，键盘用户每关一次面板
+   * 都得从文档开头重新 Tab 一遍。
+   */
+  useEffect(() => {
+    if (!open) {
+      openerRef.current?.focus();
+      openerRef.current = null;
+      return;
+    }
+    openerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    // 面板里第一个可聚焦的元素就是关闭按钮
+    panelRef.current?.querySelector<HTMLElement>("button")?.focus();
+  }, [open]);
+
   return (
     <>
       {/* 透明点击捕捉层。刻意不做暗色遮罩 —— 那会把粒子压暗，破坏「粒子才是主体」。
-          但拖拽旋转仍然可用，因为这一层只在面板打开时拦截点击。 */}
+          但拖拽旋转仍然可用，因为这一层只在面板打开时拦截点击。
+
+          这里带 aria-hidden 是安全的，也不是「aria-hidden 挡住焦点」那条警告的来源：
+          这是一个空的装饰层，永远没有可聚焦的后代，收起时更是整个不渲染。
+          收起态该操心的是下面 aside 的 inert。 */}
       {open && (
         <div
           aria-hidden
@@ -67,6 +96,7 @@ export function ParticleControls() {
       )}
 
       <aside
+        ref={panelRef}
         role="dialog"
         aria-label="粒子参数"
         inert={!open}

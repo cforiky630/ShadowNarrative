@@ -205,32 +205,103 @@ export const PARTICLE_PRESETS: Readonly<
 };
 
 // ---------------------------------------------------------------------------
-// 领域模型（08 §2）—— Round 3 起使用，先定义形状
+// 领域模型（08 §3）
 // ---------------------------------------------------------------------------
 
-export interface Memory {
-  id: string;
-  userId: string;
-  title: string | null;
-  summary: string | null;
-  location: string | null;
-  memoryDate: string | null;
-  coverMediaId: string | null;
-  particlePresetId: string | null;
-  createdAt: string;
-  updatedAt: string;
+/**
+ * AI 处理状态（08 §3）。
+ *
+ * SQLite 不支持 enum，所以库里是 String；取值集合在这里约束，
+ * 应用层负责校验 —— 这是 08 §2 定下的三处写法差异之一。
+ */
+export type AiState = "pending" | "done" | "failed";
+
+/** 信息来源。情绪永远只能是 inferred（09 §6）。 */
+export type EvidenceSource = "observed" | "user" | "inferred";
+
+/**
+ * 带来源与置信度的取值（09 §6 §7）。
+ *
+ * 置信度低时不得当作事实使用。
+ */
+export interface Claim<T = string> {
+  value: T | null;
+  source: EvidenceSource;
+  confidence: number;
 }
 
-export interface MediaAsset {
+/** AI 看图结果（09 §8）。存在 `PhotoAnalysis.payload` 里，是 JSON 字符串。 */
+export interface PhotoAnalysisPayload {
+  description: string;
+  people: string[];
+  objects: string[];
+  location: Claim;
+  date: Claim;
+  events: string[];
+  /** 每一项都按 Emotion Inferred 处理 —— 情绪不写成事实 */
+  emotions: Claim[];
+  visualKeywords: string[];
+  uncertainties: string[];
+}
+
+/** 消息里标注的证据来源（09 §6）。 */
+export interface SourceRef {
+  field: string;
+  source: EvidenceSource;
+  confidence: number;
+}
+
+/**
+ * 照片 —— 主实体（08 §3）。
+ *
+ * 这是**客户端可见**的形状：不含 `userId`（由服务端解析，客户端不需要也不该拿）。
+ * 字段名与 08 §3 保持一致 —— 18 §3 的快照清单要求键名一一对应。
+ */
+export interface Photo {
   id: string;
-  memoryId: string;
   storageKey: string;
   thumbnailKey: string | null;
-  mediumKey: string | null;
-  particleSourceKey: string | null;
+  contentHash: string;
   mimeType: string;
   width: number;
   height: number;
   byteSize: number;
+  /** EXIF 拍摄时间。没有就为 null，排序时用 createdAt 兜底 */
+  takenAt: string | null;
+  caption: string | null;
+  favorite: boolean;
+  aiState: AiState;
+  aiError: string | null;
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sourceRefs: SourceRef[] | null;
+  /** 字幕就是对话的第一条（09 §21.1）—— 不做两套数据 */
+  isSubtitle: boolean;
+  createdAt: string;
+}
+
+/**
+ * 照片 + 它的字幕。
+ *
+ * 轮询 `GET /api/photos/:id` 拿的就是这个：`aiState` 让客户端知道还要不要继续等，
+ * `subtitle` 直接就是要显示在照片下方的那句话。
+ */
+export interface PhotoDetail extends Photo {
+  subtitle: ConversationMessage | null;
+}
+
+/** 分组（08 §3）。可选，不拥有照片 —— 删分组不删照片。 */
+export interface Memory {
+  id: string;
+  title: string | null;
+  summary: string | null;
+  memoryDate: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

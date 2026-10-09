@@ -43,7 +43,7 @@
 ├── photos/                   原图
 │   └── <uuid>.<ext>
 ├── backup-state.json         备份游标与远程映射（见 18 §6）
-└── secrets.json              AI key 等本机凭据（0600 权限）
+└── secrets.json              AI key / 备份令牌 / 端到端加密密钥（0600 权限）
 ```
 
 ### 位置
