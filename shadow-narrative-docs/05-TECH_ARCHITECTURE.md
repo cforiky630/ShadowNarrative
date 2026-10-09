@@ -13,32 +13,48 @@
 
 ### 主应用（TypeScript / Next.js）
 
-- Next.js
-- React
+- Next.js 16
+- React 19
 - TypeScript strict
-- Three.js
-- Motion for React
+- Three.js（原生）
+- **GSAP** —— 只用于镜头编排
+- **Motion for React** —— 只用于 UI 微交互
 - Zustand
 - shadcn/ui
-- Tailwind CSS / CSS Modules
-- PostgreSQL 18 + Prisma
-- S3-compatible storage（生产阶段）
+- Tailwind CSS 4
+- **SQLite + Prisma**（自托管，一个文件，零配置）
+- S3-compatible storage（仅当将来需要远端存储时）
 
-### 图像与本地 AI 服务（Python）
+### 图像管线（Python，按需）
 
 - FastAPI
-- `sharp` 等价物：Pillow + `pillow-heif` + `rawpy`
-- 本地模型：insightface（人脸/宠物聚类）、CLIP（语义检索）——按需引入
+- Pillow + `pillow-heif` + `rawpy`
+- 本地模型：insightface、CLIP —— 按需引入
 
 **不引入 React Three Fiber**：粒子系统必须用原生 Three.js，理由见 §18。
 
-### 为什么是两套语言
+### 两套动画系统怎么分工
 
-这是 2026-10-09 确认的架构决策。
+这是 2026-10-09 的决定，用户明确要求「不考虑工作过程，只看结果」。
+
+| 层 | 工具 | 负责 |
+|---|---|---|
+| 镜头 | GSAP | 相机推进、场景切换、跨元素严格时序 |
+| 粒子 | 自研 rAF | 粒子位置、morph、指针场 |
+| UI | Motion | 导航、面板滑出、提示 |
+
+**引入 GSAP 的理由**：粒子是自己写的 rAF 循环，**Motion 驱动不了它**。
+「相册焦点 → 相机推进 → 原图变粒子 → 进入 Theater」这种多阶段镜头需要在
+同一条时间线上同时驱动相机位置、shader uniform 和 DOM 透明度。
+
+**必须共用同一套缓动。** 两套库并存的风险是动效性格分裂，所以 GSAP 的 ease
+必须由 `02-DESIGN_SYSTEM.md` §10 的曲线换算，不使用内置的 `power2.out` 这类命名缓动。
+
+### 为什么是两套语言
 
 | 层 | 语言 | 理由 |
 |---|---|---|
-| CRUD / 鉴权 / 限流 / AI 代理 / 页面 | TypeScript | 前后端共享类型。客户端是重度 WebGL，`Memory` / `MediaAsset` / `DiaryEntry` 的类型写两遍会严重漂移 |
+| CRUD / AI 代理 / 页面 | TypeScript | 前后端共享类型。客户端是重度 WebGL，`Photo` / `Conversation` / `Journal` 的类型写两遍会严重漂移 |
 | 图像管线（缩略图 / EXIF / HEIC / RAW） | Python | `pillow-heif` 与 `rawpy` 在 Node 侧没有对等物 |
 | 本地智能（人脸聚类 / embedding 检索） | Python | Node 侧生态基本空白 |
 
@@ -113,12 +129,14 @@ components/
 
 ```text
 services/
-  imageService        ← 调用 Python 图像服务，不自己处理像素
-  mediaService
-  memoryService
-  diaryService
+  photoService          照片 CRUD
+  memoryService         分组（可选，不拥有照片）
+  mediaService          文件读写与校验，不处理像素
   conversationService
-  aiService
+  journalService
+  aiService             调 DeepSeek
+  backupService         见 18-BACKUP_PROTOCOL.md
+  imageService          ← 调用 Python 图像服务（尚未建）
 ```
 
 ### 服务边界
@@ -129,7 +147,7 @@ services/
 Next.js Route Handlers（TypeScript）
   ├─→ Prisma → PostgreSQL         业务数据
   ├─→ 对象存储                     原图与派生图
-  ├─→ DeepSeek API                 图像理解 / 日记 / 对话
+  ├─→ DeepSeek API                 图像理解 / 日志 / 对话
   └─→ Python 图像服务（FastAPI）    缩略图 / EXIF / HEIC / RAW / 向量
 ```
 

@@ -1,25 +1,39 @@
 # Shadow Narrative — Deployment & Environment
 
+> **本文档管开发环境与构建。**
+> 交付给最终用户的形态见 `17-SELF_HOSTING.md` —— 那个才是本项目的主线。
+
 ## 1. Local Development
 
 ```text
 Node.js LTS       实测 v24.18.0
 npm               实测 12.0.2（本机无 pnpm / yarn）
-PostgreSQL        实测 18.6，装在 E:\PostgreSQL\18\
 Python            实测 3.14.7（E:\miniconda3），配 uv 0.12.5
+PostgreSQL        实测 18.6，装在 E:\PostgreSQL\18\
 ```
 
 具体版本以项目锁文件为准。
 
 ⚠️ npm 12 起默认拦截依赖的 install scripts。批准方式见 `recon/environment.md` §6.2。
 
-### 数据库初始化
+### 数据存储
+
+**应用本身用 SQLite**（`08-DATA_API_SPEC.md` §2），不需要装数据库服务。
+
+本机那个 PostgreSQL **不用于应用数据**，它有两个用途：
+
+1. 开发期的**备份后端替身**（`18-BACKUP_PROTOCOL.md`）
+2. 早期版本的遗留环境 —— 迁移到 SQLite 后不再需要
+
+初始化脚本：`scripts/setup-db.sql`（用 `-v pw=<密码>` 传参，不含明文密码）。
+
+### 建表
 
 ```bash
-"E:\PostgreSQL\18\bin\psql.exe" -U postgres -h 127.0.0.1 -v pw=<密码> -f scripts/setup-db.sql
+npx prisma migrate dev
 ```
 
-脚本创建 `shadow_narrative` 角色与同名数据库。
+迁移文件在 `prisma/migrations/`。
 
 ## 2. Commands
 

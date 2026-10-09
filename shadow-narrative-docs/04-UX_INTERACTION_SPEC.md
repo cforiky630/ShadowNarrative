@@ -109,11 +109,14 @@ mouseForce    0.00 – 1.00
 
 ESC 顺序：
 
-1. 关闭浮层
+1. 关闭浮层（控制面板 / Library 抽屉）
 2. 退出 Conversation
 3. 退出 Journal
 4. 退出 Story
-5. 返回 Memory Field
+5. 返回 Album
+
+**不适用**：原图 ⇄ 粒子的模式切换不进 ESC 栈 —— 它是同一页面内的显示状态，
+不是一层可以被"退出"的东西。要回原图请点模式标签。
 
 ## 8. Keyboard
 
@@ -131,7 +134,7 @@ Space     允许暂停/继续可暂停动画
 - tap
 - drag
 - swipe
-- pinch（适合 Memory Field 时）
+- pinch（斜轴相册里用于沿轴缩放前进）
 
 移动端不能简单复制 mousemove。
 

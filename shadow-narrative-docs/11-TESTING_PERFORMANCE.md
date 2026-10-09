@@ -37,18 +37,19 @@
 ## 2. Golden User Journey
 
 ```text
-Create
-→ upload photo
-→ see particle
-→ interact
-→ switch photo
-→ open memory
-→ story
-→ journal
-→ conversation
-→ save
-→ reload
-→ reopen
+打开（Album 斜轴）
+→ 拖入一张照片
+→ 原图立刻出现
+→ 字幕浮现
+→ 收藏
+→ 沿轴拖拽
+→ 点击进入
+→ 原图模式
+→ View Memory → 粒子
+→ 拖拽旋转
+→ 整理成日志
+→ 刷新
+→ 数据仍在
 ```
 
 必须可完成。
@@ -57,14 +58,15 @@ Create
 
 建议保留关键截图：
 
-- Home idle
-- Home hover
+- Album idle（斜轴）
+- Album 焦点切换
+- Album → Photo View 的中间态
+- Photo View 原图
+- 原图 → 粒子的中间态
 - Particle focus
 - Morph mid-state
-- Memory Field
-- Theater
 - Journal
-- Conversation
+- Conversation（含字幕）
 - Mobile
 
 目标不是像素级冻结所有 WebGL，而是防止明显视觉退化。

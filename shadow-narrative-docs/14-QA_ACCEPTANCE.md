@@ -17,11 +17,13 @@
 ### 必须是
 
 - 黑色沉浸式空间
+- 第一屏是斜轴相册，不是平铺网格
+- 进照片先是**真实原图**，点 View Memory 才变粒子
 - 粒子照片
 - 照片与粒子之间自然变化
 - 微弱 UI
-- AI 为辅助
-- 日记是记忆阅读的一部分
+- AI 为辅助，但上传即开口
+- 日志是记忆阅读的一部分
 - 所有状态像同一空间
 
 ### 必须不是
@@ -31,14 +33,18 @@
 - ChatGPT clone
 - 游戏化银河
 - 商业化平台
+- 3D 展厅
 
-## B. 首页
+## B. Album（第一屏）
 
-[ ] 首屏第一视觉是照片/粒子
+[ ] 是斜轴排布，**不是平铺网格**
+[ ] 进一步的照片有明确景深（更小、更暗）
 [ ] 黑场足够干净
 [ ] 导航不喧宾夺主
-[ ] 日期/标题足够克制
-[ ] 鼠标移动有反馈
+[ ] 一次只有一张是焦点，且无歧义
+[ ] 拖拽 / 滚轮 / 方向键都能沿轴移动
+[ ] 点击进入有镜头推进，不是硬切
+[ ] 空态安静，不显示"暂无内容"
 [ ] 不出现模板感
 
 ## C. Particle Engine
@@ -53,13 +59,15 @@
 [ ] WebGL fallback
 [ ] 没有大规模 DOM 粒子
 
-## D. Memory Field
+## D. 原图 ⇄ 粒子
 
-[ ] 不是图片网格
-[ ] 节点有空间感
-[ ] Hover 有信息
-[ ] Click 能进入 Memory Theater
-[ ] 节点数量增加时仍可探索
+[ ] 进入照片默认是**清晰可辨认的原图**
+[ ] 点 View Memory 后切到粒子，1200ms 内完成
+[ ] **中间态不像叠了两张图** —— 粒子在中途才成形
+[ ] 可手动切换
+[ ] 切换可打断、可逆
+[ ] Conversation / Journal 不触发切换
+[ ] 每次进入都是原图（状态不持久化）
 
 ## E. Memory Theater
 
@@ -78,13 +86,19 @@
 [ ] 文字进入自然
 [ ] AI 生成的内容有事实边界
 
-## G. Conversation
+## G. Conversation 与字幕
 
+[ ] 上传后 AI **必有反应**，不沉默
+[ ] 字幕最多两句
+[ ] 字幕不以气泡呈现，像电影字幕
+[ ] 展开对话后，字幕就是第一条
+[ ] 看不懂时会**提问**，不是硬猜
+[ ] **不出现对每张照片都成立的空话**（"这是一张很棒的照片"）
 [ ] 不像普通 ChatGPT
-[ ] 当前 Memory 始终可感知
-[ ] AI 输出简洁
+[ ] 当前照片始终可感知
+[ ] 对话不改变原图/粒子模式
 [ ] 不确定内容标明来源
-[ ] 可以生成 Journal
+[ ] 可以生成 Journal，但**不自动生成**
 [ ] 陪伴语气温柔克制（无 emoji、无感叹号、不说教）
 [ ] 没有排他性语言与依赖诱导
 [ ] 用户否认情绪推测后立刻收回
@@ -92,13 +106,17 @@
 
 ## H. Data
 
-[ ] Create Memory
-[ ] Upload
+[ ] 上传生成 Photo（**不是先建 Memory**）
+[ ] 分组是可选的，不分组不影响任何功能
+[ ] 一张照片可以属于多个分组
+[ ] 删除分组**不删照片**
 [ ] Save
 [ ] Reload
-[ ] Edit
-[ ] Delete
-[ ] Derived assets clean up
+[ ] Edit（caption / favorite / takenAt）
+[ ] Delete（先删文件再删记录，见 `08-DATA_API_SPEC.md` §16）
+[ ] 文件删除失败时保留记录并报「未完成」
+[ ] 派生资源清理干净，不留孤儿
+[ ] 数据全部落在 `SN_DATA_DIR` 内
 
 ## I. AI
 
@@ -109,6 +127,10 @@
 [ ] Timeout handled
 [ ] Retry controlled
 [ ] Prompt injection handled
+[ ] 上传即触发，不阻塞上传响应
+[ ] 轮询超时后标记 failed 并允许手动重试
+[ ] 自动分析可关闭，关闭后照片不会被发给模型
+[ ] 界面明确告知照片会被发给模型
 
 ## J. Mobile
 
@@ -170,35 +192,37 @@
 完整走通：
 
 ```text
-Open
+打开（Album，斜轴）
 ↓
-Create
+拖入一张照片
 ↓
-Upload
+照片以原图出现（不等网络）
 ↓
-Photo → Particle
+字幕浮现（AI 说的第一句话）
 ↓
-Interact
+回一句，AI 接住
 ↓
-Morph
+收藏
 ↓
-Memory Field
+回 Album，照片在轴上
 ↓
-Memory Theater
+拖拽沿轴走到另一张
 ↓
-Story
+点击 → 相机推进
 ↓
-Conversation
+Photo View（原图）
 ↓
-Generate Journal
+点 View Memory → 变粒子
 ↓
-Read Journal
+拖拽旋转
 ↓
-Save
+整理成日志
 ↓
-Reload
+读日志
 ↓
-Reopen
+返回 Album
+↓
+刷新 → 数据仍在
 ```
 
 ## P. Final Visual Question

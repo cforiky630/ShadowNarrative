@@ -1,61 +1,18 @@
 # Shadow Narrative — UI & Page Specifications
 
-## 1. Memory Space
+## 1. 本文档的边界
 
-### 目标
+| 内容 | 在哪 |
+|---|---|
+| **Album / Library / Photo View / 原图⇄粒子 / 镜头编排** | `16-ALBUM_SPACE.md` |
+| 粒度更细的页面状态：粒子态、控制面板、对话、日志、Theater、移动端 | **本文档** |
 
-让用户第一次进入就看到“记忆由粒子组成”的核心体验。
-
-### Desktop Composition
-
-```text
-┌───────────────────────────────────────────────┐
-│ MEMORY                         Memories Journal│
-│                                      Create   │
-│                                               │
-│                                               │
-│               PARTICLE PHOTO                  │
-│                                               │
-│                                               │
-│                    毛毛                       │
-│                2025 · 09 · 28                 │
-│                                               │
-│                 View Memory →                 │
-└───────────────────────────────────────────────┘
-```
-
-### 必须
-
-- 大面积黑场
-- 粒子照片居中
-- 导航低存在感
-- 当前 Memory 信息简洁
-- 不能出现传统 hero 卡片
-
-### 尺寸与透明度（定稿值）
-
-基准视口 1440×900（`02-DESIGN_SYSTEM.md` §16）。字号 token 见该文档 §4。
-
-```text
-MEMORY 标识       顶部 32px  ·  左边距 48px  ·  text-micro  ·  opacity 0.55
-顶部导航项        顶部 32px  ·  右边距 48px  ·  text-micro  ·  opacity 0.40
-                                                             hover/focus → 0.85
-粒子照片主视觉     画面高度 55–65%  ·  水平居中  ·  垂直偏上 4%
-日期              照片下 24px  ·  text-meta  ·  opacity 0.55
-标题              日期下 8px   ·  text-title ·  opacity 0.95
-View Memory →     标题下 24px  ·  text-meta  ·  opacity 0.45 → hover 0.90
-```
-
-### 「低存在感」的量化定义
-
-- 非交互态 opacity **≤ 0.55**
-- 交互态（hover / focus）opacity **≤ 0.90**
-- 任何**常驻** UI 元素的 opacity 不得超过 **0.60**，否则会与粒子抢视觉焦点
-- 不出现卡片边框、投影、背景色块
-
-这条量化定义同时适用于 `02-DESIGN_SYSTEM.md` §12 的导航与 §13 的 Controls。
+原版本里定义的「Memory Space」与「Memory Field」两个页面**已废弃**：
+前者被 Album 取代，后者与斜轴相册 + Library 功能重复（见 `01-PRODUCT_SPEC.md` §5）。
 
 ## 2. Photo Particle State
+
+照片粒子化后的状态。
 
 默认：
 
@@ -96,40 +53,60 @@ Focus：
 - Preset
 - Reset
 
-## 4. Memory Field
+## 4. Conversation
 
-不是图片网格。
+展开后在照片下方出现，**不跳转到另一个页面**（`16-ALBUM_SPACE.md` §9）。
 
-视觉：
+### 第一行是字幕
 
-黑场 + 少量记忆节点。
+AI 看到照片后说的第一句话（`09-AI_SPEC.md` §21），视觉上仍然是字幕的样式。
 
-节点位置可以基于：
+### 之后的对话
 
-- 时间
-- 主题
-- 关联
-- 手工位置
+- 不用气泡框（`02-DESIGN_SYSTEM.md` §14）
+- 极简文本流，低存在感
+- 输入框在底部
 
-但不要做成复杂可视化图表。
+### 至少允许
 
-### Hover
+- 提问
+- 追问
+- "整理成日志"
+- "补充这段记忆"
+- "查看 AI 推测来源"
+- 倾听与陪伴式回应
+- "先不聊"的退出方式
 
-节点亮起。
+语气与边界遵守 `09-AI_SPEC.md`：温柔、克制、简短，不使用 emoji 与感叹号，不制造依赖。
 
-显示：
+**对话不改变显示模式。** 从对话进出的过程中，照片该是原图还是粒子保持不变
+（`16-ALBUM_SPACE.md` §8.3）—— 读字的场景不该被切换动画打断。
+
+## 5. Journal
+
+正文阅读宽度：400–600px。
+
+布局：
 
 ```text
-Title
-Date
-small preview
+2025 / 09 / 28
+
+那天晚上很安静。
+……
+
 ```
 
-### Click
+正文大留白。
 
-Node Focus → Memory Theater。
+背景粒子极弱。
 
-## 5. Memory Theater
+### 生成
+
+**只由用户主动触发**（`01-PRODUCT_SPEC.md` §9）。AI 不自动写日志。
+
+## 6. Memory Theater
+
+一条分组的完整故事。
 
 ### Header
 
@@ -147,7 +124,7 @@ Node Focus → Memory Theater。
 
 `View Story →`
 
-## 6. Story
+## 7. Story
 
 Story 使用 Scene。
 
@@ -160,84 +137,58 @@ Story 使用 Scene。
 
 滚动驱动 scene progress。
 
-## 7. Journal
+## 8. 上传
 
-阅读宽度：400–600px。
+上传发生在 Album（`16-ALBUM_SPACE.md` §5）。本节只规定上传本身的界面。
 
-布局：
+### 不应该成为普通表单页
+
+拖入图片 / 点击选择 → 图片出现 → 粒子化 → 完。
+
+**不要求用户填任何东西。** 时间从 EXIF 读，读不到就用当前时间；
+文字说明以后想写再写。
+
+### 上传后立刻发生
 
 ```text
-2025 / 09 / 28
-
-毛毛
-
-那天晚上很安静。
-毛毛趴在窗边……
+照片以原图出现
+    ↓（不等待网络）
+后台落库
+    ↓
+后台发给 AI
+    ↓
+字幕浮现
 ```
 
-正文大留白。
+见 `08-DATA_API_SPEC.md` §6 与 §10。
 
-背景粒子极弱。
+### 状态
 
-## 8. Memory Conversation
+上传过程中显示粒子加载状态，不用大号 spinner（`02-DESIGN_SYSTEM.md` §15）。
 
-UI：
-
-照片/粒子为背景。
-
-对话文字以漂浮/简洁 panel 表达。
-
-避免传统大量 chat bubbles。
-
-至少允许：
-
-- 提问
-- 追问
-- “整理成日记”
-- “补充这段记忆”
-- “查看 AI 推测来源”
-- 倾听与陪伴式回应
-- “先不聊”的退出方式
-
-语气与边界遵守 `09-AI_SPEC.md`：温柔、克制、简短，不使用 emoji 与感叹号，不制造依赖。
-
-陪伴不能让对话面板抢走画面。照片与粒子始终是背景主体。
-
-## 9. Create
-
-Create 不应该成为普通表单页。
-
-建议：
-
-进入黑色空间 → 拖入图片/点击选择 → 图片出现 → 粒子化 → 询问信息。
-
-信息输入应逐步出现，而不是表单一次全部铺开。
-
-## 10. Photo Upload
-
-支持：
-
-- drag/drop
-- file picker
-- mobile camera/album
-
-上传过程中显示粒子加载状态。
-
-## 11. Mobile
+## 9. Mobile
 
 底部：
 
 ```text
-Memory | Journal | Create
+Album | Library | 上传
 ```
 
 主视觉区域保留足够高度。
 
 Controls 改成底部 sheet。
 
-## 12. States
+### 斜轴相册在移动端
 
-每页至少考虑：
+- 单指沿轴滑动
+- 双指捏合缩放
+- 点击进入
+
+**拖入文件在移动端不可用**，必须有点击选择的入口。
+
+## 10. States
+
+每个状态至少考虑：
 
 - default
 - loading
