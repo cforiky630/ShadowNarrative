@@ -40,6 +40,7 @@ import {
 import {
   TIER_ORDER,
   TIER_SPECS,
+  type DisplayMode,
   type ParticleParams,
   type PerformanceTier,
 } from "@/types";
@@ -72,14 +73,19 @@ const CAMERA_FOV = 30;
 const FIT_PADDING = 1.18;
 
 /**
- * 显示模式。
+ * 专注模式的推近比例。
  *
- * 规格：`16-ALBUM_SPACE.md` §8
- *
- * 进入照片时默认 `photo`（清晰的原图），点 View Memory 才切到 `particle`。
- * 状态**不持久化** —— 每次进入都是原图，这样粒子的第一次出现才有分量。
+ * 点「翻开这一天」之后相机推近到 fitDistance 的这个倍数。
+ * 用户 2026-10-09 的要求是「类似专注模式，主体稍微放大一点」——
+ * 所以幅度刻意小（12%），是"近了一点"而不是"推上去"。
  */
-export type DisplayMode = "photo" | "particle";
+const FOCUS_ZOOM = 0.88;
+
+/**
+ * 显示模式的定义在 `@/types`（`16-ALBUM_SPACE.md` §8）。
+ * 这里转出去，是为了让只关心引擎的调用方不必多引一个模块。
+ */
+export type { DisplayMode };
 
 export interface EngineStats {
   fps: number;
@@ -988,6 +994,17 @@ export class ParticleSystem {
     if (options?.immediate) {
       proxy.dissolve = toParticle ? 1 : 0;
       apply();
+      // 相机也直接到位
+      if (this.camera) {
+        const target =
+          this.controls?.target ?? new Vector3(0, this.targetY, 0);
+        const dir = this.camera.position.clone().sub(target);
+        if (dir.lengthSq() < 1e-8) dir.set(0, 0, 1);
+        dir
+          .normalize()
+          .multiplyScalar(this.fitDistance * (toParticle ? FOCUS_ZOOM : 1));
+        this.camera.position.copy(target).add(dir);
+      }
       if (this.quad) this.quad.visible = proxy.dissolve < 0.999;
       return;
     }
@@ -996,8 +1013,13 @@ export class ParticleSystem {
     // 反方向一启动就要重新挂上。
     if (this.quad) this.quad.visible = true;
 
-    // 切回原图时如果视角是歪的，把它带回来。直接跳回去太生硬。
-    if (!toParticle && !this.isFrontView()) {
+    // 相机：
+    //   去粒子 → 专注模式，沿视线推近一点
+    //   回原图 → 带回正视角，同时撤销推近
+    // 回原图这条**无论之前有没有转过都要调** —— 否则推近过的距离不会还原。
+    if (toParticle) {
+      this.dollyIn();
+    } else {
       this.returnToFront();
     }
 
@@ -1009,6 +1031,43 @@ export class ParticleSystem {
       onUpdate: apply,
       onComplete: () => {
         if (this.quad) this.quad.visible = proxy.dissolve < 0.999;
+      },
+    });
+  }
+
+  /**
+   * 专注模式：沿当前视线方向推近一点（`FOCUS_ZOOM`）。
+   *
+   * 幅度刻意小 —— 用户要的是「主体稍微放大一点」，不是推上去。
+   * 与溶解共用时长与缓动，两者同步完成。
+   */
+  private dollyIn(): void {
+    const cam = this.camera;
+    const controls = this.controls;
+    if (!cam) return;
+
+    // 补间期间夺走控制权，否则 OrbitControls 的阻尼会和它打架
+    if (controls) controls.enabled = false;
+
+    const target = (controls?.target ?? new Vector3(0, this.targetY, 0)).clone();
+    const dir = cam.position.clone().sub(target);
+    if (dir.lengthSq() < 1e-8) dir.set(0, 0, 1);
+    dir.normalize().multiplyScalar(this.fitDistance * FOCUS_ZOOM);
+    const to = target.clone().add(dir);
+
+    const from = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
+    ensureGsap().to(from, {
+      x: to.x,
+      y: to.y,
+      z: to.z,
+      duration: DUR.morph,
+      ease: EASE.morph,
+      onUpdate: () => cam.position.set(from.x, from.y, from.z),
+      onComplete: () => {
+        if (controls) {
+          controls.enabled = true;
+          controls.update();
+        }
       },
     });
   }

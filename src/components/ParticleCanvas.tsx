@@ -56,6 +56,7 @@ export function ParticleCanvas({
   const tier = useExperience(selectEffectiveTier);
   const tierOverride = useExperience((s) => s.tierOverride);
   const reducedMotion = useExperience((s) => s.reducedMotion);
+  const displayMode = useExperience((s) => s.displayMode);
   const setTier = useExperience((s) => s.setTier);
 
   // 回调放进 ref，既能拿到最新的，又不会因为它们变化而重建引擎。
@@ -146,6 +147,14 @@ export function ParticleCanvas({
     if (!engine || !ready) return;
     if (engine.currentTier !== tier) engine.setTier(tier);
   }, [tier, ready, tierOverride]);
+
+  // --- 模式下发（原图 ⇄ 粒子）---
+  // 引擎自己会判重，模式没变就不播动画；所以初次挂载不会有多余的过渡。
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !ready) return;
+    if (engine.currentMode !== displayMode) engine.setMode(displayMode);
+  }, [displayMode, ready]);
 
   // --- 无障碍：跟随系统 reduced motion ---
   useEffect(() => {

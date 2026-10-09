@@ -10,10 +10,8 @@ import { ParticleControls } from "@/components/ParticleControls";
 import { DebugOverlay } from "@/components/DebugOverlay";
 import { SAMPLE_MEMORY } from "@/lib/sampleMemory";
 import type { MemorySummary } from "@/services/memoryService";
-import type {
-  DisplayMode,
-  EngineStats,
-} from "@/engine/particle/ParticleSystem";
+import type { EngineStats } from "@/engine/particle/ParticleSystem";
+import { useExperience } from "@/store/experience";
 
 /**
  * Memory Space —— 首页的客户端部分。
@@ -53,10 +51,15 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
   /**
    * 显示模式。
    *
-   * 进入照片默认**原图**（`16-ALBUM_SPACE.md` §8.1），点 View Memory 才切粒子。
+   * 进入照片默认**原图**（`16-ALBUM_SPACE.md` §8.1），点「翻开这一天」才切粒子。
    * 状态不持久化 —— 每次进入都是原图，这样粒子的第一次出现才有分量。
    */
-  const [displayMode, setDisplayMode] = useState<DisplayMode>("photo");
+  const displayMode = useExperience((s) => s.displayMode);
+  const setDisplayMode = useExperience((s) => s.setDisplayMode);
+  // 每次进入照片都从原图开始（§8.1：状态不持久化）
+  useEffect(() => {
+    setDisplayMode("photo");
+  }, [setDisplayMode]);
 
   /**
    * 记住「画布上现在显示的是哪张图」。
@@ -177,12 +180,16 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
         throw new Error(body?.error?.message ?? "删除失败");
       }
 
+      // 先直接回到原图，**不播过渡** —— 接下来要换图，
+      // 让模式过渡和换图同时发生会互相打架（旧图会先溶解一遍）
+      canvasRef.current?.setMode("photo", { immediate: true });
+      setDisplayMode("photo");
+
       // 画布回到内置示例 —— 不能留着一张已经不在数据库里的照片
       const sampleRes = await fetch(SAMPLE_MEMORY.imageUrl);
       const bitmap = await createImageBitmap(await sampleRes.blob());
       loadedUrlRef.current = SAMPLE_MEMORY.imageUrl;
       await canvasRef.current?.setImage(bitmap);
-      setDisplayMode("photo");
 
       setConfirmDelete(false);
       router.refresh();
@@ -192,25 +199,22 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
     } finally {
       setBusy(false);
     }
-  }, [memory, router]);
+  }, [memory, router, setDisplayMode]);
 
   const onViewChange = useCallback((isRotated: boolean) => {
     setRotated(isRotated);
   }, []);
 
-  /** 切换原图 / 粒子。 */
-  const toggleMode = useCallback(() => {
-    const next: DisplayMode = displayMode === "photo" ? "particle" : "photo";
-    setDisplayMode(next);
-    canvasRef.current?.setMode(next);
-  }, [displayMode]);
-
-  /** View Memory：自动切到粒子（`16-ALBUM_SPACE.md` §8.3）。已在粒子态则无操作。 */
+  /**
+   * 翻开这一天：溶解 + 专注推近（`16-ALBUM_SPACE.md` §8.3、§8.5）。
+   *
+   * **没有手动切回的入口** —— 出口是左上角的「返回」（§8.6）。
+   * 把这件事做成一个双向开关，就把它说成了显示选项，
+   * 而它其实是一次关于记忆的动作（§8.4）。
+   */
   const enterParticle = useCallback(() => {
-    if (displayMode === "particle") return;
     setDisplayMode("particle");
-    canvasRef.current?.setMode("particle");
-  }, [displayMode]);
+  }, [setDisplayMode]);
 
   if (unsupported) {
     return (
@@ -255,27 +259,22 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
         <p className="text-meta text-text-primary/55">{date}</p>
         <h1 className="text-title mt-2 text-text-primary/95">{title}</h1>
 
-        <div className="pointer-events-auto mt-6 flex items-baseline gap-6">
-          <button
-            type="button"
-            onClick={enterParticle}
-            className="text-meta text-text-primary/45 transition-opacity duration-[350ms] hover:opacity-90 focus-visible:opacity-90"
-            style={{ transitionTimingFunction: "var(--ease-enter)" }}
-          >
-            翻开这一天
-          </button>
-
-          {/* 手动切换。低存在感 —— 主操作是 View Memory，这个是补充路径。 */}
-          <button
-            type="button"
-            onClick={toggleMode}
-            aria-label={displayMode === "photo" ? "切换到粒子" : "切换到原图"}
-            className="text-micro text-text-primary/30 transition-opacity duration-[350ms] hover:opacity-70 focus-visible:opacity-70"
-            style={{ transitionTimingFunction: "var(--ease-enter)" }}
-          >
-            {displayMode === "photo" ? "粒子" : "原图"}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={enterParticle}
+          aria-hidden={displayMode === "particle"}
+          tabIndex={displayMode === "particle" ? -1 : 0}
+          className="text-meta pointer-events-auto mt-6 text-text-primary/45 hover:opacity-90 focus-visible:opacity-90"
+          style={{
+            // 与溶解同一条缓动和时长，让它的退场成为镜头的一部分
+            // 而不是控件突然消失（16-ALBUM_SPACE.md §8.6）
+            opacity: displayMode === "photo" ? 1 : 0,
+            transition: "opacity var(--duration-morph) var(--ease-morph)",
+            pointerEvents: displayMode === "photo" ? "auto" : "none",
+          }}
+        >
+          翻开这一天
+        </button>
       </div>
 
       {/* 左下角：旋转提示 / 复位 / 删除 / 状态。

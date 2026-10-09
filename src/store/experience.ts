@@ -14,6 +14,7 @@ import {
   PARTICLE_PRESETS,
   TIER_ORDER,
   TIER_SPECS,
+  type DisplayMode,
   type ExperienceMode,
   type Memory,
   type ParticleParams,
@@ -59,6 +60,16 @@ interface ExperienceState {
   tierPinnedByUser: boolean;
   setTier: (tier: PerformanceTier, byUser?: boolean) => void;
   setTierOverride: (tier: PerformanceTier | null) => void;
+
+  // --- 显示模式 ---
+  /**
+   * 原图 ⇄ 粒子（`16-ALBUM_SPACE.md` §8）。
+   *
+   * 状态不持久化 —— 每次进入照片都是 `photo`，由 MemorySpace 挂载时重置。
+   * 放在全局是因为左上角的「返回」在 TopNavigation 里。
+   */
+  displayMode: DisplayMode;
+  setDisplayMode: (mode: DisplayMode) => void;
 
   // --- 无障碍 ---
   reducedMotion: boolean;
@@ -112,6 +123,9 @@ export const useExperience = create<ExperienceState>((set, get) => ({
 
   reducedMotion: false,
   setReducedMotion: (reducedMotion) => set({ reducedMotion }),
+
+  displayMode: "photo",
+  setDisplayMode: (displayMode) => set({ displayMode }),
 
   ui: { controlsOpen: false, debugOpen: false },
   setControlsOpen: (controlsOpen) =>
