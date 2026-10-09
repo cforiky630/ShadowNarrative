@@ -119,13 +119,22 @@
 [ ] Particle density adaptive
 [ ] Text not cut off
 
-## K. Performance
+## K. Performance & Device Adaptation
 
-[ ] Desktop target near 60 FPS
-[ ] Mobile target 30–60 FPS where hardware allows
+档位矩阵与阈值见 `15-DEVICE_ADAPTATION.md`。
+
+[ ] 三层探测生效：L1 静态特征 / L2 启动微基准 / L3 运行时监测
+[ ] 自动降档只降不升，无抖动循环
+[ ] 手动选过档位后自动降档关闭
+[ ] `?tier=` / `?dpr=` / `?post=` 强制参数可用（开发模式）
+[ ] 降级顺序符合 `15` §5，未出现被禁止的顺序
+[ ] Low 与 Minimal 档下照片仍可识别
+[ ] Low 与 Minimal 档下指针仍有反馈
+[ ] Low 与 Minimal 档下转场仍不是 fade
+[ ] 后台标签停止 RAF，回前台无首帧卡顿
+[ ] WebGL context lost 后能恢复，不显示黑屏
+[ ] 无 WebGL2 时安静降级为静态浏览，不显示错误文案
 [ ] DPR capped/adaptive
-[ ] particle tier works
-[ ] hidden tab reduces expensive work
 [ ] large images do not lock UI
 
 ## L. Accessibility

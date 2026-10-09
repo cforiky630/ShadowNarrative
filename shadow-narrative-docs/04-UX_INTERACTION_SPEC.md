@@ -68,6 +68,27 @@ CONVERSATION
 
 默认行为：柔和 repel + mild turbulence。
 
+### 默认参数（定稿值）
+
+```text
+mouseRadius   = 0.22     归一化坐标，约屏幕短边 22%
+mouseForce    = 0.35
+falloff       = 1 - smoothstep(0, radius, r)
+turbulence    = 0.12     常驻弱湍流，非指针触发
+damping       = 高
+```
+
+指针场在顶点着色器内实现，**无状态**。指针连续移动时粒子平滑进退，满足「不跳变」。
+
+允许用户通过粒子控制面板调整 `mouseRadius` 与 `mouseForce`，范围：
+
+```text
+mouseRadius   0.05 – 0.50
+mouseForce    0.00 – 1.00
+```
+
+实现细节见 `06-PARTICLE_ENGINE.md` §8。
+
 ## 6. Click Rules
 
 点击照片：进入 Focus。
@@ -114,6 +135,16 @@ Space     允许暂停/继续可暂停动画
 
 ## 11. Transition Rules
 
+时长使用 `02-DESIGN_SYSTEM.md` §9 的 motion token，缓动用 `--ease-morph`。
+
+| 转场 | 机制 | 时长 | token |
+|---|---|---|---|
+| Photo → Photo | Particle Morph（六阶段，见 `06-PARTICLE_ENGINE.md` §12） | 1200ms | `--duration-morph` |
+| Field → Theater | Node Focus → particle converge → Theater | 800ms | `--duration-scene` |
+| Theater → Journal | 背景粒子减弱，文字层级增强 | 800ms | `--duration-scene` |
+| Journal → Conversation | 文字空间保持，加入当前 Memory 的视觉源 | 350ms | `--duration-ui` |
+| Conversation → Theater | AI 对话退到背景，照片重新成为主体 | 350ms | `--duration-ui` |
+
 ### Photo → Photo
 
 Particle Morph。
@@ -133,6 +164,12 @@ Node Focus → particle converge → Theater。
 ### Conversation → Theater
 
 AI 对话退到背景，照片重新成为主体。
+
+### 降级档位下的转场
+
+Low / Minimal 档或 `prefers-reduced-motion` 时，`Photo → Photo` 缩短到 **600ms**，
+且跳过 z excursion 与 FREE 阶段，但**必须保留粒子位置插值**，不得退化成 fade。
+详见 `06-PARTICLE_ENGINE.md` §12 与 `15-DEVICE_ADAPTATION.md` §5。
 
 ## 12. Loading Interaction
 

@@ -62,19 +62,28 @@
 只专注：
 
 - image loading
-- sampling
+- sampling（`06-PARTICLE_ENGINE.md` §5–6 的分层逆变换采样）
 - buffer
 - shader
 - points
-- mouse field
-- recovery
-- performance tiers
+- mouse field（`06` §8 的默认参数）
+- recovery（`06` §10 的指数平滑）
+- performance tiers（`15-DEVICE_ADAPTATION.md` 的三层探测）
 
-必须完成一个独立 Particle Demo。
+必须完成一个独立 Particle Demo，路由 `/dev/particle`。
+
+Demo 必须包含：
+
+- 上传任意照片 → 实时粒子化
+- 粒子控制面板（`06` §17）
+- Debug overlay（`06` §19）
+- **强制档位参数 `?tier=` / `?dpr=` / `?post=`**（`15` §9）
 
 验收：
 
 一张真实图片可以变成粒子，并可互动。
+
+**照片必须仍可识别**（`06` §25），且在 Minimal 档下也成立。
 
 ## Round 3 — Morph + Memory Space
 
@@ -126,18 +135,24 @@ AI 的陪伴语气符合 `09-AI_SPEC.md` 第 3–5 节（温柔、简短、有�
 
 完成：
 
-- database
+- database（PostgreSQL + Prisma，schema 见 `08-DATA_API_SPEC.md` §2）
 - storage
 - media persistence
 - memory CRUD
 - diary CRUD
 - conversations
-- AI image understanding
+- AI image understanding（DeepSeek V4.1-Flash，见 `09-AI_SPEC.md` §20）
 - AI diary generation
+
+可选（真要用 HEIC / RAW / 聚类时再做）：
+
+- Python 图像服务（`05-TECH_ARCHITECTURE.md` §7 的服务边界）
 
 验收：
 
 刷新后数据还在。
+
+所有 API 走 `08` §3 的 ownership 校验，返回 404 而非 403。
 
 ## Round 7 — Mobile + Performance
 

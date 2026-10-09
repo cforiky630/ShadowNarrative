@@ -64,6 +64,7 @@
 12-SECURITY_PRIVACY.md
 13-DEPLOYMENT.md
 14-QA_ACCEPTANCE.md
+15-DEVICE_ADAPTATION.md
 ```
 
 ## 3. 读取规则
@@ -74,6 +75,7 @@
    - `00-MASTER_README.md` 的原始愿景约束
    - `02-DESIGN_SYSTEM.md` 的视觉规则
    - `06-PARTICLE_ENGINE.md` 的粒子核心规则
+   - `15-DEVICE_ADAPTATION.md` 的性能与降级策略
    - `07-UI_PAGE_SPECS.md` 的页面规则
    - 其他工程实现规则
 4. 如果技术实现与视觉体验冲突，优先保护视觉体验，但不得以明显性能崩溃为代价。
@@ -97,22 +99,23 @@
 | 12 | 安全、隐私、上传与 AI 风险 |
 | 13 | 本地、预览、生产部署与环境变量 |
 | 14 | 最终完整验收清单 |
+| 15 | 设备能力探测、性能档位矩阵与降级策略 |
 
 ## 5. 默认技术决策
 
 默认采用：
 
-- Next.js
-- React
-- TypeScript
-- Three.js / React Three Fiber
+- Next.js 16 + React 19
+- TypeScript strict
+- **Three.js（原生，不用 React Three Fiber）** —— 理由见 `05-TECH_ARCHITECTURE.md` §18
 - WebGL Shader
 - Zustand
 - Motion for React
 - shadcn/ui
-- Tailwind CSS 或 CSS Modules
-- PostgreSQL + Prisma（后端需要持久化时）
+- Tailwind CSS 4
+- PostgreSQL + Prisma
 - S3 兼容对象存储（生产图片存储）
+- **Python + FastAPI**（仅图像管线与本地 AI，见 `05-TECH_ARCHITECTURE.md` §2）
 
 如果项目已有成熟技术栈，Agent 可以保留现有技术，只要不破坏本项目的核心架构边界。
 

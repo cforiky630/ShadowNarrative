@@ -32,6 +32,29 @@
 - 当前 Memory 信息简洁
 - 不能出现传统 hero 卡片
 
+### 尺寸与透明度（定稿值）
+
+基准视口 1440×900（`02-DESIGN_SYSTEM.md` §16）。字号 token 见该文档 §4。
+
+```text
+MEMORY 标识       顶部 32px  ·  左边距 48px  ·  text-micro  ·  opacity 0.55
+顶部导航项        顶部 32px  ·  右边距 48px  ·  text-micro  ·  opacity 0.40
+                                                             hover/focus → 0.85
+粒子照片主视觉     画面高度 55–65%  ·  水平居中  ·  垂直偏上 4%
+日期              照片下 24px  ·  text-meta  ·  opacity 0.55
+标题              日期下 8px   ·  text-title ·  opacity 0.95
+View Memory →     标题下 24px  ·  text-meta  ·  opacity 0.45 → hover 0.90
+```
+
+### 「低存在感」的量化定义
+
+- 非交互态 opacity **≤ 0.55**
+- 交互态（hover / focus）opacity **≤ 0.90**
+- 任何**常驻** UI 元素的 opacity 不得超过 **0.60**，否则会与粒子抢视觉焦点
+- 不出现卡片边框、投影、背景色块
+
+这条量化定义同时适用于 `02-DESIGN_SYSTEM.md` §12 的导航与 §13 的 Controls。
+
 ## 2. Photo Particle State
 
 默认：

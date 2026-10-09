@@ -456,7 +456,80 @@ mock 样例集必须覆盖陪伴场景：
 
 > 如果这段回复被截图发出来，用户会觉得被陪伴，还是觉得被冒犯、被敷衍、或被推销？
 
-## 20. 与其他文档的关系
+## 20. Provider 落地（DeepSeek V4.1-Flash）
+
+### 模型
+
+```bash
+AI_PROVIDER=deepseek
+AI_MODEL=deepseek-flash        # DeepSeek-V4.1-Flash
+AI_BASE_URL=https://api.deepseek.com
+```
+
+- **支持视觉输入**。同厂的 `deepseek-v4-pro` **不支持**，不要用
+- 1M 上下文
+- 并发上限 2500（账号级）
+- 支持 thinking 与非 thinking 模式
+
+### 图像输入
+
+```json
+{
+  "type": "image_url",
+  "image_url": {
+    "url": "data:image/jpeg;base64,...",
+    "detail": "low"
+  }
+}
+```
+
+`detail` 取值：`low` / `high` / `original` / `auto`。
+
+**默认用 `low`**（降采样到 512×512，更快更便宜）。图像理解只需要判断「有什么人、
+在哪、什么氛围」，512×512 足够。只有用户明确要求辨认细节时才用 `high`。
+
+支持 JPEG / PNG / GIF / WebP。
+
+### 结构化输出
+
+```json
+{ "response_format": { "type": "json_object" } }
+```
+
+**两个必须遵守的约束**：
+
+1. prompt 里**必须出现 "json" 字样**，并给出目标格式的示例，否则模型可能不返回 JSON
+2. 官方明确说明「**偶尔会返回空内容**」
+
+因此所有用到 JSON mode 的调用（§8 图像理解、§12 日记生成）必须：
+
+```text
+1. max_tokens 设置合理，避免 JSON 被截断在中途
+2. 用 schema 校验（落地方式见 08-DATA_API_SPEC.md §8）
+3. 校验失败 → 重试 1 次
+4. 仍失败 → 返回 502，客户端降级文案，**不显示半截结果**
+```
+
+### 隐私字段
+
+调用时可传 `user_id`，用于账号侧的隔离与调度。
+
+**但它不是隐私边界** —— `user_id` 会进入服务商侧。传本地用户的随机 id，
+**不要传邮箱、设备号等可识别信息**（`12-SECURITY_PRIVACY.md` §5）。
+
+### 语气执行风险与对策
+
+LLM 天然会滑向「AI 朋友」腔。**仅靠 system prompt 不足以稳定执行 §3–§5 的规范**，
+必须叠加三层：
+
+1. §9–§10 的 prompt contract（已含正反例对照）
+2. **输出后过滤**：命中 emoji、`！`、排他性短语（「只有我懂你」「我一直都在等你」）
+   时重新生成或降级为简短回应
+3. §18 的 mock 样例集与 §19 的评估清单作为回归测试
+
+第 2 层是**硬性要求**，不是可选优化 —— 它是「温柔」这条产品底线最后的保障。
+
+## 21. 与其他文档的关系
 
 - 产品边界服从 `00-MASTER_README.md`：AI 不是主角
 - 视觉表现服从 `02-DESIGN_SYSTEM.md`：对话面板是 Glass UI，不是聊天窗口

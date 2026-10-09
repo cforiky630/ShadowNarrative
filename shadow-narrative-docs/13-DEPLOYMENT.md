@@ -2,14 +2,24 @@
 
 ## 1. Local Development
 
-建议：
-
 ```text
-Node.js LTS
-pnpm / npm
+Node.js LTS       实测 v24.18.0
+npm               实测 12.0.2（本机无 pnpm / yarn）
+PostgreSQL        实测 18.6，装在 E:\PostgreSQL\18\
+Python            实测 3.14.7（E:\miniconda3），配 uv 0.12.5
 ```
 
 具体版本以项目锁文件为准。
+
+⚠️ npm 12 起默认拦截依赖的 install scripts。批准方式见 `recon/environment.md` §6.2。
+
+### 数据库初始化
+
+```bash
+"E:\PostgreSQL\18\bin\psql.exe" -U postgres -h 127.0.0.1 -v pw=<密码> -f scripts/setup-db.sql
+```
+
+脚本创建 `shadow_narrative` 角色与同名数据库。
 
 ## 2. Commands
 
@@ -26,31 +36,56 @@ start
 
 lint
 
-test
+typecheck
+```
+
+`typecheck` → `tsc --noEmit`，CI 必须跑。
+
+Python 服务（Round 6 起）：
+
+```text
+python/ 目录下用 uv
+uv sync
+uv run uvicorn app.main:app --port 8000
 ```
 
 ## 3. Environment Variables
 
-至少规划：
+以下为**实际使用**的变量，与 `.env.example` 保持一致：
 
-```text
-DATABASE_URL=
-STORAGE_ENDPOINT=
-STORAGE_BUCKET=
-STORAGE_ACCESS_KEY=
-STORAGE_SECRET_KEY=
-AI_PROVIDER=
+```bash
+# 数据库
+DATABASE_URL="postgresql://shadow_narrative:<password>@localhost:5432/shadow_narrative"
+
+# AI（DeepSeek V4.1-Flash，支持视觉，见 09-AI_SPEC.md §20）
+AI_PROVIDER=deepseek
+AI_MODEL=deepseek-flash
+AI_BASE_URL=https://api.deepseek.com
 AI_API_KEY=
-NEXT_PUBLIC_APP_URL=
+
+# 应用
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
-具体变量按实际 provider 调整。
+对象存储相关变量（`STORAGE_ENDPOINT` / `STORAGE_BUCKET` / `STORAGE_ACCESS_KEY` /
+`STORAGE_SECRET_KEY`）在引入对象存储时再补。本地开发阶段用文件系统落盘。
+
+Python 图像服务（Round 6 起）：
+
+```bash
+IMAGE_SERVICE_URL=http://127.0.0.1:8000
+IMAGE_SERVICE_TOKEN=
+```
 
 禁止提交真实 secrets。
 
 提供：
 
-`.env.example`
+`.env.example`（入库，值为占位符）
+`.env.local`（**不入库**，`.gitignore` 已覆盖）
+
+**注意 `NEXT_PUBLIC_` 前缀**：只有这个前缀的变量会进入浏览器包。
+`AI_API_KEY` 绝不能带该前缀。
 
 ## 4. Storage
 

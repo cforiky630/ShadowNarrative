@@ -64,17 +64,23 @@ font-family:
   sans-serif;
 ```
 
-### 建议类型层级
+### 类型层级（定稿值）
+
+区间已收敛为单一取值。这些值同时定义在 `src/styles/tokens.css`，两处必须一致。
 
 ```text
-Display      48–72px / 0.95–1.05
-Title        28–44px / 1.1
-Body         16–20px / 1.6–1.8
-Meta         11–14px / 1.4
-Micro        10–12px / 1.3
+Display   64px / 1.00 / -0.02em / 300
+Title     36px / 1.10 / -0.01em / 400
+Body      18px / 1.70 /  0      / 400
+Meta      13px / 1.40 / +0.02em / 400
+Micro     11px / 1.30 / +0.08em / 400
 ```
 
-不是所有页面都必须使用这些上限。
+格式：`字号 / 行高 / 字距 / 字重`
+
+- Display 用 300 字重，是「克制」气质的主要来源
+- Micro 的字距 +0.08em 用于大写导航项（如 `MEMORIES` `JOURNAL`）
+- 不是所有页面都必须用到 Display 上限
 
 ### 日期
 
@@ -142,36 +148,50 @@ Blur 是氛围工具，不是装饰品。
 ### Micro
 
 ```text
-150–250ms
+200ms
 ```
 
 ### UI
 
 ```text
-250–450ms
+350ms
 ```
 
 ### Scene
 
 ```text
-600–1000ms
+800ms
 ```
 
 ### Particle Morph
 
 ```text
-800–1800ms
+1200ms
 ```
 
 ### Story
 
 ```text
-1000ms+
+1000ms
 ```
 
-这些是视觉建议，不是硬编码。
+这些值同时定义在 `src/styles/tokens.css`（`--duration-*`），两处必须一致。
 
-## 10. Motion Character
+## 10. Motion Easing & Character
+
+动效必须「慢、柔和、有惯性、有阻尼」——这要求缓动曲线本身是平滑收敛的，
+而不是线性或带回弹的。
+
+```text
+--ease-enter   cubic-bezier(0.16, 1, 0.30, 1)    柔和落定，无回弹
+--ease-exit    cubic-bezier(0.40, 0, 0.20, 1)    安静退场
+--ease-morph   cubic-bezier(0.65, 0, 0.35, 1)    对称，克制
+```
+
+- 元素**进入**用 `--ease-enter`
+- 元素**离开**用 `--ease-exit`
+- 粒子转场、场景切换用 `--ease-morph`
+- 不使用 `linear`，不使用任何 `elastic` / `back` 类回弹曲线
 
 动画需要：
 

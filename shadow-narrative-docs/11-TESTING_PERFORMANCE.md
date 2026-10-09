@@ -84,45 +84,68 @@ Create
 
 ## 5. Performance Goals
 
-Desktop：
+帧时间预算按**档位**定义，不按设备类型。完整矩阵见 `15-DEVICE_ADAPTATION.md` §4。
 
-目标 60 FPS。
+| 档位 | 目标帧时间 | 折算帧率 |
+|---|---|---|
+| Ultra | 16.7ms | 60 FPS |
+| High | 16.7ms | 60 FPS |
+| Medium | 22ms | ~45 FPS |
+| Low | 33ms | 30 FPS |
+| Minimal | 33ms | 30 FPS |
 
-Mobile：
-
-目标 30–60 FPS。
-
-不是要求所有设备都达到相同数字。
+不是要求所有设备都达到相同数字 —— 弱设备降档后达到本档预算即为通过。
 
 ## 6. Performance Degradation
 
 超过目标时优先降低：
 
-1. particle count
+1. 后处理
 2. DPR
-3. post-processing
-4. noise frequency
-5. render resolution
+3. particle count
+4. 采样分辨率
+5. 转场复杂度
+6. 退化为静态照片浏览
 
 不要首先删除核心交互。
+
+完整的降级顺序与**禁止的降级顺序**见 `15-DEVICE_ADAPTATION.md` §5。
 
 ## 7. Browser Matrix
 
 至少验证：
 
-- Chrome
-- Edge
-- Safari（macOS/iOS，如条件允许）
-- Firefox
+- Chrome（**主目标**）
+- Edge（**主目标**，与 Chrome 同源）
+- Firefox（尽力支持）
+- Safari 桌面（尽力支持）
+
+**iOS Safari 不在支持范围**，不需要为它做适配测试，见 `15-DEVICE_ADAPTATION.md` §1。
 
 ## 8. Device Matrix
 
-至少：
+档位矩阵与探测方法见 `15-DEVICE_ADAPTATION.md`。本节只定义**测试用**设备清单。
 
-- high-end desktop
-- normal laptop
-- modern iPhone/Android
-- low/medium mobile
+### 必须覆盖
+
+| 类别 | 具体目标 | 验证方式 |
+|---|---|---|
+| 高端桌面 | 本机（RTX 3060 + i7-12700H） | 真机 |
+| 集显笔记本 | Intel Iris Xe / UHD 620 | **需真机**，无法模拟 |
+| 中端 Android | 骁龙 7 系 / 天玑 8000 系 | **需真机**，无法模拟 |
+| 低端 Android | 骁龙 4 系或同级 | 可只验 Minimal 档保底 |
+
+### 没有真机时的替代手段（本机情况）
+
+| 手段 | 模拟什么 | 局限 |
+|---|---|---|
+| `?tier=low` 强制档位 | 各档视觉表现 | 不模拟真实 GPU 瓶颈 |
+| DevTools CPU 4x / 6x 节流 | 采样、Hilbert 排序等 CPU 阶段 | **不模拟 GPU 瓶颈** |
+| `?dpr=1` | 高 DPR 设备负载 | 同上 |
+| DevTools 设备工具栏 | 布局与触摸 | 不代表性能 |
+
+**替代手段不能替代真机。** 集显笔记本与中端 Android 的填充率、带宽瓶颈模拟不出来，
+因此上表「需真机」两项不可省略。
 
 ## 9. Error Tests
 
