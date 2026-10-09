@@ -1,5 +1,6 @@
+import { unlink } from "node:fs/promises";
 import { prisma } from "@/lib/prisma";
-import { saveUpload } from "./mediaService";
+import { resolveStoragePath, saveUpload } from "./mediaService";
 
 /**
  * Memory 领域服务。
@@ -140,4 +141,79 @@ export async function createMemoryWithPhoto(params: {
     await prisma.memory.delete({ where: { id: memory.id } }).catch(() => {});
     throw error;
   }
+}
+
+/** 删除时文件删不干净会抛这个，调用方应把它当作「未完成」而不是「已删除」。 */
+export class DeletionIncompleteError extends Error {
+  constructor(readonly failedKeys: string[]) {
+    super(`有 ${failedKeys.length} 个文件删除失败，已保留数据库记录以免产生孤儿文件`);
+    this.name = "DeletionIncompleteError";
+  }
+}
+
+/**
+ * 删除一条 Memory 及其全部资源。
+ *
+ * 规格：08-DATA_API_SPEC.md §15
+ *
+ * **两阶段，顺序不可交换：先删文件，再删记录。**
+ * 反过来的话，文件删除失败时记录已经没了，那些文件就再也没人知道该删 ——
+ * 成为永远查不到的孤儿。按现在的顺序，最坏情况是留下一条指向缺失文件的记录，
+ * 这是看得见、可修复的。
+ *
+ * 数据库侧靠 schema 的 onDelete: Cascade 带走 media / diary / conversation / preset。
+ */
+export async function deleteMemory(
+  userId: string,
+  memoryId: string,
+): Promise<boolean> {
+  // ownership 校验放进查询条件（08 §3）
+  const memory = await prisma.memory.findFirst({
+    where: { id: memoryId, userId },
+    select: {
+      id: true,
+      media: {
+        select: {
+          storageKey: true,
+          thumbnailKey: true,
+          mediumKey: true,
+          particleSourceKey: true,
+        },
+      },
+    },
+  });
+
+  if (!memory) return false; // 不存在或不属于当前用户，一律当作没找到
+
+  // --- 阶段一：删文件 ---
+  const keys: string[] = [];
+  for (const m of memory.media) {
+    for (const k of [
+      m.storageKey,
+      m.thumbnailKey,
+      m.mediumKey,
+      m.particleSourceKey,
+    ]) {
+      if (k) keys.push(k);
+    }
+  }
+
+  const failed: string[] = [];
+  for (const key of keys) {
+    try {
+      await unlink(resolveStoragePath(key));
+    } catch (err) {
+      // 文件本来就不在，不算失败 —— 目标状态已经达成
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") failed.push(key);
+    }
+  }
+
+  // 有文件没删掉就停在这里，不要往下删记录
+  if (failed.length > 0) {
+    throw new DeletionIncompleteError(failed);
+  }
+
+  // --- 阶段二：删记录（级联清理附属）---
+  await prisma.memory.delete({ where: { id: memoryId } });
+  return true;
 }

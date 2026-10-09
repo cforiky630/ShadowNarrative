@@ -45,6 +45,8 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** 删除是两步确认：第一次点击进入待确认，不弹模态框（07 §1 不要重 UI） */
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   /**
    * 记住「画布上现在显示的是哪张图」。
@@ -141,6 +143,47 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
     [router],
   );
 
+  // 进入待确认后 4 秒自动撤回，避免按钮一直停在危险状态
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const t = setTimeout(() => setConfirmDelete(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
+
+  /** 删除当前记忆。顺序由服务端保证：先删文件再删记录（08 §15）。 */
+  const handleDelete = useCallback(async () => {
+    if (!memory) return;
+    setBusy(true);
+    setNotice(null);
+
+    try {
+      const res = await fetch(`/api/memories/${memory.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(body?.error?.message ?? "删除失败");
+      }
+
+      // 画布回到内置示例 —— 不能留着一张已经不在数据库里的照片
+      const sampleRes = await fetch(SAMPLE_MEMORY.imageUrl);
+      const bitmap = await createImageBitmap(await sampleRes.blob());
+      loadedUrlRef.current = SAMPLE_MEMORY.imageUrl;
+      await canvasRef.current?.setImage(bitmap);
+      bitmap.close();
+
+      setConfirmDelete(false);
+      router.refresh();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "删除失败");
+      setConfirmDelete(false);
+    } finally {
+      setBusy(false);
+    }
+  }, [memory, router]);
+
   const onViewChange = useCallback((isRotated: boolean) => {
     setRotated(isRotated);
   }, []);
@@ -196,36 +239,61 @@ export function MemorySpace({ memory }: MemorySpaceProps) {
         </button>
       </div>
 
-      {/* 左下角：旋转提示 / 复位 / 上传状态 */}
+      {/* 左下角：旋转提示 / 复位 / 删除 / 状态。
+          删除放在这里而不是紧挨 View Memory → —— 主操作的旁边不该放破坏性动作。 */}
       <div className="text-micro absolute bottom-8 left-12 z-10 flex items-center gap-5">
-        {!rotated && !busy && !notice && (
-          <span className="pointer-events-none text-text-primary/25">
-            拖入照片 · 拖拽旋转
-          </span>
-        )}
-        {rotated && (
-          <button
-            type="button"
-            onClick={() => canvasRef.current?.resetView()}
-            className="text-text-primary/40 transition-opacity duration-[350ms] hover:opacity-85"
-            style={{ transitionTimingFunction: "var(--ease-enter)" }}
-          >
-            复位视角
-          </button>
-        )}
         {busy && (
           <span className="pointer-events-none text-text-primary/40">
-            保存中…
+            处理中…
           </span>
         )}
+
         {notice && (
           <button
             type="button"
             onClick={() => setNotice(null)}
-            className="text-text-primary/55 underline-offset-4 hover:underline"
+            className="text-text-primary/60 underline-offset-4 hover:underline"
           >
             {notice}
           </button>
+        )}
+
+        {!busy && !notice && (
+          <>
+            {rotated ? (
+              <button
+                type="button"
+                onClick={() => canvasRef.current?.resetView()}
+                className="text-text-primary/40 transition-opacity duration-[350ms] hover:opacity-85"
+                style={{ transitionTimingFunction: "var(--ease-enter)" }}
+              >
+                复位视角
+              </button>
+            ) : (
+              <span className="pointer-events-none text-text-primary/25">
+                拖入照片 · 拖拽旋转
+              </span>
+            )}
+
+            {hasRealMemory && memory && (
+              // 面板没有强调色，所以用「提亮」而非红色来表达危险：
+              // 深色背景上接近纯白是最抢眼的，这是这套配色表达「注意」的方式
+              <button
+                type="button"
+                onClick={
+                  confirmDelete ? handleDelete : () => setConfirmDelete(true)
+                }
+                aria-live={confirmDelete ? "polite" : undefined}
+                className="transition-opacity duration-[200ms]"
+                style={{
+                  opacity: confirmDelete ? 0.95 : 0.4,
+                  transitionTimingFunction: "var(--ease-enter)",
+                }}
+              >
+                {confirmDelete ? "确认删除？" : "删除"}
+              </button>
+            )}
+          </>
         )}
       </div>
 
