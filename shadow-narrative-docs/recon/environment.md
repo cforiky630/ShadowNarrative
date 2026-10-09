@@ -26,8 +26,22 @@
 | 认证方式 | `scram-sha-256`（全部连接，含 localhost） |
 | psql | `E:\PostgreSQL\18\bin\psql.exe`（**不在 PATH**） |
 | 项目库 | `shadow_narrative`，owner `shadow_narrative` |
+| 编码 / 时区 | UTF8 / Asia/Shanghai |
+| 监听范围 | ⚠️ `0.0.0.0:5432`（**监听所有网卡**，非仅 localhost） |
 
-初始化脚本：`scripts/setup-db.sql`
+初始化脚本：`scripts/setup-db.sql`（用 `-v pw=<密码>` 传参，不含明文密码）
+
+### ⚠️ 安全提示：监听范围 + 弱密码
+
+服务监听在 `0.0.0.0:5432`，即同一网络内任何机器都能尝试连接；而当前角色密码为
+弱密码。本地单人开发可接受，但若要降低风险，推荐把监听收窄到本机：
+
+```
+# E:\PostgreSQL\18\data\postgresql.conf
+listen_addresses = 'localhost'
+```
+
+改完重启 `postgresql-x64-18` 服务。这样即使密码简单，外部也无法连接。
 
 ## 3. 硬件
 
@@ -133,15 +147,14 @@ npm install-scripts approve prisma @prisma/engines
 
 | 检查项 | 结果 |
 |---|---|
-| `npm run dev` 启动 | 待验证（见 §8） |
+| `npm run dev` 启动 | ✅ 通过（HTTP 200，`.env.local` 已加载） |
 | `npm run build` | ✅ 通过 |
 | `npm run lint` | ✅ 通过 |
 | `npm run typecheck` | ✅ 通过 |
-| 数据库连接 | ⏳ 待 `scripts/setup-db.sql` 执行后验证 |
+| 数据库连接 | ✅ 通过（以 `shadow_narrative` 角色连上，UTF8） |
 | Chrome 指定独显 | ⏳ 需人工在 NVIDIA 控制面板设置 |
 
 ## 8. 待人工确认
 
-1. 执行 `scripts/setup-db.sql` 建库建角色
-2. NVIDIA 控制面板把 Chrome/Edge 指定为独显
-3. `npm run dev` 后浏览器打开 `localhost:3000` 确认页面正常
+1. NVIDIA 控制面板把 Chrome/Edge 指定为独显
+2. 可选：把 PostgreSQL 监听收窄到 localhost（见 §2 安全提示）
