@@ -1,0 +1,150 @@
+// Shadow Narrative — 数据库 schema
+//
+// 字段、索引、级联规则全部对应 shadow-narrative-docs/08-DATA_API_SPEC.md §2。
+// 改这里之前先改文档。
+//
+// 说明：所有实体从第一天就带 userId。产品当前是单用户，但已确认将来要做多用户，
+// 所以 schema 与 service 层一开始就按多租户写，只是暂不做登录 UI。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 起 datasource 不再接受 url —— 连接串移到 prisma.config.ts，
+// 运行时则通过 driver adapter 传给 PrismaClient。见 prisma.config.ts 的注释。
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String?  @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memories Memory[]
+
+  @@map("users")
+}
+
+model Memory {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title      String?
+  summary    String?
+  location   String?
+  memoryDate DateTime?
+
+  // 封面指向某条 MediaAsset。这里不建外键约束：封面与媒体互为引用，
+  // 建双向外键会让创建顺序变得很别扭。应用层保证一致性。
+  coverMediaId     String?
+  particlePresetId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  media          MediaAsset[]
+  diary          DiaryEntry[]
+  conversation   Conversation?
+  particlePreset ParticlePreset?
+
+  @@index([userId, memoryDate])
+  @@index([userId, updatedAt])
+  @@map("memories")
+}
+
+model MediaAsset {
+  id       String @id @default(cuid())
+  memoryId String
+  memory   Memory @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+
+  // 四个派生版本的存储键。local 阶段是相对 .data/uploads 的路径。
+  storageKey        String  @unique
+  thumbnailKey      String?
+  mediumKey         String?
+  particleSourceKey String?
+
+  mimeType String
+  width    Int
+  height   Int
+  byteSize Int
+  // 已剥离敏感字段的 EXIF 子集（08 §12：GPS 默认不写入）
+  metadataJson Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([memoryId])
+  @@map("media_assets")
+}
+
+model DiaryEntry {
+  id       String @id @default(cuid())
+  memoryId String
+  memory   Memory @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+
+  title  String?
+  content String
+  status String @default("draft") // draft | published
+  // 每次 AI 重写 +1，用于并发检测（08 §6）
+  sourceVersion Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([memoryId])
+  @@map("diary_entries")
+}
+
+model Conversation {
+  id       String @id @default(cuid())
+  // 一个 Memory 一段对话
+  memoryId String @unique
+  memory   Memory @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages ConversationMessage[]
+
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  role    String // user | assistant
+  content String
+  // 证据来源，见 09-AI_SPEC.md §6
+  sourceRefsJson Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+  @@map("conversation_messages")
+}
+
+model ParticlePreset {
+  id       String @id @default(cuid())
+  memoryId String @unique
+  memory   Memory @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+
+  name           String @default("Calm") // Calm | Breeze | Focus | Drift
+  density        Float
+  size           Float
+  motion         Float
+  turbulence     Float
+  mouseRadius    Float
+  mouseForce     Float
+  noiseSpeed     Float
+  colorVariation Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("particle_presets")
+}

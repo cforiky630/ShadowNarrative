@@ -45,6 +45,9 @@ yarn-error.log*
 /prisma/*.db
 /prisma/*.db-journal
 
+# 本地媒体存储（上传的原图）。生产环境应换成对象存储（08 §13）。
+/.data/
+
 # editors
 .idea/
 .vscode/*

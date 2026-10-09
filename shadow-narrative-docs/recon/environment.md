@@ -27,9 +27,12 @@
 | psql | `E:\PostgreSQL\18\bin\psql.exe`（**不在 PATH**） |
 | 项目库 | `shadow_narrative`，owner `shadow_narrative` |
 | 编码 / 时区 | UTF8 / Asia/Shanghai |
+| 角色权限 | `LOGIN` + **`CREATEDB`**（Prisma migrate 需要建影子库，见 §6.6） |
 | 监听范围 | ⚠️ `0.0.0.0:5432`（**监听所有网卡**，非仅 localhost） |
 
 初始化脚本：`scripts/setup-db.sql`（用 `-v pw=<密码>` 传参，不含明文密码）
+
+建表：`npx prisma migrate dev`。迁移文件在 `prisma/migrations/`。
 
 ### ⚠️ 安全提示：监听范围 + 弱密码
 
@@ -157,6 +160,63 @@ npm install-scripts approve prisma @prisma/engines
 报出一堆「不是内部或外部命令」，脚本整体跑飞。
 
 **规则：`.cmd` / `.bat` 只写 ASCII 注释。** 需要中文说明就放在同目录的 `.md` 里。
+
+### 6.6 Prisma 7 是破坏性版本，网上大部分示例都不能直接用
+
+本项目用 Prisma **7.10.0**，与 6.x 的写法差异很大。踩到的三处：
+
+**① `datasource` 不再接受 `url`**
+
+```
+Error code: P1012
+The datasource property `url` is no longer supported in schema files.
+```
+
+连接串移到 `prisma.config.ts`，运行时则通过 driver adapter 传给 PrismaClient：
+
+```ts
+// prisma.config.ts
+import { config } from "dotenv";
+import { defineConfig, env } from "prisma/config";
+config({ path: ".env.local" });   // Prisma 不自动读 .env.local
+export default defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: { path: "prisma/migrations" },
+  datasource: { url: env("DATABASE_URL") },
+});
+```
+
+```ts
+// src/lib/prisma.ts
+new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
+```
+
+需要 `@prisma/adapter-pg` + `pg`，两者版本必须与 `prisma` 对齐。
+
+**② migrate 需要建影子库的权限**
+
+```
+Error: P3014  Prisma Migrate could not create the shadow database.
+```
+
+`migrate dev` 会建一个临时库来校验迁移。应用角色默认没有建库权限，需要：
+
+```sql
+ALTER ROLE shadow_narrative CREATEDB;
+```
+
+**③ npm 12 会拦截 Prisma 的 install scripts**
+
+同 §6.2。不批准的话引擎二进制不会下载，migrate 会失败：
+
+```
+npm install-scripts approve prisma @prisma/engines
+```
+
+### 6.7 Prisma 不读 `.env.local`
+
+Prisma CLI 只自动加载 `.env`，而本项目统一用 `.env.local`（Next 也读它）。
+为了不维护两份配置，`prisma.config.ts` 里显式 `config({ path: ".env.local" })`。
 
 ## 7. 环境验证结果
 
