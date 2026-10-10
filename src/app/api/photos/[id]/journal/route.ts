@@ -1,6 +1,6 @@
 import { ApiError, failFrom, ok } from "@/lib/apiResponse";
 import { runJournalNote } from "@/services/aiService";
-import { canGenerateNote, getNote, saveNote } from "@/services/journalService";
+import { getNote, getNoteFacts, saveNote } from "@/services/journalService";
 import { getPhotoDetail } from "@/services/photoService";
 import { getLocalUserId } from "@/services/userService";
 
@@ -11,9 +11,12 @@ import { getLocalUserId } from "@/services/userService";
  * 而且它是**轻**的东西，所以这里没有标题、没有起草/定稿那层仪式。
  *
  * ⚠️ **GET 的 `data.note` 可以是 `null`** —— 那张照片还没有笔记。这不是错误，
- * 就像 `subtitle` 也可以是 null 一样。同一份 `data` 里带着 `canGenerate`：
- * 「那颗笔现在该不该出现」由服务端算（见 `journalService.canGenerateNote`），
- * 客户端算不了 —— 它得同时知道笔记和对话，而这两样在两个地方取。
+ * 就像 `subtitle` 也可以是 null 一样。同一份 `data` 里带着两个**事实**：
+ * `hasMaterial`（用户说过话吗）与 `noteIsStale`（笔记比最后一轮对话旧吗）。
+ *
+ * 它们必须服务端算：客户端要判 `noteIsStale` 得同时知道笔记的 `updatedAt`
+ * 和最后一轮对话的时间，而这两样在两个地方取。至于**哪颗笔出现**，
+ * 是界面拿 `note` 和这两个事实自己拼的 —— 见下。
  *
  * 三条都要先 `getPhotoDetail(userId, id)` 做 ownership：查询条件里带着 userId
  * （`08 §1`），越权与不存在都返回 null（`08 §5` 不区分，不泄露「它存在但你没权限」）。
@@ -33,7 +36,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
     if (!photo) throw new ApiError("NOT_FOUND", "照片不存在");
 
     const note = await getNote(id);
-    return ok({ note, canGenerate: await canGenerateNote(id, note) });
+    const facts = await getNoteFacts(id, note);
+    return ok({ note, ...facts });
   } catch (error) {
     return failFrom(error, "api/photos/[id]/journal GET");
   }

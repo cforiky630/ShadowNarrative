@@ -89,6 +89,26 @@ export function NotePanel({ photoId, date, note, onSaved }: NotePanelProps) {
     return () => clearTimeout(t);
   }, [draft, photoId, onSaved]);
 
+  /**
+   * **外壳把正文换掉了 —— 采纳它。**
+   *
+   * 这条是为 AI 润色写的：润色跑完，`PhotoOverlay` 拿新那一版调 `setNote`，
+   * 而这个组件的 `draft` 只在挂载时从 props 取过一次 —— 于是**存进库里的
+   * 已经是新那一版，屏幕上还是旧那一版**。用户接着改两个字，自动存盘就会
+   * 拿旧正文盖回去，润色白做。
+   *
+   * ⚠️ 判据是**版本号**，不是内容比不比得上。用户自己打字那条路走不到这儿：
+   * 那条路上 `note` 是这次写入的**结果**（写完之后才 `onSaved`），
+   * `versionRef` 已经先一步更新成同一个版本号了。
+   */
+  useEffect(() => {
+    if (note?.sourceVersion === versionRef.current) return;
+    setDraft(note?.content ?? "");
+    savedRef.current = note?.content ?? "";
+    versionRef.current = note?.sourceVersion;
+    pending.current = null;
+  }, [note]);
+
   useEffect(
     () => () => {
       /*

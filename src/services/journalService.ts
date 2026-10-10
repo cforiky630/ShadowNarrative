@@ -50,35 +50,49 @@ export async function getNote(photoId: string): Promise<JournalNote | null> {
 }
 
 /**
- * 那颗笔（起稿 / 润色）现在该不该出现。
+ * 界面要用的两个事实：**有没有素材**、**笔记是不是旧的**。
  *
- * 用户 2026-10-10 定的规矩：「首次生成只能在对话那里」，而且
- * 「**又多了几轮对话后**再让 AI 润色的时候是笔的图标」。合起来是两条：
+ * 用户 2026-10-10 定的规矩（含当天的第二次修正）：
  *
  * ```text
- * 说过话吗          没有 → 不给。没有可整理的素材，硬写只能编（01 §9）
- * 有笔记吗          没有 → 给（起稿）
- * 有，但比最后一轮对话旧 → 给（润色）
- * 有，而且不比对话旧   → 不给
+ * 起稿那颗笔   只在【还没有笔记】时出现在【对话那一面】
+ * 进入笔记     有笔记之后，对话那一面的同一个位置换成一本本子
+ * 润色那颗笔   在【随笔小记那一面】—— 笔记比最后一轮对话旧时才给
  * ```
  *
- * ⚠️ **由服务端算，不由客户端算。** 客户端要算这一条得同时知道笔记和对话，
- * 而这两样在两个不同的地方取；分散算的结果是「刚生成完那边还是旧状态」。
+ * ⚠️ **这里只报事实，不报「哪颗笔出现」。** 那是界面的事，而界面手上就有
+ * `note`（和这两个事实在同一个响应里），把 `!note` 那一半也算在服务端，
+ * 只会让「正文被清空 = 笔记没了」这条路上出现一段对不上的窗口期。
+ *
+ * `hasMaterial` 与 `aiService.runJournalNote` 开头那道 400 是**同一个条件**：
+ * 用户一句话都没说过时，模型只能把看图结果改写成第一人称，那不是随笔小记，
+ * 是伪造的记忆（`01 §9`）。判据一致，那颗笔就不会点出一句报错。
  */
-export async function canGenerateNote(
+export interface NoteFacts {
+  /** 用户说过至少一句话吗 —— 起稿那颗笔的前提 */
+  hasMaterial: boolean;
+  /** 笔记比最后一轮对话旧吗（且笔记确实存在）—— 润色那颗笔的前提 */
+  noteIsStale: boolean;
+}
+
+export async function getNoteFacts(
   photoId: string,
   note: JournalNote | null,
-): Promise<boolean> {
+): Promise<NoteFacts> {
   const lastUserMessage = await prisma.conversationMessage.findFirst({
     where: { conversation: { photoId }, role: "user" },
     orderBy: { createdAt: "desc" },
     select: { createdAt: true },
   });
 
-  if (!lastUserMessage) return false;
-  if (!note) return true;
+  if (!lastUserMessage) return { hasMaterial: false, noteIsStale: false };
 
-  return lastUserMessage.createdAt.getTime() > new Date(note.updatedAt).getTime();
+  return {
+    hasMaterial: true,
+    noteIsStale:
+      note !== null &&
+      lastUserMessage.createdAt.getTime() > new Date(note.updatedAt).getTime(),
+  };
 }
 
 export interface SaveNoteInput {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { MessageCircle, PenLine } from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { MessageCircle, NotebookText, PenLine } from "lucide-react";
 import { ConversationPanel } from "@/components/ConversationPanel";
 import { NotePanel } from "@/components/NotePanel";
 import type { JournalNote } from "@/types";
@@ -14,14 +14,38 @@ import type { JournalNote } from "@/types";
  * | 从哪进 | 落在哪一面 |
  * |---|---|
  * | 字幕（只在粒子态） | 对话 |
- * | 左下角那个本子 / 那颗笔 | 随笔小记 |
+ * | 左下角那个「随笔」 | 随笔小记 |
  *
  * 两面**在同一个遮罩里换内容，不叠两层** —— 与 `DockCard` 那两张卡是同一条：
  * 长在同一块地方的两个东西是互斥的，不是叠着的。而且这一层底下就是还在跑的
  * 画布，叠两层实时模糊既重又糊，Esc 也会变成两处各关一次。
  *
- * ⚠️ **状态都在这儿**（消息在 `ConversationPanel` 自己那儿，笔记在这儿）。
- * 「那颗笔该不该出现」要同时看笔记和对话 —— 分散到两个组件各算各的，
+ * ── 右边那一格：谁在什么时候出现 ────────────────────────────────────
+ *
+ * 用户 2026-10-10 定的（含当天最后那次修正：「对话界面可以进入已有的笔记……
+ * **只有没有笔记的时候**才会在对话界面出现按钮，**AI 润色按钮应该在笔记页面**」）：
+ *
+ * ```text
+ * 对话那一面   还没有笔记 → 笔（起稿）
+ *              有笔记了   → 本子（进随笔小记去读、去改）
+ * 随笔小记那一面  回到对话（粒子态才给，16 硬约束 #10）
+ *              笔记比最后一轮对话旧 → 笔（润色），加在「回到对话」上面
+ * ```
+ *
+ * 一句话：**笔是 AI 动笔（起稿 / 润色），本子是读和写（不参与）。**
+ * 两个图标把两种动作分开，不会认错。
+ *
+ * ⚠️ **润色那颗笔不在对话那一面。** 它在笔记这一面：那时你要看的是
+ * 「新聊到的有没有补进去」，而这篇正文就在眼前 —— 按了它，改的就是你正在读的
+ * 这一篇，不必先切回去。对话那一面在有笔记之后换成入口，两处不重复。
+ *
+ * ⚠️ **出口在最下。** 随笔小记那一面可能是两颗图标（润色 + 回到对话），
+ * 顺序不能让它们互相让位：`回到对话` 压在底下，润色那颗加在它上面 ——
+ * 这样笔出现或消失时，出口不动（与 `16 §7.2` 里 `Back` 始终在那一行最后
+ * 是同一条：**出口在边上，不随状态挪**）。
+ *
+ * ⚠️ **状态都在这儿**（消息在 `ConversationPanel` 自己那儿，笔记和那两个事实
+ * 在这儿）。「哪颗笔该出现」要同时看笔记和对话，分散到两个组件各算各的，
  * 刚生成完那边就还是旧状态。
  *
  * ⚠️ **根元素 `pointer-events-auto` 是必须的。** 照片页的 `<main>` 是
@@ -42,7 +66,7 @@ interface PhotoOverlayProps {
    * 现在是粒子态吗。
    *
    * ⚠️ 决定随笔小记那一面**要不要给「回到对话」**。对话只能从粒子界面进
-   * （`16` 硬约束 #10）—— 所以原图态下从本子进来读笔记时不给这个出口，
+   * （`16` 硬约束 #10）—— 所以原图态下从「随笔」进来读笔记时不给这个出口，
    * 那与「先把这一天翻开，才谈得上跟它说话」是同一条。
    */
   canChat: boolean;
@@ -50,9 +74,9 @@ interface PhotoOverlayProps {
   /**
    * 随笔小记「在 / 不在」变了。
    *
-   * 外壳（`MemorySpace`）靠它决定**左下角那个本子图标出不出现** ——
-   * 用户定的：那个图标只在有内容时才有（一个点开是空白页的入口就是
-   * 「点不动的东西」）。正文被清空 = 那条笔记没了 = 图标也该消失。
+   * 外壳（`MemorySpace`）靠它决定**左下角那个「随笔」出不出现** ——
+   * 用户定的：那个入口只在有内容时才有（一个点开是空白页的入口就是
+   * 「点不动的东西」）。正文被清空 = 那条笔记没了 = 入口也该消失。
    */
   onNoteChange: (exists: boolean) => void;
 }
@@ -67,8 +91,18 @@ export function PhotoOverlay({
 }: PhotoOverlayProps) {
   const [face, setFace] = useState<Face>(initialFace);
   const [note, setNote] = useState<JournalNote | null>(null);
-  /** 那颗笔该不该在。**服务端算的** —— 客户端算不了（见上面的注释） */
-  const [canGenerate, setCanGenerate] = useState(false);
+  /** 用户说过话吗。**服务端给的两个事实之一** —— 见路由的说明 */
+  const [hasMaterial, setHasMaterial] = useState(false);
+  /** 笔记比最后一轮对话旧吗。同上 */
+  const [noteIsStale, setNoteIsStale] = useState(false);
+  /**
+   * 打开这一趟之后，用户**刚刚**又说了话。
+   *
+   * 那两个事实是**打开时**取的那一份，而说话这件事发生在之后 ——
+   * 不记这一笔的话，用户在对话里说了两轮，那颗润色的笔要等下次打开才出现。
+   * 生成成功后清回 false（新写的那一版比所有消息都新）。
+   */
+  const [spoke, setSpoke] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,11 +116,16 @@ export function PhotoOverlay({
         });
         if (!res.ok) throw new Error(String(res.status));
         const body = (await res.json()) as {
-          data: { note: JournalNote | null; canGenerate: boolean };
+          data: {
+            note: JournalNote | null;
+            hasMaterial: boolean;
+            noteIsStale: boolean;
+          };
         };
         if (cancelled) return;
         setNote(body.data.note);
-        setCanGenerate(body.data.canGenerate);
+        setHasMaterial(body.data.hasMaterial);
+        setNoteIsStale(body.data.noteIsStale);
       } catch {
         if (!cancelled) setError("读不到随笔小记");
       } finally {
@@ -109,7 +148,10 @@ export function PhotoOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  /** 那颗笔按下去：起稿或润色。服务端看有没有现存那一行自己判断是哪种。 */
+  /**
+   * 那颗笔按下去：**起稿或润色**。服务端看有没有现存那一行自己判断是哪种，
+   * 客户端不必说（`08 §8`）。
+   */
   const generate = useCallback(async () => {
     if (generating) return;
     setGenerating(true);
@@ -126,13 +168,14 @@ export function PhotoOverlay({
         throw new Error(body?.error?.message ?? "AI 没写出可用的东西");
       }
       setNote(body.data);
-      // 刚写完，笔记一定不比对话旧 —— 那颗笔该收起来了
-      setCanGenerate(false);
+      // 刚写完的这一版比所有消息都新 —— 两颗笔都该收起来了
+      setSpoke(false);
+      setNoteIsStale(false);
       onNoteChange(true);
       // 刚起的那一稿就在随笔小记那一面里，直接翻过去让他改
       setFace("note");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "没能起稿");
+      setError(err instanceof Error ? err.message : "没能写出来");
     } finally {
       setGenerating(false);
     }
@@ -146,6 +189,11 @@ export function PhotoOverlay({
     },
     [onNoteChange],
   );
+
+  /** 起稿那颗笔：还没有笔记，且有话可说（`01 §9`：没有他的话就只能编） */
+  const showDraft = !note && (hasMaterial || spoke);
+  /** 润色那颗笔：有笔记，而且那篇比最后一轮对话旧 */
+  const showPolish = note !== null && (noteIsStale || spoke);
 
   return (
     <div
@@ -172,7 +220,7 @@ export function PhotoOverlay({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* 外层 580 = 窄栏 520 + 间距 20 + 那颗笔 ~28，窄屏靠 min-w-0 把栏让出来 */}
+      {/* 外层 580 = 窄栏 520 + 间距 20 + 右边那一格 ~28，窄屏靠 min-w-0 把栏让出来 */}
       <div className="flex w-full max-w-[580px] flex-col gap-6">
         <div className="flex items-end gap-5">
           {loaded &&
@@ -180,16 +228,11 @@ export function PhotoOverlay({
               <ConversationPanel
                 photoId={photoId}
                 /*
-                 * 刚说过一句 → 那颗笔该在。
-                 *
-                 * ⚠️ **不加 `if (note)`。** 没有笔记时它同样该在 —— 那正是
-                 * 「首次生成」那条路。而服务端给初值时用的是「至少说过一句」
-                 * 这条判据，所以刚打开时 `canGenerate` 是 false，说完第一句
-                 * 才翻过来。
-                 *
-                 * 有笔记时也成立：刚说的这句比笔记新 → 该润色了。
+                 * 刚说过一句。不写这一笔的话，那颗笔要等下次打开才出现 ——
+                 * 而「首次生成只能在对话那里」（用户定的），说话与起稿
+                 * 本该是紧接着的两下。
                  */
-                onUserMessaged={() => setCanGenerate(true)}
+                onUserMessaged={() => setSpoke(true)}
               />
             ) : (
               <NotePanel
@@ -201,56 +244,57 @@ export function PhotoOverlay({
             ))}
 
           {/*
-            右边那一格 —— **同一格里任何时刻只显示得下一个动作**
-            （`16 §8.6` 的做法，原图 ⇄ 粒子那一格也是这么办的）。
-
-            - 对话那一面：那颗**笔**（起稿 / 润色）。只在它该在的时候出现，
-              判据见下。
-            - 随笔小记那一面：**回到对话**。用户 2026-10-10 报的正是这里 ——
-              「生成笔记后回不去对话，只能点外面回粒子页」。而 `16 §8.6`
-              早就写着「进得去的门就是出得来的门」：既然是从对话走过来的，
-              出口就得在同一层遮罩里。
-
-            ⚠️ **「回到对话」只在粒子态给**（`canChat`）：对话只能从粒子界面进
-            是 `16` 的硬约束 #10。原图态下从本子进来读笔记，那一格就空着 ——
-              读改一篇已经写下的东西不需要先「翻开」这一天。
+            右边那一格。两种动作**不并排**：同一格里任何时刻只显示得下一个动作
+            （`16 §8.6` 的做法，原图 ⇄ 粒子那一格也是这么办的）——
+            只有随笔小记那一面在「笔记旧了」时才多一颗润色，而那两颗是竖排，
+            出口照旧在最下（见文件头）。
           */}
-          {face === "conversation"
-            ? canGenerate && (
-                <button
-                  type="button"
-                  onClick={() => void generate()}
-                  disabled={generating}
-                  aria-label="整理成随笔小记"
-                  title={
-                    note
-                      ? "让它把新聊到的补进去"
-                      : "让它把这段收成一篇随笔小记"
-                  }
-                  className="text-text-primary mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85 disabled:opacity-40"
-                  style={{ transitionTimingFunction: "var(--ease-enter)" }}
+          <div className="mb-0.5 flex shrink-0 flex-col items-center gap-3">
+            {face === "conversation" ? (
+              note ? (
+                <SlotButton
+                  label="随笔小记"
+                  hint="读一读、改一改"
+                  onClick={() => setFace("note")}
                 >
-                  {generating ? (
-                    <span className="text-meta" aria-hidden>
-                      …
-                    </span>
-                  ) : (
-                    <PenLine size={16} strokeWidth={1.6} aria-hidden />
-                  )}
-                </button>
+                  <NotebookText size={16} strokeWidth={1.6} aria-hidden />
+                </SlotButton>
+              ) : (
+                showDraft && (
+                  <SlotButton
+                    label="整理成随笔小记"
+                    hint="让它把这段收成一篇随笔小记"
+                    disabled={generating}
+                    onClick={() => void generate()}
+                  >
+                    <PenButtonContent generating={generating} />
+                  </SlotButton>
+                )
               )
-            : canChat && (
-                <button
-                  type="button"
-                  onClick={() => setFace("conversation")}
-                  aria-label="回到对话"
-                  title="回到对话"
-                  className="text-text-primary mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"
-                  style={{ transitionTimingFunction: "var(--ease-enter)" }}
-                >
-                  <MessageCircle size={16} strokeWidth={1.6} aria-hidden />
-                </button>
-              )}
+            ) : (
+              <>
+                {showPolish && (
+                  <SlotButton
+                    label="让 AI 润色"
+                    hint="让它把新聊到的补进去，你自己写的字保留"
+                    disabled={generating}
+                    onClick={() => void generate()}
+                  >
+                    <PenButtonContent generating={generating} />
+                  </SlotButton>
+                )}
+                {canChat && (
+                  <SlotButton
+                    label="回到对话"
+                    hint="回到对话"
+                    onClick={() => setFace("conversation")}
+                  >
+                    <MessageCircle size={16} strokeWidth={1.6} aria-hidden />
+                  </SlotButton>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {error && (
@@ -261,4 +305,53 @@ export function PhotoOverlay({
       </div>
     </div>
   );
+}
+
+/**
+ * 右边那一格里的图标按钮。四处共用一套：16px、`strokeWidth 1.6`，
+ * 与 `Settings` / `SlidersHorizontal` / `Star` 同一套语言（`16 §7.2` 那个
+ * 「图标都长一样」的规矩）。
+ *
+ * ⚠️ 提亮走**元素本身的 opacity**，不走颜色透明度 —— 后者与 `hover:opacity-*`
+ * 叠在一起会把 hover 的方向反过来（底色越淡越"亮"，越 hover 越暗）。
+ */
+function SlotButton({
+  label,
+  hint,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      // 纯图标，没有文字 —— `aria-label` 是它唯一的自解释
+      aria-label={label}
+      title={hint ?? label}
+      className="text-text-primary flex h-7 w-7 shrink-0 items-center justify-center opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85 disabled:opacity-40"
+      style={{ transitionTimingFunction: "var(--ease-enter)" }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** 那颗笔 —— 跑的时候换成省略号，免得「按了没反应」 */
+function PenButtonContent({ generating }: { generating: boolean }) {
+  if (generating) {
+    return (
+      <span className="text-meta" aria-hidden>
+        …
+      </span>
+    );
+  }
+  return <PenLine size={16} strokeWidth={1.6} aria-hidden />;
 }
