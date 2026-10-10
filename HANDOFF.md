@@ -25,8 +25,10 @@
 
 - `18-BACKUP_PROTOCOL.md` 的备份客户端**尚未实现**（Round 11）。文档已按端到端加密改写，代码没有
 - 斜轴相册（Round 5）、对话展开与日志（Round 8）、分组（Round 9）都只有文档
-- **时间线取代了 Library 抽屉，那几份规格还没改**：`16 §6`、`01 §5`、`07` 里
-  都还写着 Library。代码里已在 `TimelineSpace.tsx` 顶部标了 ⚠️
+- **Round 6（Library 抽屉）已作废**：时间线取代了它，不并存。
+  规格已同步（`01 §5`、`16 §1`/§6、`07`、`10`），`16 §6` 留成空壳不重编号。
+  但 Library 里原本还有两件事没着落：**收藏切换**（搬进 Photo View 操作区，
+  还没做 —— 它是 Round 5 的前置）与**搜索**（悬空，不阻塞）
 
 ---
 
@@ -116,7 +118,9 @@ migrate 写进一个库、应用读另一个库，而且不会报错。
 | 照片 CRUD | `services/photoService.ts`、`api/photos/**` | 五道校验、游标分页、两阶段删除 |
 | **AI 字幕** | `services/aiService.ts`、`components/Subtitle.tsx` | 上传即异步分析，字幕浮在照片下方 |
 | **SQLite 数据层** | `prisma/schema.prisma`、`lib/dataDir.ts` | 照片为主实体，多用户结构保留 |
-| **设置页** | `app/settings/`、`components/SettingsForm.tsx` | 自动分析开关 + 发送披露 + AI key（`07 §11`） |
+| **设置** | `components/SettingsPanel.tsx` + `SettingsForm.tsx` | 左下角悬浮球，点开是浮卡（**不是页面**，2026-10-10 改）。自动分析开关 + 发送披露 + AI key（`07 §11`） |
+| **相册（第一屏）** | `components/AlbumSpace.tsx` + React Bits 的 `AccordionGallery` | 手风琴；取哪几张由 `services/albumService.ts` 定（固定量、优先收藏、「看全部」） |
+| **体验外壳** | `components/ExperienceShell.tsx`、`app/(experience)/` | 画布的唯一所有者，路由切换时不卸载（`05 §6.1`） |
 | **时间线** | `components/TimelineSpace.tsx`、`services/timelineService.ts` | 中央时间线、按天节点、iMessage 式叠放 + 网格画廊、可编辑主题名 |
 | **体验外壳** | `components/ExperienceShell.tsx`、`app/(experience)/` | 画布的唯一所有者，路由切换时不卸载（`05 §6.1`） |
 
@@ -153,13 +157,23 @@ AI 单次调用实测 330–600ms（`effort: low`）。
 
 ## 5. 下一步
 
-Round 7 的代码部分已完成，Round 10 提前做完了，**时间线**（用户 2026-10-10 定的
-新空间，取代 Library 抽屉）也已落地。`10-IMPLEMENTATION_PLAN.md` 里
-**Round 5（斜轴相册）**是自然的下一批 —— 它只差界面，数据层已经就位
-（`GET /api/photos?favorite=true`、游标分页都在）。
+Round 5（第一屏）、7、10 都完成了，时间线也落地了。剩下的按
+`10-IMPLEMENTATION_PLAN.md`：
 
-⚠️ Round 6（Library 抽屉）**不要做了**：时间线取代了它，不并存。
-要先把 `16 §6`、`01 §5`、`07` 里的 Library 改成时间线。
+- **Round 8 — 对话与日志**（Conversation 展开 + Journal 生成）
+- **Round 9 — 分组**（Memory / MemoryPhoto 数据层早就有了，只差界面）
+- **Round 11 — 备份**（`18` 有完整协议，客户端没写）
+- **Round 12 — Mobile / 性能 / 打磨**、**Round 13 — Electron 封装**（规划了没建）
+
+⚠️ **Round 6（Library 抽屉）不要做了** —— 时间线取代了它，不并存。
+规格已同步（`01 §5`、`16 §1`/§6、`07`、`10`）。
+
+**三件悬着的小事**（都在 `10` 的 Round 5 末尾记着）：
+
+1. **「看全部」暂时指向 `/timeline`** —— 等用户说的「memorys 板块
+   （全部照片库）」做出来，这里改指它
+2. **缩略图**：`thumbnailKey` 至今没生成过（`08 §6`），首屏加载的是原图
+3. `albumService` 的 `SCAN_LIMIT = 400`，照片库变大前要改成游标分页
 
 ### 还欠用户一个答复的
 

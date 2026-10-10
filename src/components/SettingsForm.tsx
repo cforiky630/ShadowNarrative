@@ -4,9 +4,14 @@ import { useCallback, useState } from "react";
 import type { SettingsView } from "@/types";
 
 /**
- * 设置页的交互部分。
+ * 设置的内容。
  *
  * 规格：07-UI_PAGE_SPECS.md §11
+ *
+ * ⚠️ **它不再是一个页面。** 2026-10-10 用户要求「设置做成组件，不用单页」，
+ * 现在装在 `SettingsPanel` 里、从右侧滑出，入口是右下角那颗悬浮的齿轮。
+ * 所以这里只渲染内容本身 —— 没有 `<main>`、没有页头、没有最小高度，
+ * 那些都是外壳（`SettingsPanel`）的事。
  *
  * 视觉：`02-DESIGN_SYSTEM.md` §13 说主要操作用 text link / subtle pill，
  * §14 的玻璃盒清单里**没有**设置，`07 §11.5` 要求无卡片、无边框、无背景块。
@@ -76,10 +81,8 @@ export function SettingsForm({ initial }: SettingsFormProps) {
   }, [patch]);
 
   return (
-    <main className="min-h-dvh px-6 pt-32 pb-40">
-      <div className="mx-auto w-full max-w-[560px]">
-        <h1 className="text-micro text-text-primary/40">设置</h1>
-
+    <div className="px-8 pb-12">
+      <div className="w-full">
         {notice && (
           <p className="text-meta mt-8 text-text-primary/70" role="status">
             {notice}
@@ -232,6 +235,6 @@ export function SettingsForm({ initial }: SettingsFormProps) {
           </p>
         </section>
       </div>
-    </main>
+    </div>
   );
 }

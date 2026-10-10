@@ -26,6 +26,20 @@ const nextConfig: NextConfig = {
    */
   serverExternalPackages: ["better-sqlite3", "@prisma/adapter-better-sqlite3"],
 
+  /**
+   * 开发指示器挪到右下角。
+   *
+   * 它默认就在**左下角**，而设置那颗悬浮球（`SettingsPanel`，
+   * 用户 2026-10-10 指定照 Next 那颗开发球做）也在那儿 —— 两个圆球
+   * 叠在同一个角上，球点不到。生产环境没有指示器，所以这纯粹是
+   * 开发期的冲突，但开发期正是要天天点它的时候。
+   *
+   * 不设 `false`：那个指示器标着当前路由是静态还是动态，有用。
+   */
+  devIndicators: {
+    position: "bottom-right",
+  },
+
   turbopack: {
     rules: {
       "*.css": {

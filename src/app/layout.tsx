@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { SettingsPanel } from "@/components/SettingsPanel";
 import { TopNavigation } from "@/components/TopNavigation";
 import "./globals.css";
 
@@ -24,6 +25,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="bg-background text-text-primary antialiased">
         <TopNavigation />
         {children}
+        {/*
+          设置挂在根布局上，因为它是**浮层**而不是一条路由（用户 2026-10-10：
+          「设置做成组件，不用单页」）。放在这里它就在所有页面上都在，
+          而且入口只有右下角那颗齿轮一处 —— 不混进照片旁边（`07 §11.1`）。
+        */}
+        <SettingsPanel />
       </body>
     </html>
   );

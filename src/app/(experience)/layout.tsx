@@ -16,9 +16,10 @@ import { ExperienceShell } from "@/components/ExperienceShell";
  * 于是时间线和照片页不是两个页面，是同一个空间的两个状态 ——
  * `01-PRODUCT_SPEC.md` §5。
  *
- * ⚠️ **设置页刻意不在这个组里**（`07-UI_PAGE_SPECS.md` §11.1）。
- * 它是体验之外的配置层，是唯一允许长成普通页面的地方，
- * 没有理由陪着挂一块 WebGL 画布一起跑。
+ * ⚠️ 设置不在任何路由里（2026-10-10 起）。它是根布局上的 `SettingsPanel`
+ * —— 一张从右下角悬浮球长出来的浮卡，所以它**同时**在体验页和别的页面上，
+ * 不属于这个组也不属于别的组。`07 §11.1` 里「设置是唯一允许长成普通页面的
+ * 地方」那条已经作废：现在整个产品一个普通页面都没有。
  */
 export default function ExperienceLayout({
   children,

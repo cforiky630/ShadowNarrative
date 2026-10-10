@@ -1,0 +1,183 @@
+/* ==========================================================================
+   AccordionGallery —— 来自 React Bits（https://reactbits.dev）
+   组件本体在 src/components/AccordionGallery.tsx，这里只放它带的样式。
+
+   ⚠️ 这份**由组件自己 import**（`import "@/styles/accordion-gallery.css"`），
+   不走 globals.css 的 @import 链 —— 那份文件顶部记着一条坑：
+   @import 必须全部集中在最前面，挂在 components.css 之后会被**静默丢弃**
+   （实测 `.ag-panel` 一条规则都没进样式表，控制台却没有任何报错）。
+
+   刻意**保留上游的类名**（`.accordion-gallery` / `.ag-panel*`），
+   没有改成项目的 `sn-` 前缀 —— 这样以后从上游取新版时能直接 diff。
+   命名空间够窄，撞不上。
+
+   与上游逐字一致，只改了一处：`.ag-panel` 的底色。
+   上游写死 `#0a0713`，这里换成项目的 token（`02-DESIGN_SYSTEM.md`）。
+   其余的颜色都由组件以 CSS 变量下发（`--ag-accent` / `--ag-overlay` /
+   `--ag-text`），调用方传我们的 token 进去就行，不必改这份文件。
+   ========================================================================== */
+
+.accordion-gallery {
+  --ag-accent: #ffffff;
+  --ag-overlay: #060010;
+  --ag-text: #ffffff;
+  --ag-gap: 10px;
+  --ag-radius: 16px;
+  --ag-media-size: 320px;
+
+  display: flex;
+  flex-direction: row;
+  gap: var(--ag-gap);
+  width: 100%;
+  max-width: 100%;
+  perspective: 1400px;
+  perspective-origin: 50% 50%;
+}
+
+.accordion-gallery--vertical {
+  flex-direction: column;
+}
+
+.ag-panel {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--ag-radius);
+  cursor: pointer;
+  display: block;
+  text-decoration: none;
+  outline: none;
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  /* 上游是写死的 #0a0713，换成项目的抬升面色 */
+  background: var(--surface-elevated);
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.8);
+  will-change: flex-grow, transform;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ag-panel:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--ag-accent),
+    0 10px 30px -18px rgba(0, 0, 0, 0.8);
+}
+
+.ag-panel__frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.ag-panel__media {
+  --ag-gray: 1;
+  --ag-dim: 0.35;
+  --ag-blur: 0;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--ag-media-size);
+  height: 100%;
+  /*
+   * 收起的那张靠**模糊**退到后面，不是靠去色。
+   *
+   * 上游默认是 `grayscale` —— 用户 2026-10-10 否掉了：
+   * 「未选中别用黑白吧，用模糊会好点，黑白跟死了一样」。
+   * 照片是内容不是装饰，抽掉颜色等于把它变成灰块。
+   *
+   * `--ag-blur` 是无单位的数（GSAP 只会插值数字），所以乘 1px 进来。
+   * 模糊的软边**不会**在面板边缘露白：`.ag-panel__media` 比面板宽
+   * （`--ag-media-size`），采到的始终是画面内的像素。
+   */
+  filter: grayscale(var(--ag-gray)) blur(calc(var(--ag-blur, 0) * 1px));
+  will-change: transform, filter;
+}
+
+.accordion-gallery--vertical .ag-panel__media {
+  width: 100%;
+  height: var(--ag-media-size);
+}
+
+.ag-panel__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.ag-panel__overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      180deg,
+      transparent 45%,
+      color-mix(in srgb, var(--ag-overlay) 78%, transparent) 100%
+    ),
+    color-mix(in srgb, var(--ag-overlay) calc(var(--ag-dim, 0.35) * 100%), transparent);
+}
+
+.ag-panel__label {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ag-panel__bar {
+  flex: 0 0 auto;
+  width: 3px;
+  height: 26px;
+  border-radius: 3px;
+  background: var(--ag-accent);
+  opacity: 0;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--ag-accent) 60%, transparent);
+}
+
+.ag-panel__text {
+  color: var(--ag-text);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: clamp(1rem, 1.4vw, 1.4rem);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55);
+}
+
+/* 窄屏改成竖排（上游的行为）。这一条与项目「移动端最后再说」不冲突 ——
+   它只是让窄窗口下别挤成一条缝 */
+@media (max-width: 520px) {
+  .accordion-gallery {
+    flex-direction: column;
+    perspective: none;
+    height: auto !important;
+  }
+  .ag-panel {
+    min-height: 84px;
+    transform: none !important;
+  }
+  .accordion-gallery .ag-panel__media {
+    width: 100%;
+    height: var(--ag-media-size);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-panel,
+  .ag-panel__media {
+    will-change: auto;
+  }
+}

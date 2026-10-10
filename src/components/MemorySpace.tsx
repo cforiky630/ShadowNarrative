@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Star } from "lucide-react";
 import { ParticleControls } from "@/components/ParticleControls";
 import { Subtitle } from "@/components/Subtitle";
 import { useStage } from "@/components/ExperienceShell";
-import { SAMPLE_MEMORY } from "@/lib/sampleMemory";
+import { uploadPhoto } from "@/lib/photoUpload";
+import { usePhotoDrop } from "@/lib/usePhotoDrop";
 import type { AiState, PhotoDetail } from "@/types";
 import { useExperience } from "@/store/experience";
 
@@ -49,7 +51,13 @@ const POLL_TIMEOUT_MS = 30_000;
 const CROSSFADE = "opacity var(--duration-morph) var(--ease-morph)";
 
 interface MemorySpaceProps {
-  photo: PhotoDetail | null;
+  /**
+   * ⚠️ 2026-10-10 起**不再可空**。在这之前没有 `?photo=` 时会回落显示
+   * 最近上传的那张、再没有就用内置示例图；现在那个分支归相册了
+   * （`16-ALBUM_SPACE.md` §4 的空态）。这个组件只在「真的有一张照片要看」
+   * 时才被挂载，所以空态、示例图那一整类判断在这里全都不需要了。
+   */
+  photo: PhotoDetail;
   /**
    * 上传后是否自动把照片发给模型（`09 §21.2`）。
    *
@@ -74,7 +82,6 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
    */
   const entering = useExperience((s) => s.stage.origin !== null);
 
-  const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   /** 删除是两步确认：第一次点击进入待确认，不弹模态框（07 §1 不要重 UI） */
@@ -87,9 +94,9 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
    * 之后由轮询接管。
    */
   const [subtitle, setSubtitle] = useState<string | null>(
-    photo?.subtitle?.content ?? null,
+    photo.subtitle?.content ?? null,
   );
-  const [aiState, setAiState] = useState<AiState>(photo?.aiState ?? "done");
+  const [aiState, setAiState] = useState<AiState>(photo.aiState);
 
   /**
    * 是否正在等一次分析的结果。
@@ -99,7 +106,7 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
    * 所以单独记「我们请求过分析、还没等到结果」—— 上传（开关开着）和手动触发都置位。
    */
   const [awaiting, setAwaiting] = useState(
-    (photo?.aiState ?? "done") === "pending" && autoAnalyze,
+    photo.aiState === "pending" && autoAnalyze,
   );
 
   /**
@@ -109,10 +116,20 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
    * 要等一个来回才把新的服务端数据送回来。这中间的窗口里如果拿旧的 `photo.id`
    * 去轮询，会问到上一张照片上去。
    */
-  const [activeId, setActiveId] = useState<string | null>(photo?.id ?? null);
+  const [activeId, setActiveId] = useState<string | null>(photo.id);
+
+  /**
+   * 收藏状态。
+   *
+   * 2026-10-10 补：在这之前收藏**在界面上根本不存在** —— schema 有、
+   * `GET /api/photos?favorite=true` 有、`PATCH /api/photos/:id` 也支持，
+   * 就是没有人能点。原计划它长在 Library 抽屉里（`16 §6.2` 的星标），
+   * 那个抽屉作废了 —— 搬进 Photo View，落在日期那一行（`16 §7.1`）。
+   */
+  const [favorite, setFavorite] = useState(photo.favorite);
 
   /** 上一次从服务端看到的照片 id。用来判断「服务端数据变了没有」。 */
-  const serverIdRef = useRef<string | null>(photo?.id ?? null);
+  const serverIdRef = useRef<string | null>(photo.id);
 
   /**
    * 服务端数据到达时同步本地状态 —— **但只在照片真的换了的时候**。
@@ -121,14 +138,15 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
    * aiState 还是 pending、字幕还是空）会把轮询刚拿到的字幕覆盖掉。
    */
   useEffect(() => {
-    const serverId = photo?.id ?? null;
+    const serverId = photo.id;
     if (serverId === serverIdRef.current) return;
 
     serverIdRef.current = serverId;
     setActiveId(serverId);
-    setSubtitle(photo?.subtitle?.content ?? null);
-    setAiState(photo?.aiState ?? "done");
-    setAwaiting((photo?.aiState ?? "done") === "pending" && autoAnalyze);
+    setSubtitle(photo.subtitle?.content ?? null);
+    setAiState(photo.aiState);
+    setFavorite(photo.favorite);
+    setAwaiting(photo.aiState === "pending" && autoAnalyze);
   }, [photo, autoAnalyze]);
 
   /**
@@ -160,7 +178,9 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
    * 连同一切重新挂载，正好毁掉这个改动要做的事。
    */
   useEffect(() => {
-    setStage({ photoId: activeId });
+    // `space` 必须一起声明：相册和照片页的 pathname 都是 `/`，
+    // 外壳推不出来自己该不该显示画布（`stage.space` 的注释里有完整的理由）
+    setStage({ space: "photo", photoId: activeId });
   }, [activeId, setStage]);
 
   /**
@@ -223,10 +243,6 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
   /** 拖入照片 → 先本地成型（即时反馈），再上传落库。 */
   const acceptFile = useCallback(
     async (file: File) => {
-      if (!file.type.startsWith("image/")) {
-        setNotice("只支持图片文件");
-        return;
-      }
       setBusy(true);
       setNotice(null);
 
@@ -237,37 +253,18 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
         const bitmap = await createImageBitmap(file);
         await canvasRef.current?.morphTo(bitmap);
 
-        const form = new FormData();
-        form.append("file", file);
-        const res = await fetch("/api/photos", {
-          method: "POST",
-          body: form,
-        });
+        const photo = await uploadPhoto(file);
 
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as {
-            error?: { message?: string };
-          } | null;
-          throw new Error(body?.error?.message ?? "上传失败");
-        }
-
-        const body = (await res.json().catch(() => null)) as {
-          data?: { id?: string };
-        } | null;
-        const newId = body?.data?.id;
-
-        if (newId) {
-          // 画布上已经是这张图了（上面 morphTo 过）—— 告诉外壳别再取一次，
-          // 否则它会 setImage 一遍，把用户刚调好的视角重置掉
-          markLoaded(newId);
-          // 换照片 → 旧字幕必须立刻清掉，否则新照片下面挂着上一张的话
-          setActiveId(newId);
-          setSubtitle(null);
-          setAiState("pending");
-          // 服务端只有在自动分析开着时才会触发（09 §21.2）——
-          // 关着的时候这里不该开始等，否则会空轮询到超时
-          setAwaiting(autoAnalyze);
-        }
+        // 画布上已经是这张图了（上面 morphTo 过）—— 告诉外壳别再取一次，
+        // 否则它会 setImage 一遍，把用户刚调好的视角重置掉
+        markLoaded(photo.id);
+        // 换照片 → 旧字幕必须立刻清掉，否则新照片下面挂着上一张的话
+        setActiveId(photo.id);
+        setSubtitle(null);
+        setAiState("pending");
+        // 服务端只有在自动分析开着时才会触发（09 §21.2）——
+        // 关着的时候这里不该开始等，否则会空轮询到超时
+        setAwaiting(autoAnalyze);
 
         // 让服务端把新的照片数据带回来（日期等元信息）
         router.refresh();
@@ -286,43 +283,12 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
   /**
    * 拖入照片。
    *
-   * ⚠️ 监听挂在 `window` 上，**不能挂在 `<main>` 上**。
-   *
-   * 画布现在压在 `main` 之上（它得收得到指针才转得动，见 ExperienceShell 里的
-   * 层级说明），所以文件拖到页面上时命中的是画布那一层 —— `main` 的
-   * `onDragOver` / `onDrop` 一次都不会触发，照片拖进去毫无反应（踩过）。
-   *
-   * 拖拽事件会冒泡到 window，所以这里照样接得到；而且这段监听的生命周期
-   * 就跟着照片页 —— 时间线上拖文件什么都不会发生。
+   * 监听挂在 `window` 上（`src/lib/usePhotoDrop.ts` 里，相册也共用那一份）。
+   * 不挂 `<main>` 是因为画布压在它之上（指针要穿透过去，否则拖拽旋转失效），
+   * 文件拖到页面上时命中的是画布那一层 —— `main` 的 `onDragOver` / `onDrop`
+   * 一次都不会触发，照片拖进去毫无反应（踩过）。
    */
-  useEffect(() => {
-    const onOver = (e: DragEvent) => {
-      // 只认文件。拖着选中的文字晃过页面不该触发上传提示
-      if (!e.dataTransfer?.types.includes("Files")) return;
-      // 不 preventDefault 浏览器就不允许落下（drop 不会触发）
-      e.preventDefault();
-      setDragging(true);
-    };
-    const onLeave = (e: DragEvent) => {
-      // dragleave 在子元素之间也会触发；relatedTarget 为空才是真的离开了窗口
-      if (!e.relatedTarget) setDragging(false);
-    };
-    const onDrop = (e: DragEvent) => {
-      e.preventDefault();
-      setDragging(false);
-      const file = e.dataTransfer?.files?.[0];
-      if (file) void acceptFile(file);
-    };
-
-    window.addEventListener("dragover", onOver);
-    window.addEventListener("dragleave", onLeave);
-    window.addEventListener("drop", onDrop);
-    return () => {
-      window.removeEventListener("dragover", onOver);
-      window.removeEventListener("dragleave", onLeave);
-      window.removeEventListener("drop", onDrop);
-    };
-  }, [acceptFile]);
+  const dragging = usePhotoDrop(acceptFile);
 
   // 进入待确认后 4 秒自动撤回，避免按钮一直停在危险状态
   useEffect(() => {
@@ -346,31 +312,24 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
         throw new Error(body?.error?.message ?? "删除失败");
       }
 
-      // 先直接回到原图，**不播过渡** —— 接下来要换图，
-      // 让模式过渡和换图同时发生会互相打架（旧图会先溶解一遍）
-      canvasRef.current?.setMode("photo", { immediate: true });
-      setDisplayMode("photo");
-
       /*
-       * 画布回到哪去由外壳决定：`activeId` 变 null ⇒ 上面那个 effect
-       * 把 `stage.photoId` 也置 null ⇒ 外壳回落到内置示例图。
-       * 这里不再自己取一遍示例图 —— 两个地方都能换图，迟早会打架。
+       * 删掉了正在看的这张 → 回相册。
+       *
+       * 留在这里的话，画布上会挂着一张已经不在库里的图，地址栏还指着一个
+       * 不存在的 id。而相册正好是「所有照片」那面墙，删完一张回墙上是自然的。
+       *
+       * 用 replace 不用 push：返回键不该把用户送回一张刚被自己删掉的照片。
+       * 地址栏上的 `?photo=<id>` 一并去掉，刷新也不会落到那个死 id 上
+       * （page.tsx 里那条回落同样兜得住）。
        */
-      setActiveId(null);
-      setSubtitle(null);
-      setAiState("done");
-      setConfirmDelete(false);
-      serverIdRef.current = null;
-      router.refresh();
+      router.replace("/");
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "删除失败");
       setConfirmDelete(false);
     } finally {
       setBusy(false);
     }
-    // canvasRef 同上：context 里的稳定 ref 对象
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, router, setDisplayMode]);
+  }, [activeId, router]);
 
   /** 请求分析。失败重试与「关掉自动分析后手动看一眼」走同一条路（08 §10、09 §21.2）。 */
   const handleRetry = useCallback(async () => {
@@ -407,8 +366,34 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
     setDisplayMode(inParticle ? "photo" : "particle");
   }, [inParticle, setDisplayMode]);
 
-  const hasPhoto = activeId !== null;
-  const date = formatDate(photo?.takenAt ?? photo?.createdAt ?? null);
+  /**
+   * 收藏 / 取消收藏（`16 §7.2`）。
+   *
+   * 乐观更新：收藏是个廉价的开关，为了等一个来回才变色会显得迟钝。
+   * 失败了再翻回来并报出来 —— 不能让它静静地停在一个错的状态上。
+   *
+   * 不调 `router.refresh()`：相册（Round 5）还没做，没有别的地方需要跟着变。
+   * 服务端数据回来时，上面那个 effect 会因为 `photo.id` 变化重新同步一遍。
+   */
+  const toggleFavorite = useCallback(async () => {
+    if (!activeId) return;
+    const next = !favorite;
+    setFavorite(next);
+
+    try {
+      const res = await fetch(`/api/photos/${activeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favorite: next }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+    } catch {
+      setFavorite(!next);
+      setNotice("收藏没保存上");
+    }
+  }, [activeId, favorite]);
+
+  const date = formatDate(photo.takenAt ?? photo.createdAt);
 
   if (unsupported) {
     return (
@@ -477,23 +462,58 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
           transition: "opacity var(--duration-ui) var(--ease-enter)",
         }}
       >
-        <p className="text-meta text-text-primary/55">
-          {date ?? SAMPLE_MEMORY.date}
-        </p>
+        {/*
+         * 日期 + 收藏。
+         *
+         * 星标和日期同一行，因为它俩是同一类东西：**关于这张照片的元信息**
+         * —— 一个是它什么时候被拍的，一个是用户给它的标记。
+         * 而下面那一列（`16 §7.2` 的操作区）是**能对它做什么**：
+         * 「Into this moment」和以后的对话 / 日志都会打开另一个东西，
+         * 星标不打开任何东西，它只是把这张标下来。
+         *
+         * 顺带：横向排不占额外高度。`16 §7.1` 的尺寸表是紧的
+         * （照片下边缘约 76%，文字从 78% 起排），在操作区多一行会把它整体往下压。
+         */}
+        <div className="flex items-center gap-2.5">
+          <p className="text-meta text-text-primary/55">{date}</p>
 
-        {/* 字幕占原来标题的位置（16 §7.1）。还没有真实照片时退回内置示例的标题。 */}
-        {hasPhoto ? (
-          <Subtitle
-            content={subtitle}
-            state={aiState}
-            awaitingManualTrigger={!autoAnalyze}
-            onRequest={() => void handleRetry()}
-          />
-        ) : (
-          <h1 className="text-title mt-2 text-text-primary/95">
-            {SAMPLE_MEMORY.title}
-          </h1>
-        )}
+          {/*
+           * 用 lucide 的 Star：它的图标是描边式的，`fill="currentColor"` 才是实心。
+           * 所以「收藏了没有」由**填充**表达，颜色只负责强调 ——
+           * 这比换文字可靠（换文字会让按钮宽度随状态变化）。
+           *
+           * `aria-pressed` 是这类按钮的标准语义。`aria-label` **恒定**写「收藏」：
+           * 跟着状态改成「取消收藏」会跟 `aria-pressed` 打架，
+           * 读屏器会念成「取消收藏，已按下」这种自相矛盾的话。
+           */}
+          <button
+            type="button"
+            onClick={() => void toggleFavorite()}
+            aria-pressed={favorite}
+            aria-label="收藏"
+            title={favorite ? "取消收藏" : "收藏"}
+            className={`pointer-events-auto transition-colors ${
+              favorite
+                ? "text-text-primary/90"
+                : "text-text-primary/30 hover:text-text-primary/70 focus-visible:text-text-primary/70"
+            }`}
+          >
+            <Star
+              size={14}
+              strokeWidth={1.6}
+              fill={favorite ? "currentColor" : "none"}
+              aria-hidden
+            />
+          </button>
+        </div>
+
+        {/* 字幕占原来标题的位置（16 §7.1） */}
+        <Subtitle
+          content={subtitle}
+          state={aiState}
+          awaitingManualTrigger={!autoAnalyze}
+          onRequest={() => void handleRetry()}
+        />
 
         {/*
          * 这一格里有两个动作，交叉淡化（`16 §8.6`）。
@@ -549,8 +569,11 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
       {/* 左下角：旋转提示 / 复位 / 删除 / 状态。
           删除放在这里而不是紧挨主操作 —— 主操作的旁边不该放破坏性动作。
           `pointer-events-auto` 是给 `main` 的 `pointer-events-none` 补的：
-          这几个按钮要能点，而它们所在的那一小块挡住画布无所谓。 */}
-      <div className="pointer-events-auto text-micro absolute bottom-8 left-12 z-10 flex items-center gap-5">
+          这几个按钮要能点，而它们所在的那一小块挡住画布无所谓。
+
+          `left-20` 而不是 `left-12`：最角上是设置那颗球（`SettingsPanel`），
+          球占 24–68px，这一组从 80px 起，各占各的。 */}
+      <div className="pointer-events-auto text-micro absolute bottom-8 left-20 z-10 flex items-center gap-5">
         {busy && (
           <span className="pointer-events-none text-text-primary/40">
             处理中…
@@ -584,24 +607,22 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
               </span>
             )}
 
-            {hasPhoto && (
-              // 面板没有强调色，所以用「提亮」而非红色来表达危险：
-              // 深色背景上接近纯白是最抢眼的，这是这套配色表达「注意」的方式
-              <button
-                type="button"
-                onClick={
-                  confirmDelete ? handleDelete : () => setConfirmDelete(true)
-                }
-                aria-live={confirmDelete ? "polite" : undefined}
-                className="transition-opacity duration-[200ms]"
-                style={{
-                  opacity: confirmDelete ? 0.95 : 0.4,
-                  transitionTimingFunction: "var(--ease-enter)",
-                }}
-              >
-                {confirmDelete ? "确认删除？" : "删除"}
-              </button>
-            )}
+            {/* 面板没有强调色，所以用「提亮」而非红色来表达危险：
+                深色背景上接近纯白是最抢眼的，这是这套配色表达「注意」的方式 */}
+            <button
+              type="button"
+              onClick={
+                confirmDelete ? handleDelete : () => setConfirmDelete(true)
+              }
+              aria-live={confirmDelete ? "polite" : undefined}
+              className="transition-opacity duration-[200ms]"
+              style={{
+                opacity: confirmDelete ? 0.95 : 0.4,
+                transitionTimingFunction: "var(--ease-enter)",
+              }}
+            >
+              {confirmDelete ? "确认删除？" : "删除"}
+            </button>
           </>
         )}
       </div>

@@ -57,7 +57,21 @@ export interface StageRect {
  * （`01-PRODUCT_SPEC.md` §5、`16-ALBUM_SPACE.md` §8.6）。
  */
 export interface StageState {
-  /** 画布上该是哪张照片。null = 还没有（空态，外壳回落到内置示例图） */
+  /**
+   * 现在在哪个空间。**由各空间自己的组件在挂载时声明。**
+   *
+   * ⚠️ 不能从 `pathname` 推。相册和照片页的 pathname **都是 `/`**
+   * —— `16 §1` 里 Album 的入口就是「默认」，而 Photo View 是 `/?photo=<id>`。
+   * 用 pathname 推的话，相册上画布那一层会被判成「该显示」：
+   * 一层实心黑盖在相册上、引擎空转、参数面板的入口也归错地方（踩过）。
+   *
+   * ⚠️ **每个空间组件都必须在挂载时写一次**（`AlbumSpace` / `MemorySpace` /
+   * `TimelineSpace`）。漏掉一个，那个页面上就会留着**上一个空间的值** ——
+   * 症状是从照片页切到时间线时画布那一层不会收起来，一层实心黑压住整条时间线。
+   * 这个字段是「谁最后说话谁算数」，没有默认值兜底。
+   */
+  space: "album" | "photo" | "timeline" | null;
+  /** 画布上该是哪张照片。null = 还没有（相册、空态） */
   photoId: string | null;
   /**
    * 进入动画的起点（视口坐标）。
@@ -189,6 +203,7 @@ export const useExperience = create<ExperienceState>((set, get) => ({
   setDisplayMode: (displayMode) => set({ displayMode }),
 
   stage: {
+    space: null,
     photoId: null,
     origin: null,
     canvasShown: false,

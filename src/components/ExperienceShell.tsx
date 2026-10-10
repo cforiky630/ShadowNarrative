@@ -18,7 +18,6 @@ import {
 } from "@/components/ParticleCanvas";
 import { DebugOverlay } from "@/components/DebugOverlay";
 import { ensureGsap, DUR, EASE } from "@/lib/gsap";
-import { SAMPLE_MEMORY } from "@/lib/sampleMemory";
 import { useExperience } from "@/store/experience";
 import type { EngineStats } from "@/engine/particle/ParticleSystem";
 
@@ -119,7 +118,11 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
    */
   const [loadedId, setLoadedId] = useState<string | null>(null);
 
-  const onPhotoRoute = pathname === "/";
+  /**
+   * 现在是哪个空间。由 `AlbumSpace` / `MemorySpace` 挂载时声明 ——
+   * 用 pathname 分不出来（相册是 `/`，照片页是 `/?photo=<id>`）。
+   */
+  const space = useExperience((s) => s.stage.space);
 
   // -------------------------------------------------------------------------
   // 图像 → 画布
@@ -131,15 +134,15 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
     /*
      * 取哪张图。
      *
-     * 时间线上没有 `photoId` 也不加载 —— 画布那一层本来就藏着，
-     * 白取一张图只是浪费。进入动画会在点下去的那一刻把 id 设上。
+     * `photoId` 为 null 就什么都不取 —— **不再回落到内置示例图**。
+     * 2026-10-10 起 `/` 是相册（`16-ALBUM_SPACE.md` §2），空库由相册的
+     * 空态负责（§4「把照片拖进来」），不需要一张占位图。
+     * 而且那会让相册路由白白加载一张没人看的图 ——
+     * 相册和照片页的 pathname 都是 `/`，外壳分不出来。
      */
-    const url = stage.photoId
-      ? `/api/photos/${stage.photoId}/file`
-      : onPhotoRoute
-        ? SAMPLE_MEMORY.imageUrl // 空态：内置示例图（07 §1）
-        : null;
-    if (!url || loadedUrl.current === url) return;
+    if (!stage.photoId) return;
+    const url = `/api/photos/${stage.photoId}/file`;
+    if (loadedUrl.current === url) return;
 
     let cancelled = false;
     void (async () => {
@@ -163,20 +166,23 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [stage.photoId, onPhotoRoute]);
+  }, [stage.photoId]);
 
   // -------------------------------------------------------------------------
   // 画布那一层的显隐
   // -------------------------------------------------------------------------
 
   /*
-   * 由路由决定，**但进入动画期间让位** —— 那一段的时序由 `enter` 掌握
+   * 由**空间**决定，不是由路由决定 —— 相册和照片页的 pathname 都是 `/`。
+   * 那个标志由各空间的组件在挂载时声明（`AlbumSpace` / `MemorySpace`）。
+   *
+   * **进入动画期间让位**：那一段的时序由 `enter` 掌握
    * （要等飞行过半才亮起来，否则整张照片会先于缩略图出现，成了叠影）。
    */
   useEffect(() => {
     if (useExperience.getState().stage.origin) return;
-    setStage({ canvasShown: onPhotoRoute });
-  }, [onPhotoRoute, setStage]);
+    setStage({ canvasShown: space === "photo" });
+  }, [space, setStage]);
 
   // -------------------------------------------------------------------------
   // 进入：从缩略图飞到画布里的位置
@@ -200,6 +206,9 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
        */
       useExperience.getState().setDisplayMode("photo");
       setStage({
+        // 立刻声明成照片空间 —— 否则画布那一层要等路由落定（`MemorySpace` 挂载）
+        // 才知道该亮，而飞行已经开始了
+        space: "photo",
         photoId,
         origin: { x: from.left, y: from.top, w: from.width, h: from.height },
       });

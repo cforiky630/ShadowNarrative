@@ -4,18 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useStage } from "@/components/ExperienceShell";
 import { revealStyle, useReveal } from "@/lib/useReveal";
+import { useExperience } from "@/store/experience";
 import type { Photo, TimelineDay } from "@/types";
 
 /**
  * Timeline —— 中央时间线，节点以「天」为单位。
  *
  * 用户 2026-10-10 拍板：取代 `16-ALBUM_SPACE.md` §6 的 Library 抽屉，**不并存**。
- * ⚠️ 规格还没改：`16 §6`、`01 §5`、`07` 都还写着 Library。
+ * 规格已同步（`01 §5`、`16 §1` 与 §6、`07`、`10`）。
  *
  * 形态决定（同日）：
  *   - 叠放用**扇形**（参数取自 images_swiper，见下）
- *   - 展开用**画廊翻页**，可滑动、可点 ‹ ›、可方向键
- *   - 主题名默认 AI 提炼，点击可编辑
+ *   - 展开点「N 张」开**网格画廊** —— 源码里那就是个 SliverGrid。
+ *     **不做**一次一张的翻页器，那不可能是 iMessage 的行为
+ *   - 叠放本身**只负责左右滑动**，点它什么都不做（与源码一致）
+ *   - 主题名**由用户自己写，不做 AI 提炼**（理由见 `ThemeName` 上方）
  *
  * ── 三档模型来自 iMessage ────────────────────────────────────────────
  *   1 张       单张
@@ -78,6 +81,20 @@ interface TimelineSpaceProps {
 }
 
 export function TimelineSpace({ days }: TimelineSpaceProps) {
+  const setStage = useExperience((s) => s.setStage);
+
+  /**
+   * 声明这是时间线空间。
+   *
+   * ⚠️ **每个空间都必须声明一次**（`stage.space` 的注释里有完整理由）。
+   * 时间线这条一度漏了，症状是：从照片页点顶栏过来，画布那一层不会收起来
+   * —— 它不透明度还是 1、还压在最上面，一层实心黑盖住整条时间线。
+   * 因为 `/timeline` 上没人改这个值，外壳的显隐 effect 依赖它不变，就不会重跑。
+   */
+  useEffect(() => {
+    setStage({ space: "timeline", photoId: null });
+  }, [setStage]);
+
   if (days.length === 0) {
     return (
       <main className="flex min-h-dvh items-center justify-center px-12">
