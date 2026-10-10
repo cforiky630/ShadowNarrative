@@ -77,16 +77,15 @@ interface MemorySpaceProps {
    * 时才被挂载，所以空态、示例图那一整类判断在这里全都不需要了。
    */
   photo: PhotoDetail;
-  /**
-   * 上传后是否自动把照片发给模型（`09 §21.2`）。
-   *
-   * 关掉时 `pending` 的含义从「正在分析」变成「还没发出去」，
-   * 客户端据此决定要不要轮询、要不要给手动入口。
-   */
-  autoAnalyze: boolean;
 }
 
-export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
+/**
+ * ⚠️ **2026-10-10：这里原有的 `autoAnalyze` prop 没了。** 用户定了
+ * 「自动分析只能开」，于是上传总是触发分析、`pending` 只剩一个意思
+ * （正在分析），不再有「等用户点一下才发出去」那种状态。开关、
+ * `UserSettings.autoAnalyze` 那一列、以及服务端各处判断它的分支一起删了。
+ */
+export function MemorySpace({ photo }: MemorySpaceProps) {
   const { canvas: canvasRef, markLoaded } = useStage();
   const router = useRouter();
 
@@ -142,13 +141,15 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
   /**
    * 是否正在等一次分析的结果。
    *
-   * 不能只看 `aiState === "pending"`：关掉自动分析（`09 §21.2`）时 pending 表示
-   * 「还没发出去、等用户点」，那时候空轮询 30 秒再把它标成 failed 是错的。
-   * 所以单独记「我们请求过分析、还没等到结果」—— 上传（开关开着）和手动触发都置位。
+   * ⚠️ 2026-10-10 起它**恒等于** `aiState === "pending"`。原先要单独记一个
+   * 布尔，是因为关掉自动分析时 `pending` 有两种含义（「正在分析」和
+   * 「还没发出去、等用户点」），空轮询 30 秒再标 failed 是错的。
+   * 用户定了「自动分析只能开」之后只剩前一种含义。
+   *
+   * 仍然留这个 state 而不是直接读 `aiState`：上传那条路要在服务端数据回来
+   * **之前**就置位（本地已经知道要等），拿到终态再落下。
    */
-  const [awaiting, setAwaiting] = useState(
-    photo.aiState === "pending" && autoAnalyze,
-  );
+  const [awaiting, setAwaiting] = useState(photo.aiState === "pending");
 
   /**
    * 当前正在显示哪张照片。
@@ -187,8 +188,8 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
     setSubtitle(photo.subtitle?.content ?? null);
     setAiState(photo.aiState);
     setFavorite(photo.favorite);
-    setAwaiting(photo.aiState === "pending" && autoAnalyze);
-  }, [photo, autoAnalyze]);
+    setAwaiting(photo.aiState === "pending");
+  }, [photo]);
 
   /**
    * 显示模式。
@@ -312,9 +313,8 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
         setActiveId(photo.id);
         setSubtitle(null);
         setAiState("pending");
-        // 服务端只有在自动分析开着时才会触发（09 §21.2）——
-        // 关着的时候这里不该开始等，否则会空轮询到超时
-        setAwaiting(autoAnalyze);
+        // 上传总是触发分析（`08 §6` 第 9 步），所以这里总是开始等
+        setAwaiting(true);
 
         // 让服务端把新的照片数据带回来（日期等元信息）
         router.refresh();
@@ -327,7 +327,7 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
     // canvasRef 来自 ExperienceShell 的 context，是个**每次渲染都同一个**
     // 的 ref 对象（useMemo 过的）。列进依赖只会让 eslint 满意，不改变行为。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [router, autoAnalyze, markLoaded],
+    [router, markLoaded],
   );
 
   /**
@@ -381,7 +381,12 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
     }
   }, [activeId, router]);
 
-  /** 请求分析。失败重试与「关掉自动分析后手动看一眼」走同一条路（08 §10、09 §21.2）。 */
+  /**
+   * 重新请求一次分析（`08 §10`）。
+   *
+   * 2026-10-10 之前它还是「关掉自动分析后手动看一眼」那条路的入口 ——
+   * 用户定了「自动分析只能开」之后，它就只剩**失败重试**这一个用途了。
+   */
   const handleRetry = useCallback(async () => {
     if (!activeId) return;
     setSubtitle(null);
@@ -563,7 +568,6 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
         <Subtitle
           content={subtitle}
           state={aiState}
-          awaitingManualTrigger={!autoAnalyze}
           onRequest={() => void handleRetry()}
           // 只有粒子态可点开对话（用户 2026-10-10）
           interactive={inParticle}

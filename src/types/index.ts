@@ -330,14 +330,16 @@ export interface Memory {
 }
 
 /**
- * 设置页的数据（07 §11）。
+ * 设置浮卡的数据（`07 §11`）。
  *
  * ⚠️ `aiKeyConfigured` 是布尔值而不是 key —— 服务端**从不回传** key 本身。
  * 能回传就说明它出现在某个响应里过，那它就会进日志、进浏览器缓存、进抓包（12 §10）。
+ *
+ * ⚠️ 2026-10-10 删掉了 `autoAnalyze`：用户定「自动分析只能开」，
+ * 开关与它那一列（`UserSettings.autoAnalyze`）一起没了。
  */
 export interface SettingsView {
-  autoAnalyze: boolean;
-  /** `secrets.json` 里配了 key —— 这是设置页唯一能改的那份 */
+  /** `secrets.json` 里配了 key —— 这是设置卡唯一能改的那份 */
   aiKeyConfigured: boolean;
   /**
    * `secrets.json` 没配，但环境变量（`.env.local`）在供应 —— 开发期的回退。

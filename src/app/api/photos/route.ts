@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { ApiError, created, failFrom, ok } from "@/lib/apiResponse";
 import { runPhotoAnalysis } from "@/services/aiService";
 import { createPhoto, listPhotos } from "@/services/photoService";
-import { getLocalUserId, getSettings } from "@/services/userService";
+import { getLocalUserId } from "@/services/userService";
 
 /**
  * 照片集合。
@@ -80,15 +80,15 @@ export async function POST(request: Request) {
       caption: asOptionalString(form.get("caption")),
     });
 
-    // 09 §21.2：可以在设置里关掉自动分析。
-    // 关掉之后照片要由用户点一下才会被发出去 —— 用户需要知道自己是什么时候
-    // 把照片发出去的（12 §5）。
-    const settings = await getSettings(userId);
-    if (settings.autoAnalyze) {
-      // `after` 在响应发出之后才跑（next/server，15.1 起稳定）。
-      // 框架 API 只出现在路由层 —— services 不得依赖它。
-      after(() => runPhotoAnalysis({ userId, photoId: photo.id }));
-    }
+    /*
+      `after` 在响应发出之后才跑（next/server，15.1 起稳定）。
+      框架 API 只出现在路由层 —— services 不得依赖它。
+
+      ⚠️ **2026-10-10：这里不再判断「自动分析开关」。** 用户定「自动分析
+      只能开」，`UserSettings.autoAnalyze` 那一列连同设置里的开关一起删了。
+      所以上传**总是**触发一次分析，不再有「照片躺在 pending 里等用户点」那种状态。
+    */
+    after(() => runPhotoAnalysis({ userId, photoId: photo.id }));
 
     return created(photo);
   } catch (error) {

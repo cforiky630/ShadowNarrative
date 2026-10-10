@@ -8,10 +8,13 @@ import type { SettingsView } from "@/types";
  *
  * 规格：07-UI_PAGE_SPECS.md §11
  *
- * ⚠️ **它不再是一个页面。** 2026-10-10 用户要求「设置做成组件，不用单页」，
- * 现在装在 `SettingsPanel` 里、从右侧滑出，入口是右下角那颗悬浮的齿轮。
- * 所以这里只渲染内容本身 —— 没有 `<main>`、没有页头、没有最小高度，
- * 那些都是外壳（`SettingsPanel`）的事。
+ * ⚠️ **它不是一个页面，也不是一张卡。** 2026-10-10 用户要求「设置做成组件，
+ * 不用单页」，之后又把它和粒子参数一起收进了左下角那颗胶囊（`BottomDock`）。
+ * 所以这里只渲染内容本身 —— 没有 `<main>`、没有卡片外壳、没有开合动画，
+ * 那些是 `SettingsPanel`（外壳是 `DockCard`）的事。
+ *
+ * ⚠️ **界面上的字只留「用户在这里要读什么」。** 见 `07 §11.3` ——
+ * 那一节记着判据和两处「为什么」，免得又把文档层面的披露要求搬回来。
  *
  * 视觉：`02-DESIGN_SYSTEM.md` §13 说主要操作用 text link / subtle pill，
  * §14 的玻璃盒清单里**没有**设置，`07 §11.5` 要求无卡片、无边框、无背景块。
@@ -61,12 +64,6 @@ export function SettingsForm({ initial }: SettingsFormProps) {
     [],
   );
 
-  const toggleAutoAnalyze = useCallback(() => {
-    // 乐观更新：这是个开关，等一个来回才动会显得卡
-    setView((v) => ({ ...v, autoAnalyze: !v.autoAnalyze }));
-    void patch({ autoAnalyze: !view.autoAnalyze });
-  }, [patch, view.autoAnalyze]);
-
   const saveKey = useCallback(async () => {
     const ok = await patch({ aiApiKey: keyDraft });
     if (ok) {
@@ -93,37 +90,19 @@ export function SettingsForm({ initial }: SettingsFormProps) {
         <section className="mt-16">
           <h2 className="text-micro text-text-primary/40">AI</h2>
 
-          <div className="mt-8 flex items-baseline justify-between gap-8">
-            <span className="text-body text-text-primary/85">自动分析</span>
-            <button
-              type="button"
-              onClick={toggleAutoAnalyze}
-              disabled={busy}
-              aria-pressed={view.autoAnalyze}
-              className="text-body shrink-0 text-text-primary/85 underline-offset-4 hover:underline focus-visible:underline disabled:opacity-40"
-            >
-              {view.autoAnalyze ? "开" : "关"}
-            </button>
-          </div>
-
           {/*
-            ⚠️ **照片会发给模型服务商这件事，写在这两句话里，不另起一段。**
+            ⚠️ **这里原本有一个「自动分析」开关。** 2026-10-10 用户定了
+            「自动分析只能开，直接去掉这个设置」—— 开关、它那一列
+            （`UserSettings.autoAnalyze`）、以及服务端所有判断它地方一起删了
+            （`api/photos`、`api/photos/[id]`、`MemorySpace`、`Subtitle`）。
+            删列走了一次迁移：`prisma/migrations/*_drop_auto_analyze`。
 
-            `12 §5` / `09 §21.2` 要的「界面上必须告知照片会被发送」仍然成立 ——
-            只是它现在说的是**这个开关的行为**，而不是一段免责声明。
-
-            2026-10-10 之前这里另有一段「无论开关怎么设，照片都会离开这台机器」。
-            用户否掉了：「硬性要求和界面无关、写这些干啥」。那句和上面这句
-            摆在一起是**自相矛盾**的 —— 上面说「开才会发」、下面说「怎么设都会
-            离开」，读起来像法律声明，不像界面。
-
-            判据：界面上的字按「**用户在这里要读什么**」定，不按「文档要求
-            我们披露什么」定。事实照旧说全（去了第三方），只是不再单开一段。
+            留下的这一句是**陈述**，不是设置 —— 它说的是这个产品会发生什么。
+            `12 §5` 要的「界面上必须告知照片会被发送给模型」仍然成立；
+            而且没有开关之后它更干净：不必再交代「开着怎样、关掉怎样」。
           */}
-          <p className="text-meta mt-4 text-text-primary/45">
-            {view.autoAnalyze
-              ? "上传后照片会自动发给模型服务商分析，字幕随后浮现。"
-              : "关掉之后，照片只在你点「看一眼」时才发给模型服务商。"}
+          <p className="text-meta mt-8 text-text-primary/45">
+            上传后照片会自动发给模型服务商分析，字幕随后浮现。
           </p>
 
           {/* --- API key --- */}

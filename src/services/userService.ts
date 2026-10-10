@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 /**
  * 用户与偏好设置。
  *
- * 规格：08 §1 硬约束 #1、08 §3（UserSettings）、09 §21.2（autoAnalyze）
+ * 规格：08 §1 硬约束 #1、08 §3（UserSettings）
  *
  * ⚠️ `getLocalUserId()` 是**全应用唯一的用户解析点**。
  *
@@ -29,7 +29,6 @@ export async function getLocalUserId(): Promise<string> {
 }
 
 export interface UserSettingsView {
-  autoAnalyze: boolean;
   particlePreset: string;
   backupEndpoint: string | null;
   backupAuto: boolean;
@@ -39,6 +38,10 @@ export interface UserSettingsView {
  * 读用户设置，没有就按默认值建一条。
  *
  * 用 upsert 而不是「先查再建」：并发请求下后者会撞唯一约束。
+ *
+ * ⚠️ 这里原本还有一个 `autoAnalyze`（上传后是否自动把照片发给模型）。
+ * 2026-10-10 用户定了「自动分析只能开」，开关与那一列一起删了 ——
+ * 所以 `08 §3` 的 `UserSettings` 现在只剩下面这几个字段。
  */
 export async function getSettings(userId: string): Promise<UserSettingsView> {
   const settings = await prisma.userSettings.upsert({
@@ -46,7 +49,6 @@ export async function getSettings(userId: string): Promise<UserSettingsView> {
     create: { userId },
     update: {},
     select: {
-      autoAnalyze: true,
       particlePreset: true,
       backupEndpoint: true,
       backupAuto: true,
@@ -54,21 +56,4 @@ export async function getSettings(userId: string): Promise<UserSettingsView> {
   });
 
   return settings;
-}
-
-/**
- * 上传后是否自动把照片发给模型（09 §21.2）。
- *
- * 这不是可有可无的开关 —— 在「不加密、照片会发给模型」的前提下，
- * 用户需要知道自己是什么时候把照片发出去的（12 §5）。
- */
-export async function setAutoAnalyze(
-  userId: string,
-  autoAnalyze: boolean,
-): Promise<void> {
-  await prisma.userSettings.upsert({
-    where: { userId },
-    create: { userId, autoAnalyze },
-    update: { autoAnalyze },
-  });
 }

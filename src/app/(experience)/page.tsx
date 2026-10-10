@@ -4,7 +4,7 @@ import { AlbumSpace } from "@/components/AlbumSpace";
 import { MemorySpace } from "@/components/MemorySpace";
 import { getAlbumPhotos } from "@/services/albumService";
 import { getPhotoDetail } from "@/services/photoService";
-import { getLocalUserId, getSettings } from "@/services/userService";
+import { getLocalUserId } from "@/services/userService";
 
 /**
  * 第一屏 —— 相册，或一张照片（`01-PRODUCT_SPEC.md` §5、`16-ALBUM_SPACE.md`）。
@@ -53,7 +53,6 @@ async function SpaceLoader({
   await connection();
 
   const [params, userId] = await Promise.all([searchParams, getLocalUserId()]);
-  const settings = await getSettings(userId);
 
   const raw = params.photo;
   const requestedId = typeof raw === "string" ? raw : undefined;
@@ -68,7 +67,7 @@ async function SpaceLoader({
      */
     const photo = await getPhotoDetail(userId, requestedId);
     if (photo) {
-      return <MemorySpace photo={photo} autoAnalyze={settings.autoAnalyze} />;
+      return <MemorySpace photo={photo} />;
     }
   }
 

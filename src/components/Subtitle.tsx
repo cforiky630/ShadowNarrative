@@ -19,12 +19,11 @@ interface SubtitleProps {
   content: string | null;
   state: AiState;
   /**
-   * 关掉自动分析时（`09 §21.2`），`pending` 的含义变了：
-   * 不再是「正在分析中」，而是「还没发出去，等用户点」。
-   * 这时必须给一个入口，否则关掉开关等于让新照片永远无法被分析。
+   * ⚠️ 2026-10-10 删掉了 `awaitingManualTrigger` 与它那一整个分支
+   * （「看一眼」）。用户定了「自动分析只能开」，于是 `pending` 只剩
+   * 「正在分析中」一个含义，不会再有「照片还没发出去、等用户点」那种状态。
    */
-  awaitingManualTrigger?: boolean;
-  /** 请求分析。失败重试与手动触发走同一条路。 */
+  /** 重新请求一次分析。现在只剩**失败重试**这一个用途。 */
   onRequest?: () => void;
   /**
    * 这时候字幕**可以点开对话**。
@@ -48,30 +47,10 @@ const BODY_CLASS =
 export function Subtitle({
   content,
   state,
-  awaitingManualTrigger = false,
   onRequest,
   interactive = false,
   onOpen,
 }: SubtitleProps) {
-  // 关掉自动分析：照片还没有被发出去，等用户决定。
-  // 文案不用「分析」这种系统词 —— 说的是这件事本身。
-  if (state === "pending" && awaitingManualTrigger && !content) {
-    return (
-      <p
-        className="text-meta mt-2 text-center text-text-primary/35"
-        style={{ minHeight: ONE_LINE }}
-      >
-        <button
-          type="button"
-          onClick={onRequest}
-          className="pointer-events-auto underline-offset-4 hover:text-text-primary/70 hover:underline"
-        >
-          看一眼
-        </button>
-      </p>
-    );
-  }
-
   // 失败：一行低存在感的文案 + 点击重试。不弹提示、不用红色 ——
   // 这套配色里表达「注意」的方式是提亮，不是染色。
   if (state === "failed" && !content) {

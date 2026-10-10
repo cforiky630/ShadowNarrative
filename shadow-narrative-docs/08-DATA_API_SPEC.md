@@ -235,8 +235,11 @@ model UserSettings {
   particlePreset   String @default("calm")
   particleParams   String?   // JSON
 
-  // 上传后是否自动把照片发给模型分析（09 §21.2）
-  autoAnalyze      Boolean @default(true)
+  // ⚠️ 这里原本有一个 autoAnalyze（上传后是否自动把照片发给模型）。
+  // 2026-10-10 用户定了「自动分析只能开」，开关与这一列一起删掉了
+  // （迁移：prisma/migrations/*_drop_auto_analyze）。见 09 §21.2。
+  // 它不是「先留着以后可能用」的那种字段 —— 留一个恒为 true 的开关，
+  // 下一个人会以为它真的能关。
 
   // 备份（18-BACKUP_PROTOCOL.md）
   // 刻意**没有** backupToken：凭据只存 secrets.json。放进业务表的话，

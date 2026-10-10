@@ -235,8 +235,10 @@ model UserSettings {
   particlePreset String  @default("calm")
   particleParams String? // JSON
 
-  // 上传后是否自动把照片发给模型分析（09 §21.2）
-  autoAnalyze Boolean @default(true)
+  // ⚠️ 这里原本有一个 `autoAnalyze`（上传后是否自动把照片发给模型），
+  // 2026-10-10 用户定「自动分析只能开」时删掉了 —— 见 `09 §21.2` 的说明。
+  // 它不是「先留着以后可能用」的那种字段：留着一个恒为 true 的开关，
+  // 下一个人会以为它真的能关。
 
   // 备份（18-BACKUP_PROTOCOL.md）。令牌不进这里 —— 令牌存 secrets.json（17 §4、18 §7）
   backupAuto     Boolean @default(false)

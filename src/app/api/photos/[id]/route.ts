@@ -5,7 +5,7 @@ import {
   markAnalysisFailed,
   updatePhoto,
 } from "@/services/photoService";
-import { getLocalUserId, getSettings } from "@/services/userService";
+import { getLocalUserId } from "@/services/userService";
 
 /**
  * 单张照片。
@@ -33,8 +33,14 @@ export async function GET(_request: Request, { params }: RouteParams) {
     const photo = await getPhotoDetail(userId, id);
     if (!photo) throw new ApiError("NOT_FOUND", "照片不存在");
 
-    // 卡住的 pending 兜底改判。只在开了自动分析时做 ——
-    // 关掉自动分析后 pending 是「还没发出去，等用户点」，不是失败（09 §21.2）。
+    /*
+     * 卡住的 pending 兜底改判。
+     *
+     * ⚠️ 2026-10-10 起**无条件**做这件事。原先它只在开了自动分析时做 ——
+     * 因为那时候关掉开关后 `pending` 的含义是「还没发出去，等用户点」，
+     * 不是失败（`09 §21.2`）。用户定了「自动分析只能开」之后那个状态不存在了，
+     * `pending` 只剩一个意思：正在分析。
+     */
     if (photo.aiState === "pending") {
       /**
        * 比的是 **updatedAt 而不是 createdAt**。
@@ -45,9 +51,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
        * 重试永远不可能成功。
        */
       const sinceProgress = Date.now() - new Date(photo.updatedAt).getTime();
-      const settings = await getSettings(userId);
 
-      if (settings.autoAnalyze && sinceProgress > STALE_PENDING_MS) {
+      if (sinceProgress > STALE_PENDING_MS) {
         const reason = "分析超时，没有拿到结果";
         await markAnalysisFailed(userId, id, reason);
         return ok({ ...photo, aiState: "failed" as const, aiError: reason });
