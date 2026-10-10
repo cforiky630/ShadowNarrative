@@ -3,7 +3,8 @@
 > 写于 2026-10-09。**2026-10-10 大幅更新**：时间线、体验外壳（画布不随路由卸载）、
 > 第一屏改成相册（React Bits 手风琴）、设置改成悬浮球、收藏入口、EXIF 拍摄时间、
 > 对话（Round 8 前半）、缩略图、粒子手感（数量 / 尺寸 / 厚度 / 贴边 / 放大极限）、
-> 左下角那颗胶囊（参数 | 设置）。
+> 左下角那颗胶囊（参数 | 设置）、删除改成「长按确认」、字幕的「可点」改成一条线、
+> 选照片入口（「捉影」）。
 > 面向**新开窗口的 Claude**，目标是让新会话不必重新发现任何东西。
 >
 > 先读这份，再读 `shadow-narrative-docs/`。
@@ -447,56 +448,35 @@ Prisma / DeepSeek / Python」，Route Handlers 就是后端；`18 §1` 还明确
 ## 8. 当前仓库状态
 
 ```
-src/                     61 个源文件（ts/tsx/css）
+src/                     64 个源文件（ts/tsx/css）
 shadow-narrative-docs/   19 份规格 + recon/
-prisma/                  schema + 两份迁移（init、day_theme）
+prisma/                  schema + 三份迁移（init、day_theme、drop_auto_analyze）
 scripts/                 setup.mjs + 环境脚本 + Hilbert 自检 + try-subtitles.mjs
 .data/                   shadow-narrative.db + photos/（已 gitignore）
 ```
 
-**上一个提交**：`7fbd415`（交接文档）。**缩略图那一轮还没提交** —— 改动在工作区里，
-见下面的清单。
+**HEAD**：`3563ca2`。工作区干净。
 
-**工作区里有两轮改动还没提交**：
+⚠️ **`main` 领先 `origin/main` 13 个提交，还没推。**
+
+**2026-10-10 那一批（13 个提交）做了什么**：
 
 ```text
-── 一、缩略图 ──────────────────────────────────────────────
-新增  src/lib/makeThumbnail.ts
-新增  src/app/api/photos/[id]/thumbnail/route.ts
-改    src/services/mediaService.ts        saveThumbnailFile
-改    src/services/photoService.ts        createPhoto 接缩略图、回滚连它一起删
-改    src/app/api/photos/route.ts         POST 读 thumbnail 字段
-改    src/lib/photoUpload.ts              uploadPhoto(file, thumbnail?)
-改    src/components/AlbumSpace.tsx       图换 /thumbnail、上传时生成
-改    src/components/MemorySpace.tsx      复用已解码的 bitmap 生成
-改    src/components/TimelineSpace.tsx    叠放与网格两处 <img>
-改    src/components/ExperienceShell.tsx  飞行图换 /thumbnail
-改    08 / 10 / 16 / 17 / 18 五份规格
-
-── 二、粒子手感（用户当天提的五条）─────────────────────────
-改    src/types/index.ts                  档位数 150k→220k 等、size 1.6→1.8
-改    src/engine/particle/ImageSampler.ts  z 改成「主体厚 + 低频起伏 + 贴边收薄」
-改    src/engine/particle/ParticleSystem.ts  minDistance 0.30→0.20
-改    06 / 15 两份规格
-
-── 三、照片页那一行三个动作 ───────────────────────────────
-改    src/components/MemorySpace.tsx
-        · 粒子态下 Back 收起（宽度 + 间距一起收，整行平滑重新居中）
-        · Back 的样式改成与 Into this moment 完全一致（去掉下划线、0.45 亮度）
-        · 包了一层的 span 要挂 text-meta，否则行盒不等、字会错开
-        · 参数面板的挂载点搬走、左下角那组文字挪到 left-32
-改    16 两份小节（§7.2 新增一节、§8.6 补一段）
-
-── 四、左下角那颗胶囊 ─────────────────────────────────
-新增  src/components/BottomDock.tsx       一颗胶囊两格（参数 | 设置）
-新增  src/components/DockCard.tsx         两张卡共用的外壳
-改    src/components/SettingsPanel.tsx    只剩浮卡，球交出去了
-改    src/components/ParticleControls.tsx 右侧抽屉 → 左下浮卡
-改    src/components/TopNavigation.tsx    删「参数」、「时间线」→「Timeline」
-改    src/app/layout.tsx                  挂 BottomDock + 两张卡
-改    src/store/experience.ts             ui.settingsOpen、两卡互斥、切空间自动收
-改    02 / 05 / 07 三份规格
+缩略图          客户端生成、服务端校验落盘（08 §6）；画布与 AI 仍用原图
+粒子手感        数量 150k→220k、尺寸 1.6→1.8、厚度重写、放大极限 0.30→0.20
+照片页那一行    粒子态只剩一个「返回」；Back 与 Into this moment 同一套样式
+左下角那颗胶囊  时间线 → Timeline；参数与设置合成一颗胶囊两格
+设置卡          删「自动分析」开关（含删列的迁移）、key 只从 secrets.json 读、
+                文案删到只剩必要的
+删除            「点一下 → 长按确认」（React Bits 的 HoldButton）+ 三条退出路径
+字幕的「可点」  从一圈呼吸边框改成下面一条线 + 从左到右的高亮
+时间线 bug      一天只有一张照片时那张点不开 —— 「N 张」标签与叠放两条路原本同时断
+选照片入口      PhotoPicker 铺到四处；有照片时那个入口叫「捉影」
+hover 方向      全项目 12 处 `text-text-primary/40` + `hover:opacity-85` 是反的
 ```
+
+⚠️ 这 13 个是在 `feat/thumbnail-particle-dock` 上做的，已快进合进 `main`；
+分支还在，可以删（`git branch -d feat/thumbnail-particle-dock`）。
 
 ⚠️ **推送**：2026-10-10 那个 session 里 `git push` **被权限规则挡了三次**，
 每次都是用户自己推的。想让我以后能推，需要在设置里给 Bash 加一条允许
@@ -509,9 +489,12 @@ node scripts/verify-hilbert.mjs      # 验证 A→B 对应关系；改动 Hilber
 node scripts/try-subtitles.mjs 图…   # 试字幕提示词，会走真实 API 计费
 ```
 
-**凭据**：AI key 存在 `<数据目录>/secrets.json`（`17 §4`），
-开发期也可以放 `.env.local` 的 `AI_API_KEY`（**secrets.json 的非空值优先**）。
-两处都在 gitignore 之外/之内，但**都不能进 git、不能进日志**。
+**凭据**：AI key **只有一处** —— `<数据目录>/secrets.json`（`17 §4`），
+不进数据库、不进日志、不进 git。
+
+⚠️ 2026-10-10 删掉了「回退读 `.env.local` 的 `AI_API_KEY`」那条路，理由在
+`src/lib/secrets.ts` 的文件头。**曾经那么配过的人要在设置卡里粘一次才恢复** ——
+`.env.example` 的 AI 那一节已经换成说明，不再列变量。
 
 **`.data/uploads/`** 里还留着迁移前的 4 张测试照片，应用已经不再读这个目录
 （现在读写的是 `.data/photos/`）。用户要求保留文件，没删。
