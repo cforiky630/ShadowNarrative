@@ -127,7 +127,8 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
   const entering = useExperience((s) => s.stage.origin !== null);
 
   /**
-   * 出口往哪去 —— 取决于这一趟是从哪走进来的（`stage.entryFrom` 的注释里有理由）。
+   * 出口往哪去 —— 就是**这一趟是从哪走进来的那条路径**
+   * （`stage.entryFromHref` 的注释里有完整理由）。
    *
    * 不是走进来的（直接打开 `/?photo=<id>`、或刷新过）就回落到第一屏 ——
    * 相册。空着不给出口的话，用户就只剩浏览器的返回键了。
@@ -136,8 +137,8 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
    * 名字都用 Back」）。试过写「回相册 / 回时间线」——那是在替用户记路线，
    * 而他只要知道「这一步能退回去」。
    */
-  const entryFrom = useExperience((s) => s.stage.entryFrom);
-  const backHref = entryFrom === "timeline" ? "/timeline" : "/";
+  const entryFromHref = useExperience((s) => s.stage.entryFromHref);
+  const backHref = entryFromHref ?? "/";
 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);

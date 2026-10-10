@@ -158,34 +158,48 @@ model Journal {
   @@map("journals")
 }
 
-/// 可选分组。像真实相册 —— 一张照片可以同时属于多个分组（08 §3）。
+/// 影册 —— 用户自己分的那些集合（`01 §4` 叫它 Memory，界面上一律叫**影册**）。
+///
+/// 三个空间各切一刀：Album 是「我挑出来的」（收藏，第一屏）、
+/// 时间线是「我拍过的全部」（按天）、**影册是「我自己归的」**。
+///
+/// ⚠️ **用户 2026-10-11 定的名字是「影册」。** 代码里仍叫 `Memory` ——
+/// `01 §4` 的产品词汇就是它，`08 §9` 那六条 API 也已经写死在规格里，
+/// 而首屏那个组件已经占了 `AlbumSpace` 这个名字。乱的是把两个都叫 Album。
+///
+/// ⚠️ **2026-10-11 砍到只剩 `title`。** `summary` 与 `memoryDate` 删了
+/// （迁移 `memory_slim_to_album`）：Theater 待定、没有写入者，而
+/// `memoryDate` 是「Memory = 一次事件」那个已废弃模型的遗物 ——
+/// 一册「猫」没有某一天。与 `autoAnalyze`、`Journal.title` / `status`
+/// 同一条理由：**恒不写入的列会让下一个人以为它坏了**。
 model Memory {
   id     String @id @default(cuid())
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  title      String?
-  summary    String?
-  memoryDate DateTime?
+  /// ⚠️ 必填。名字就是这一册的标识（架子上一格读的就是它），
+  /// 与 `DayTheme.title`、`Journal.content` 同一条
+  title String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   photos MemoryPhoto[]
 
-  @@index([userId, memoryDate])
+  /// 架子的排序：最近动过的在前（刚往里加过照片的那一册就在第一眼）
+  @@index([userId, updatedAt])
   @@map("memories")
 }
 
-/// 多对多：删除分组不删照片，只断开关系（08 §4）。
+/// 多对多：删除影册不删照片，只断开关系（08 §4）。
+///
+/// ⚠️ **2026-10-11 删掉 `order` 与 `addedAt`。** 用户定了组内**按拍摄时间**
+/// 排，没有手动排序，两列都没有读取者。同 `Memory` 那两列。
 model MemoryPhoto {
   memoryId String
   photoId  String
   memory   Memory @relation(fields: [memoryId], references: [id], onDelete: Cascade)
   photo    Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
-
-  order   Int      @default(0) // 分组内的排序
-  addedAt DateTime @default(now())
 
   @@id([memoryId, photoId])
   @@index([photoId])

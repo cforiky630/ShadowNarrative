@@ -206,15 +206,19 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
        */
       useExperience.getState().setDisplayMode("photo");
       /*
-       * 先读旧值再覆写 —— 这是唯一知道「从哪走进来的」的时刻。
+       * 先读下来再覆写 —— 这是唯一知道「从哪走进来的」的时刻。
        * 相册和照片页的 pathname 都是 `/`，事后从路由上推不出来。
+       *
+       * ⚠️ **记的是路径，不是「哪个空间」**（2026-10-11 改的）：影册有两层
+       * （架子 `/memories` / 某一册 `/memories/<id>`），只记空间的话从某一册
+       * 进照片、`Back` 只能回架子，白白丢一步。路径天然分得清，
+       * 也天然覆盖以后任何新的来处。
        */
-      const cameFrom = useExperience.getState().stage.space;
       setStage({
         // 立刻声明成照片空间 —— 否则画布那一层要等路由落定（`MemorySpace` 挂载）
         // 才知道该亮，而飞行已经开始了
         space: "photo",
-        entryFrom: cameFrom === "timeline" ? "timeline" : "album",
+        entryFromHref: pathname,
         photoId,
         origin: { x: from.left, y: from.top, w: from.width, h: from.height },
       });
@@ -234,7 +238,7 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
         router.push(`/?photo=${photoId}`);
       }, LEAVE_MS);
     },
-    [router, setStage],
+    [router, setStage, pathname],
   );
 
   useEffect(

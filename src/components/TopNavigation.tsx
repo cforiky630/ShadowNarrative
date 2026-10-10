@@ -11,13 +11,16 @@ import { usePathname } from "next/navigation";
  *   - text-micro，字距 +0.08em
  *   - 顶部 32px，左右边距 48px
  *
- * ── 右上角只剩一个空间入口 ──────────────────────────────────────────
+ * ── 右上角：每个空间一个入口 ────────────────────────────────────────
  *
  * 2026-10-09 删掉了 `/journal` 与 `/create` —— **两个路由都不存在**，
- * 点进去是 404；2026-10-10 又删掉「Memories」—— 它指向 `/`，和左上角的
- * 项目名是同一条去路，而用户说它「暂时还没做，后续做图库的效果」。
- * 图库做出来时再加回来，那时它指的应该是 `01 §5` 的 Memory Theater 那一族，
- * 不是相册。
+ * 点进去是 404；2026-10-10 又删掉「Memories」—— 那时它指向 `/`，
+ * 和左上角的项目名是同一条去路，而用户说「暂时还没做，后续做图库的效果」。
+ *
+ * ⚠️ **2026-10-11「Memories」加回来了**，这次它指向 `/memories`
+ * （影册的架子，`01 §5`）。当初那条注释写的就是「图库做出来时再加回来，
+ * 那时它指的应该是 Memory Theater 那一族，不是相册」—— 现在应验了，
+ * 而且指的正是那一族。
  *
  * 守的是同一条：**入口宁可少，也不要留点不动的。**
  *
@@ -39,7 +42,22 @@ import { usePathname } from "next/navigation";
  */
 const NAV_ITEMS = [
   { href: "/timeline", label: "Timeline" },
+  { href: "/memories", label: "Memories" },
 ] as const;
+
+/**
+ * 这一项是不是「当前这一屏」。
+ *
+ * ⚠️ **不能只写 `pathname === item.href`**：影册有两层
+ * （`/memories` 架子 / `/memories/<id>` 某一册），在某一册里时那一项也该是亮的
+ * —— 用户在那个空间里，只是走得深了一层。
+ *
+ * ⚠️ 而首屏那条不能照抄 `startsWith`：`pathname.startsWith("/")` **恒真**，
+ * 于是每一屏上「回到画廊」都是亮的。所以根路径单独判等于。
+ */
+function isCurrent(pathname: string, href: string): boolean {
+  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
 
 export function TopNavigation() {
   const pathname = usePathname();
@@ -68,7 +86,7 @@ export function TopNavigation() {
 
       <nav className="pointer-events-auto flex items-center gap-6">
         {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href;
+          const active = isCurrent(pathname, item.href);
           return (
             <Link
               key={item.href}

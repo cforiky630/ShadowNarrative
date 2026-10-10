@@ -78,20 +78,25 @@ export interface StageState {
    * 症状是从照片页切到时间线时画布那一层不会收起来，一层实心黑压住整条时间线。
    * 这个字段是「谁最后说话谁算数」，没有默认值兜底。
    */
-  space: "album" | "photo" | "timeline" | null;
+  space: "album" | "photo" | "timeline" | "memories" | null;
   /**
-   * 这一趟是从哪个空间走进照片的。
+   * 这一趟是从哪走进照片的 —— **一条可以直接用的回程路径**。
    *
-   * 用户 2026-10-10：「无论从首页进入记忆页还是时间线进入，都应该有一个返回按钮
-   * 能够返回首页或时间线（**取决于从哪里进入**）」。
-   *
-   * 由 `ExperienceShell.enter` 在**覆写 `space` 之前**读一次旧值记下来 ——
-   * 那是唯一知道这件事的时刻。
+   * 由 `ExperienceShell.enter` 在**覆写 `space` 之前**读一次 `usePathname()`
+   * 记下来（那一刻路由还没换，那是唯一知道这件事的时刻）。
    *
    * `null` = 不是走进来的（直接打开 `/?photo=<id>`、或者刷新），
    * 这时候出口回落到第一屏（相册）。
+   *
+   * ⚠️ **2026-10-11 从 `"album" | "timeline"` 的联合改成了路径。** 影册一来
+   * 那个联合就不够用了：**册子有两层**（架子 `/memories` / 某一册
+   * `/memories/<id>`），从某一册进照片、`Back` 却只能回架子，等于丢了一步 ——
+   * 而「进得去的门就是出得来的门」是硬约束 #11 和 `16 §8.6` 明写的。
+   *
+   * 记路径而不是「哪个空间 + 哪个 id」：一句话能说完，而且它天然覆盖
+   * 以后任何新的来处（多一层、带查询参数，都不用再改类型）。
    */
-  entryFrom: "album" | "timeline" | null;
+  entryFromHref: string | null;
   /** 画布上该是哪张照片。null = 还没有（相册、空态） */
   photoId: string | null;
   /**
@@ -226,7 +231,7 @@ export const useExperience = create<ExperienceState>((set, get) => ({
 
   stage: {
     space: null,
-    entryFrom: null,
+    entryFromHref: null,
     photoId: null,
     origin: null,
     canvasShown: false,

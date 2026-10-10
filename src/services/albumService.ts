@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import type { Photo } from "@/types";
-import { PHOTO_SELECT, toPhoto, type PhotoRow } from "./photoService";
+import {
+  byPhotoTimeDesc,
+  PHOTO_SELECT,
+  toPhoto,
+  type PhotoRow,
+} from "./photoService";
 
 /**
  * 相册首屏要哪几张（`16-ALBUM_SPACE.md` §2、§2.5）。
@@ -70,13 +75,11 @@ export interface AlbumSelection {
  * 那条真正要的是**一个确定的顺序**加上可见处的时间提示（否则用户会迷失在
  * 一条不知道往哪走的线上），方向本身没定死。而焦点是从第 0 张开始的 ——
  * 把最旧的一张放在第一眼的位置上不对。
+ *
+ * ⚠️ **回落规则不在这里**：`takenAt` 缺了用 `createdAt` 这条算在
+ * `photoService.photoTime` 里，与时间线、影册共用同一份 —— 各写各的迟早
+ * 会出现「排在最前面但分到第二天」。
  */
-function byTimeDesc(a: PhotoRow, b: PhotoRow): number {
-  const at = (a.takenAt ?? a.createdAt).getTime();
-  const bt = (b.takenAt ?? b.createdAt).getTime();
-  // id 次级键：同一毫秒的两条，只按时间排是不稳定的
-  return bt - at || (a.id < b.id ? 1 : -1);
-}
 
 export async function getAlbumPhotos(userId: string): Promise<AlbumSelection> {
   const [favRows, fillRows, favoriteTotal, total] = await Promise.all([
@@ -96,7 +99,7 @@ export async function getAlbumPhotos(userId: string): Promise<AlbumSelection> {
     prisma.photo.count({ where: { userId } }),
   ]);
 
-  const favorites = [...favRows].sort(byTimeDesc);
+  const favorites = [...favRows].sort(byPhotoTimeDesc);
 
   let picked: PhotoRow[];
 
@@ -107,10 +110,10 @@ export async function getAlbumPhotos(userId: string): Promise<AlbumSelection> {
   } else {
     const need = PANEL_LIMIT - favorites.length;
     const fills =
-      need > 0 ? [...fillRows].sort(byTimeDesc).slice(0, need) : [];
+      need > 0 ? [...fillRows].sort(byPhotoTimeDesc).slice(0, need) : [];
     // 补进来的和收藏混在一起重新按时间排 —— 否则轴上会出现
     // 「后半段全是收藏」这种由规则而不是由时间造成的分段
-    picked = [...favorites, ...fills].sort(byTimeDesc);
+    picked = [...favorites, ...fills].sort(byPhotoTimeDesc);
   }
 
   return {

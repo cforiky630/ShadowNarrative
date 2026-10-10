@@ -345,12 +345,54 @@ export interface PhotoDetail extends Photo {
   hasNote: boolean;
 }
 
-/** 分组（08 §3）。可选，不拥有照片 —— 删分组不删照片。 */
-export interface Memory {
+// ---------------------------------------------------------------------------
+// 影册（用户 2026-10-11 定名）
+// ---------------------------------------------------------------------------
+
+/**
+ * 架子上的一册。
+ *
+ * ⚠️ **界面上一律叫「影册」**，代码里叫 `Memory` —— 理由写在
+ * `prisma/schema.prisma` 的 `Memory` 上（`01 §4` 的产品词汇是 Memory、
+ * `08 §9` 那六条 API 已经写死在规格里、而首屏那个组件已经占了
+ * `AlbumSpace` 这个名字）。
+ *
+ * **它只带张数与封面，不带照片** —— 架子一屏可能有几十册，把每一册的照片
+ * 全拉回来是白费。真打开一册时再取 `MemoryDetail`。
+ */
+export interface MemorySummary {
   id: string;
-  title: string | null;
-  summary: string | null;
-  memoryDate: string | null;
+  title: string;
+  /** 这一册里有几张。空册是 0 */
+  count: number;
+  /**
+   * 架子上那一格用哪几张 —— 组内**拍摄时间最新的那几张**（最多 4 张。
+   * `takenAt` 缺则回落导入时间）。
+   *
+   * ⚠️ **不是「一张封面」，是一组缩略图**（用户 2026-10-11：「每一册都是
+   * 一组缩略图作为一个入口」）。一张封面说不出「这一册里都有些什么」，
+   * 而四张能 —— 这与 iOS 相册的封面同一个道理。
+   *
+   * 空册是 `[]`，架子据此画一个空框，不装假封面。
+   */
+  coverIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * 打开一册时的那一份。
+ *
+ * 照片按**拍摄时间倒序**（新的在前）—— 与首屏相册同一个方向，理由在
+ * `albumService.byTimeDesc`：焦点在第 0 张，把最旧的放第一眼不对。
+ *
+ * ⚠️ 这里**没有 `count`**：张数就是 `photos.length`。两处都存一份，
+ * 迟早会有一个地方忘了同步。
+ */
+export interface MemoryDetail {
+  id: string;
+  title: string;
+  photos: Photo[];
   createdAt: string;
   updatedAt: string;
 }

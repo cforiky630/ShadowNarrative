@@ -1,7 +1,13 @@
 import { ApiError } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
 import type { TimelineDay } from "@/types";
-import { PHOTO_SELECT, toPhoto, type PhotoRow } from "./photoService";
+import {
+  byPhotoTimeDesc,
+  PHOTO_SELECT,
+  photoTime,
+  toPhoto,
+  type PhotoRow,
+} from "./photoService";
 
 /**
  * Timeline —— 按天分组的照片（用户 2026-10-10 定的空间）。
@@ -29,16 +35,6 @@ export function toDayKey(date: Date): string {
 const DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * 照片属于哪一天：拍摄时间优先，没有就回落导入时间（`08 §3`）。
- *
- * 单独抽出来是为了**只有一个地方**做这个回落 —— 排序与分组必须用同一个值，
- * 否则会出现「排在最前面但分到第二天」这种自相矛盾的结果。
- */
-function photoTime(row: PhotoRow): number {
-  return (row.takenAt ?? row.createdAt).getTime();
-}
-
-/**
  * 一次取回的照片上限。
  *
  * ⚠️ 现在是把照片全取回来在 JS 里分组与排序，因为「拍摄时间缺失时回落导入时间」
@@ -56,6 +52,10 @@ export interface GetTimelineOptions {
 
 /**
  * 取时间轴。天按倒序（新的在前），天内照片也按倒序。
+ *
+ * ⚠️ 「拍摄时间优先，缺失回落导入时间」那个值在 `photoService.photoTime` 里
+ * 只有一份，相册 / 时间线 / 影册三处共用 —— 各写一份的话迟早出现
+ * 「排在最前面但分到第二天」这种自相矛盾的结果。
  */
 export async function getTimeline(
   userId: string,
@@ -67,11 +67,14 @@ export async function getTimeline(
     take: options.photoLimit ?? DEFAULT_PHOTO_LIMIT,
   });
 
-  const sorted = [...rows].sort((a, b) => photoTime(b) - photoTime(a));
+  const sorted = [...rows].sort(byPhotoTimeDesc);
 
   const byDay = new Map<string, PhotoRow[]>();
   for (const row of sorted) {
-    const key = toDayKey(row.takenAt ?? row.createdAt);
+    // ⚠️ 分组与排序走**同一个函数**（先 `photoTime` 再转日期）——
+    // 这里直接写 `row.takenAt ?? row.createdAt` 看着一样，但那是第二份
+    // 表达，改一处漏一处就会出现「排在最前面但分到第二天」
+    const key = toDayKey(new Date(photoTime(row)));
     const bucket = byDay.get(key);
     if (bucket) bucket.push(row);
     else byDay.set(key, [row]);

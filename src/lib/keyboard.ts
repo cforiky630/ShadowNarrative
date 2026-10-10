@@ -21,17 +21,30 @@
  *    事件，那时 `isComposing` 已经是 `false`，只剩这个老字段还写着
  *    「这一下是输入法的」。`key === "Process"` 是同一件事的新写法
  *
+ * ⚠️ **React 合成事件上没有 `isComposing`。** 它只搬一部分字段过来，
+ * 而 `isComposing` 不在那份名单里 —— 所以写 `onKeyDown` 的那些地方
+ * （对话的输入框、两个起名框）拿到的是 `undefined`。真值在
+ * `e.nativeEvent` 上，这个函数替调用方去那儿取。
+ * **这一条是实测出来的**：影册的改名框里，组字中的 Esc 照旧把编辑态退了。
+ *
  * ⚠️ **每个按键处理器都该先问这一句**，哪怕它所在的界面当下「不可能有输入框」。
  * 那是会变的（设置卡就加过又删过输入框），而这一句的代价是零。
  */
 
-/** 只用到这三个字段，原生事件与 React 合成事件都满足 */
+/** 只用到这几个字段，原生事件与 React 合成事件都满足 */
 interface KeyLike {
   isComposing?: boolean;
   keyCode?: number;
   key?: string;
+  /** React 合成事件带的原生事件 —— 那个上面才有真的 `isComposing` */
+  nativeEvent?: unknown;
 }
 
 export function isImeKey(e: KeyLike): boolean {
-  return e.isComposing === true || e.keyCode === 229 || e.key === "Process";
+  const native = e.nativeEvent as KeyLike | undefined;
+  const src = native && typeof native === "object" ? native : e;
+
+  return (
+    src.isComposing === true || src.keyCode === 229 || src.key === "Process"
+  );
 }

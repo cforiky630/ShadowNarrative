@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStage } from "@/components/ExperienceShell";
+import { PhotoCell } from "@/components/PhotoCell";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { isImeKey } from "@/lib/keyboard";
 import { uploadPhoto } from "@/lib/photoUpload";
@@ -664,7 +665,6 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
  */
 function PhotoGrid({ photos, onClose }: { photos: Photo[]; onClose: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const { enter } = useStage();
 
   useEffect(() => {
     // 打开就把焦点交给面板：Esc 才收得到，键盘也才滚得动
@@ -704,41 +704,8 @@ function PhotoGrid({ photos, onClose }: { photos: Photo[]; onClose: () => void }
 
       <div className="mx-auto grid max-w-[880px] grid-cols-3 gap-3">
         {photos.map((photo) => (
-          /*
-           * 是 Link 但点了不直接走 —— 先交给外壳把这张照片从**这个格子**
-           * 飞进画布，再换路由（见 ExperienceShell.enter）。
-           * 保留 Link 是因为修饰键/中键的语义要留着：新标签页打开一张照片
-           * 是合理的，那时候不该播什么镜头。
-           */
-          <Link
-            key={photo.id}
-            href={`/?photo=${photo.id}`}
-            onClick={(e) => {
-              if (
-                e.metaKey ||
-                e.ctrlKey ||
-                e.shiftKey ||
-                e.altKey ||
-                e.button !== 0
-              ) {
-                return;
-              }
-              e.preventDefault();
-              enter(photo.id, e.currentTarget.getBoundingClientRect());
-            }}
-            className="block overflow-hidden rounded-sm transition-opacity hover:opacity-80"
-          >
-            {/* 缩略图（08 §6）。网格里一张约 285 CSS px 宽 —— 原图在这个
-                尺寸下同样只是浪费内存 */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`/api/photos/${photo.id}/thumbnail`}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              className="aspect-[4/3] w-full object-cover"
-            />
-          </Link>
+          /* 格子本身在 `PhotoCell` 里 —— 影册的网格共用同一个 */
+          <PhotoCell key={photo.id} photo={photo} />
         ))}
       </div>
     </div>

@@ -57,6 +57,46 @@ export function toPhoto(row: PhotoRow): Photo {
   };
 }
 
+/**
+ * 只用到这两个字段。
+ *
+ * 结构类型而不是 `PhotoRow` —— 影册的封面查询只 select 了这两列，
+ * 硬要求整行会逼着那一层把照片整行拉回来，或者到处写断言。
+ */
+export interface TimeableRow {
+  takenAt: Date | null;
+  createdAt: Date;
+}
+
+/**
+ * 照片的「时间」：**拍摄时间优先，缺失时回落导入时间**（`08 §3`）。
+ *
+ * ⚠️ 这个 coalesce **没法用 Prisma 的 `orderBy` 表达** —— SQLite 的 NULL
+ * 排序是固定的，不会回落到另一列。所以凡是按时间排的地方都得在 JS 里做，
+ * 也就都得先把这个值算出来。
+ *
+ * ⚠️ **排序与分组必须用同一个函数。** 各写一份的话迟早出现「排在最前面
+ * 但分到第二天」这种自相矛盾的结果 —— 所以它在这里只有一份，
+ * 相册（`albumService`）、时间线（`timelineService`）、影册
+ * （`memoryService`）三处都从这里取。
+ */
+export function photoTime(row: TimeableRow): number {
+  return (row.takenAt ?? row.createdAt).getTime();
+}
+
+/**
+ * 按时间倒序：**新的在前**。
+ *
+ * `id` 是次级键 —— 同一毫秒的两条只按时间排是不稳定的，而排序不稳定意味着
+ * 同一个界面刷新两次顺序会变。
+ */
+export function byPhotoTimeDesc(
+  a: TimeableRow & { id: string },
+  b: TimeableRow & { id: string },
+): number {
+  return photoTime(b) - photoTime(a) || (a.id < b.id ? 1 : -1);
+}
+
 /** 分页上限（08 §11）。默认不要一次返回全部照片。 */
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
