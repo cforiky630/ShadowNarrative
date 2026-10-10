@@ -166,7 +166,7 @@ migrate 写进一个库、应用读另一个库，而且不会报错。
 | **收藏** | `MemorySpace` 日期那一行的星 | lucide 的 `Star`，填充表示已收藏（`16 §7.1`） |
 | **对话** | `components/ConversationPanel.tsx`、`api/photos/[id]/conversation/**` | Round 8 **前半**。入口是**点字幕**，只在粒子界面；整层遮罩 + 实时模糊（`07 §4`）。发送键是 `ArrowUp` 图标 |
 | **随笔小记** | `services/journalService.ts`、`components/PhotoOverlay.tsx` + `NotePanel.tsx`、`api/photos/[id]/journal` | Round 8 **后半**，2026-10-10。**一层遮罩两面**（对话 / 笔记）；笔 = AI 动笔、本子 = 读写（`07 §4` §5）。自动存；**空正文 = 删掉这条** |
-| **左下角那一串** | `components/BottomDock.tsx` + `DockCard.tsx` | 参数那颗胶囊（`07 §11`）。加上照片页那组文字（复位视角 / 捉影 / 随笔 / 删除），都要和它对齐 —— 见 `16 §7.3` 的 46 与 `left-32` |
+| **左下角那一串** | `components/BottomDock.tsx` + `DockCard.tsx` | 参数那颗胶囊（`07 §11`）。加上照片页那组文字（复位视角 / 随笔 / 删除），都要和它对齐 —— 见 `16 §7.3` 的 46 与 `left-32` |
 | **缩略图** | `lib/makeThumbnail.ts`、`services/mediaService.ts`、`api/photos/[id]/thumbnail` | 2026-10-10。**浏览器生成、服务端校验落盘**（`08 §6`）。相册 / 时间线 / 飞行图走它；**画布与 AI 仍用原图** |
 | **影册** | `components/MemoriesSpace.tsx` + `MemoryAlbum.tsx` + `OrganizePanel.tsx`、`services/memoryService.ts`、`api/memories/**` | Round 9，2026-10-11。架子 `/memories` + 一册 `/memories/<id>`。**按钮用图标、文案不要白话**（`07 §12`）。删影册**不删照片** |
 
@@ -513,7 +513,7 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
       「放左上角交互不顺畅」）。**这个产品的出口跟着内容走，不挂在角上。**
       影册这一页是条会滚动的列表，所以取的是中间那条路：
       **固定在左下那条 46px 的带上**（与设置那颗球同一条水平线，也就是
-      照片页放「复位视角 / 捉影 / 随笔 / 删除」那一组的位置）。
+      照片页放「复位视角 / 随笔 / 删除」那一组的位置）。
       ⚠️ `fixed` 不是 `absolute` —— 这一页的 `<main>` 比视口高，
       `absolute` 会被留在文档底部
     - ⚠️ **全屏的那一层要自带一个看得见的出口**。整理面板盖住了顶栏，
@@ -543,9 +543,9 @@ scripts/                 setup.mjs + 环境脚本 + Hilbert 自检 + try-subtitl
 .data/                   shadow-narrative.db + photos/（已 gitignore）
 ```
 
-**HEAD**：`d3641a6`。
+**HEAD**：`0c6019a`。
 
-⚠️ **`main` 领先 `origin/main` 27 个提交，还没推。**
+⚠️ **`main` 领先 `origin/main` 28 个提交，还没推。**
 
 **2026-10-10 那一批做了什么**：
 
@@ -579,6 +579,7 @@ hover 方向      全项目 12 处 `text-text-primary/40` + `hover:opacity-85` �
 Back 的位置     从页头左边挪到左下那条 46px 的带 —— 出口跟着内容走，不挂角上
 空态黑屏        把照片拖进空态的相册首屏之后整屏是黑的（useReveal 只在挂载时
                 找元素）；空态那句话改成 `Capture a Moment`
+照片页的捉影    去掉 —— 添照片属于库那一层，不属于「看一张照片」那一页
 ```
 
 ⚠️ **`feat/thumbnail-particle-dock` 与 `docs/handoff-sync` 都已快进合进 `main`，

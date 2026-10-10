@@ -7,7 +7,6 @@ import { Star } from "lucide-react";
 import { useStage } from "@/components/ExperienceShell";
 import { PhotoOverlay } from "@/components/PhotoOverlay";
 import HoldButton from "@/components/HoldButton";
-import { PhotoPicker } from "@/components/PhotoPicker";
 import { Subtitle } from "@/components/Subtitle";
 import { isImeKey } from "@/lib/keyboard";
 import { makeThumbnail } from "@/lib/makeThumbnail";
@@ -905,27 +904,24 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
             )}
 
             {/*
-              「拖入照片 · 拖拽旋转」那句提示**删了**。用户 2026-10-10：
-              「既然有照片说明知道可以拖入了是吧」—— 这一页能出现，
-              就说明库里已经有照片了。整页仍然是拖放目标（`usePhotoDrop`
-              挂在 window 上），只是不再用一句话去提醒。
+              ⚠️ **2026-10-11：这一格原本是「捉影」，用户让去掉了。**
 
-              腾出来的位子给**点一下打开文件选择** —— 拖放与点击本来就是
-              这个动作的两条路，而这里原本只有前者。文案跟着从「提示」
-              变成「动作」，所以不再是「拖入照片 ·」而是「**捉影**」。
+              > 「照片页去掉这个捉影吧，本身在哪里添加也不合适」
 
-              ⚠️ 「捉影」是用户定的（同一天，紧接着「选一张照片」那版）。
-              它和 `Into this moment` 是同一路做法：把「选个文件上传」这个
-              技术动作，说成一件关于影的事 —— 而「影」正是这个产品的词根。
-              **不要把它改回「选照片」这类功能描述。**
+              对。这一页是**看一张照片**的地方 —— 它自己刚说完「已经有一张
+              摆在这儿」，再往这儿放一个上传入口，等于在每一张照片旁边都摆
+              一个「再传一张」。添照片属于**库**那一层：相册首屏（`§4`
+              空态那句 `Capture a Moment`，以及有照片时操作行上那一条）、
+              时间线。
+
+              ⚠️ 「捉影」这个词没有作废 —— 它还在相册首屏的操作行上。
+              那一条当初就是为它定的（把「选个文件上传」这个技术动作说成
+              一件关于影的事），**不要把它改回「选照片」这类功能描述**。
+
+              整页仍然是拖放目标（`usePhotoDrop` 挂在 window 上）——
+              拖进来这个动作是**到处都能做**的，只是不再有一句话或者一个
+              点击入口在照片页上招徕它。
             */}
-            <PhotoPicker
-              onFile={(file) => void acceptFile(file)}
-              className="cursor-pointer text-text-primary opacity-30 transition-opacity duration-[350ms] hover:opacity-85"
-              style={{ transitionTimingFunction: "var(--ease-enter)" }}
-            >
-              捉影
-            </PhotoPicker>
 
             {/*
               随笔小记的入口 —— **只在有内容时出现**（用户 2026-10-10）。
