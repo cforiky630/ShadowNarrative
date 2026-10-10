@@ -141,12 +141,21 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
         {busy ? (
           <p className="text-meta text-text-primary/35">上传中…</p>
         ) : (
+          /*
+            ⚠️ 这一句原本是「还没有照片。捉影，这里会长出一条时间线。」
+            用户 2026-10-11：「**三个都改成 Capture a Moment**」—— 同一个
+            动作在全产品只有一个名字，空态说什么、操作行说什么，都是它。
+
+            少了「这里会长出一条时间线」那一句，是因为**这一屏空着本身
+            就在说这件事**；而那半句是在解释这个界面会怎么变
+            （`07 §12.4`：界面上不该有说明书）。
+          */
           <PhotoPicker
             onFile={(file) => void acceptFile(file)}
             className="text-meta cursor-pointer text-text-primary opacity-35 transition-opacity duration-[350ms] hover:opacity-85"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
-            还没有照片。捉影，这里会长出一条时间线。
+            Capture a Moment
           </PhotoPicker>
         )}
 

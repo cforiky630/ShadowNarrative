@@ -323,16 +323,19 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
 
           {!busy && !notice && (
             /*
-              操作行上这一条只在**有照片**时出现，所以按用户 2026-10-10 的
-              判断「既然有照片说明知道可以拖入了是吧」—— 不再写「拖入照片」，
-              只说这次要做的事。拖放本身仍然有效（`usePhotoDrop`）。
+              操作行上这一条只在**有照片**时出现。文案与空态那句**同一个**
+              （用户 2026-10-11：「三个都改成 Capture a Moment」）——
+              同一个动作在全产品只有一个名字。
+
+              ⚠️ 这里原本写的是「捉影」。那个词没有作废，只是不再出现在
+              界面上（用户当天把三处入口统一成了英文那一句）。
             */
             <PhotoPicker
               onFile={(file) => void acceptFile(file)}
               className="text-micro cursor-pointer text-text-primary opacity-25 transition-opacity duration-[350ms] hover:opacity-85"
               style={{ transitionTimingFunction: "var(--ease-enter)" }}
             >
-              捉影
+              Capture a Moment
             </PhotoPicker>
           )}
         </div>

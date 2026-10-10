@@ -168,6 +168,7 @@ migrate 写进一个库、应用读另一个库，而且不会报错。
 | **随笔小记** | `services/journalService.ts`、`components/PhotoOverlay.tsx` + `NotePanel.tsx`、`api/photos/[id]/journal` | Round 8 **后半**，2026-10-10。**一层遮罩两面**（对话 / 笔记）；笔 = AI 动笔、本子 = 读写（`07 §4` §5）。自动存；**空正文 = 删掉这条** |
 | **左下角那一串** | `components/BottomDock.tsx` + `DockCard.tsx` | 参数那颗胶囊（`07 §11`）。加上照片页那组文字（复位视角 / 随笔 / 删除），都要和它对齐 —— 见 `16 §7.3` 的 46 与 `left-32` |
 | **缩略图** | `lib/makeThumbnail.ts`、`services/mediaService.ts`、`api/photos/[id]/thumbnail` | 2026-10-10。**浏览器生成、服务端校验落盘**（`08 §6`）。相册 / 时间线 / 飞行图走它；**画布与 AI 仍用原图** |
+| **照片的日期** | `components/PhotoDate.tsx`、`lib/formatDate.ts` | 2026-10-11。**点日期长出一张日历**（不是输入框），选了就 `PATCH takenAt`，可以 `Clear`。组件是 `@rehookify/datepicker`（无头、零运行时依赖，理由在 `16 §7.1`） |
 | **影册** | `components/MemoriesSpace.tsx` + `MemoryAlbum.tsx` + `OrganizePanel.tsx`、`services/memoryService.ts`、`api/memories/**` | Round 9，2026-10-11。架子 `/memories` + 一册 `/memories/<id>`。**按钮用图标、文案不要白话**（`07 §12`）。删影册**不删照片** |
 
 实测：150k 粒子 / fps 240 / frame 4.2ms / draw calls 1–2（RTX 3060）。
@@ -580,6 +581,9 @@ Back 的位置     从页头左边挪到左下那条 46px 的带 —— 出口�
 空态黑屏        把照片拖进空态的相册首屏之后整屏是黑的（useReveal 只在挂载时
                 找元素）；空态那句话改成 `Capture a Moment`
 照片页的捉影    去掉 —— 添照片属于库那一层，不属于「看一张照片」那一页
+三个入口同一句    相册空态 / 相册操作行 / 时间线空态，都叫 Capture a Moment
+照片的日期可改    点日期长出一张日历（无头组件 + 全自绘样式），能拖到年月那一屏
+                 （只有一对走月份的 ‹ › 时，看三年前的照片要点三十六下）
 ```
 
 ⚠️ **`feat/thumbnail-particle-dock` 与 `docs/handoff-sync` 都已快进合进 `main`，

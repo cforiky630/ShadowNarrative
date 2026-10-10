@@ -7,7 +7,9 @@ import { Star } from "lucide-react";
 import { useStage } from "@/components/ExperienceShell";
 import { PhotoOverlay } from "@/components/PhotoOverlay";
 import HoldButton from "@/components/HoldButton";
+import { PhotoDate } from "@/components/PhotoDate";
 import { Subtitle } from "@/components/Subtitle";
+import { formatDate } from "@/lib/formatDate";
 import { isImeKey } from "@/lib/keyboard";
 import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
@@ -233,6 +235,15 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
    */
   const [hasNote, setHasNote] = useState(photo.hasNote);
 
+  /**
+   * 这张照片的拍摄时间。**它可以被改**（原图页点日期，`PhotoDate`）。
+   *
+   * 与 `favorite` / `subtitle` 同一个道理：初值来自服务端，之后由那一个
+   * 组件回报。`null` 不是「没有值」，是「这张没有拍摄时间」—— 界面回落
+   * 导入时间（`08 §3`），而回落值**不是**可编辑的那一个。
+   */
+  const [takenAt, setTakenAt] = useState(photo.takenAt);
+
   /** 上一次从服务端看到的照片 id。用来判断「服务端数据变了没有」。 */
   const serverIdRef = useRef<string | null>(photo.id);
 
@@ -252,6 +263,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     setAiState(photo.aiState);
     setFavorite(photo.favorite);
     setHasNote(photo.hasNote);
+    setTakenAt(photo.takenAt);
     setAwaiting(photo.aiState === "pending");
   }, [photo]);
 
@@ -557,7 +569,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     }
   }, [activeId, favorite]);
 
-  const date = formatDate(photo.takenAt ?? photo.createdAt);
+  const date = formatDate(takenAt ?? photo.createdAt);
 
   if (unsupported) {
     return (
@@ -641,7 +653,17 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
          * （照片下边缘约 76%，文字从 78% 起排），在操作区多一行会把它整体往下压。
          */}
         <div className="flex items-center gap-2.5">
-          <p className="text-meta text-text-primary/55">{date}</p>
+          {/*
+            日期 —— **可改**（用户 2026-10-11：「照片的日期应该提供修改功能
+            （在原图页提供），但是不能是输入」）。点它长出一张日历，
+            见 `PhotoDate`。
+          */}
+          <PhotoDate
+            photoId={photo.id}
+            takenAt={takenAt}
+            createdAt={photo.createdAt}
+            onSaved={setTakenAt}
+          />
 
           {/*
            * 用 lucide 的 Star：它的图标是描边式的，`fill="currentColor"` 才是实心。
@@ -1100,12 +1122,3 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
 }
 
 /** 02-DESIGN_SYSTEM.md §4 的日期格式：2025 · 09 · 28 */
-function formatDate(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y} · ${m} · ${day}`;
-}
