@@ -238,15 +238,22 @@ export function OrganizePanel({
       // 底下透出来读起来像渲染瑕疵，不像氛围
       style={{ background: "var(--background)" }}
     >
+      {/*
+        ⚠️ **这一层盖住了整张页面，包括顶栏** —— 所以它是这里**唯一**的出口
+        （除 Esc 与底下的 `Done`）。因此它的亮度比产品里其余图标键高一档
+        （0.6 而不是 0.4）：在 1528px 宽的窗口里，它离内容栏有一大截空，
+        0.4 的 16px 图标是真的会看不见。用户 2026-10-11 报的
+        「进入影册以后出不来了」就有它一份。
+      */}
       <button
         type="button"
         onClick={onClose}
         aria-label="关闭"
         title="关闭"
-        className="text-text-primary fixed top-24 right-12 flex h-7 w-7 items-center justify-center opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"
+        className="text-text-primary fixed top-24 right-12 flex h-7 w-7 items-center justify-center opacity-60 transition-opacity duration-[350ms] hover:opacity-100 focus-visible:opacity-100"
         style={{ transitionTimingFunction: "var(--ease-enter)" }}
       >
-        <X size={16} strokeWidth={1.6} aria-hidden />
+        <X size={18} strokeWidth={1.6} aria-hidden />
       </button>
 
       <div className="mx-auto max-w-[980px]">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ImagePlus, Trash2 } from "lucide-react";
 import { OrganizePanel } from "@/components/OrganizePanel";
@@ -166,38 +167,65 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
     <main className="min-h-dvh px-12 pt-32 pb-32">
       <div className="mx-auto w-full max-w-[880px]">
         <header className="mb-10 flex items-center justify-between gap-8">
-          {editing ? (
-            <input
-              autoFocus
-              value={draft}
-              disabled={saving}
-              maxLength={60}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => void commitTitle()}
-              onKeyDown={(e) => {
-                // 组字中的 Enter / Esc 是输入法的，不是你的（`lib/keyboard.ts`）
-                if (isImeKey(e)) return;
-                if (e.key === "Enter") void commitTitle();
-                if (e.key === "Escape") {
-                  setDraft(title);
-                  setEditing(false);
-                }
-              }}
-              className="text-body w-[22ch] border-0 border-b border-border-subtle bg-transparent pb-1 text-text-primary/95 outline-none focus:border-text-primary/40"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setDraft(title);
-                setEditing(true);
-              }}
-              title="点一下改"
-              className="text-body min-w-0 truncate text-left underline-offset-4 hover:underline"
+          <div className="flex min-w-0 items-baseline gap-6">
+            {/*
+              ⚠️ **这一层必须有自己的出口**（用户 2026-10-11：「进入影册以后
+              出不来了」）。
+
+              架子上那一格是**进得来的一道门**，可进来之后原先只剩顶栏那个
+              「Memories」—— 而那正是**你已经在的那个空间**，40% 的亮度读起来
+              是「你在这儿」，不是「上一级」。整理面板一开，它更是整个被盖住。
+
+              这与照片页为什么要有 `Back` 是同一条（硬约束 #11、
+              `16 §8.6`）：**进得去的门就是出得来的门。**
+
+              文案与照片页那个**逐字相同、样式也相同**（`Back`、不带箭头、
+              不带下划线、0.45 底 hover 提亮）—— 同一条规矩：它是一项
+              **导航的字**，不是控件，而且**不按去向改名**。
+              位置不同（那里在底下那一行，这里在标题左）只因为这一页是
+              一条会滚动的列表，出口压在滚动区之下就等于没有。
+            */}
+            <Link
+              href="/memories"
+              className="text-meta shrink-0 text-text-primary opacity-45 transition-opacity duration-[350ms] hover:opacity-90 focus-visible:opacity-90"
+              style={{ transitionTimingFunction: "var(--ease-enter)" }}
             >
-              {title}
-            </button>
-          )}
+              Back
+            </Link>
+
+            {editing ? (
+              <input
+                autoFocus
+                value={draft}
+                disabled={saving}
+                maxLength={60}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => void commitTitle()}
+                onKeyDown={(e) => {
+                  // 组字中的 Enter / Esc 是输入法的，不是你的（`lib/keyboard.ts`）
+                  if (isImeKey(e)) return;
+                  if (e.key === "Enter") void commitTitle();
+                  if (e.key === "Escape") {
+                    setDraft(title);
+                    setEditing(false);
+                  }
+                }}
+                className="text-body min-w-0 flex-1 border-0 border-b border-border-subtle bg-transparent pb-1 text-text-primary/95 outline-none focus:border-text-primary/40"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft(title);
+                  setEditing(true);
+                }}
+                title="点一下改"
+                className="text-body min-w-0 truncate text-left underline-offset-4 hover:underline"
+              >
+                {title}
+              </button>
+            )}
+          </div>
 
           <div className="flex shrink-0 items-center gap-5">
             <button
