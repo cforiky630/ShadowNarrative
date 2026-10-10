@@ -154,8 +154,15 @@ export function PhotoDate({
             fallback={createdAt}
             busy={saving}
             error={error}
-            onPick={(day) => void save(day)}
-            onClear={() => void save(null)}
+            /*
+             * ⚠️ **挑一天不写库**，要按 `Save` 才写。
+             *
+             * 用户 2026-10-11：「为什么有一个 clear，**右边再来个 save 多好**，
+             * clear 回到上次 save 的时间」。第一版是「点一天 = 立刻存」，
+             * 那样 `Clear` 只能被解释成「把拍摄时间清掉」—— 而那不是他要的：
+             * 挑错了想反悔，只能去数据库里翻。
+             */
+            onSave={(day) => void save(day)}
           />
         </>
       )}
@@ -166,6 +173,18 @@ export function PhotoDate({
 /**
  * 日历本身。
  *
+ * ── 两态：**选中**与**已保存** ───────────────────────────────────────
+ *
+ * 挑一天只动**选中**（`draft`），按 `Save` 才写库。所以：
+ *
+ * - `Save` 只在两者不同时才可按（没什么可存的时候它该是暗的）
+ * - `Clear` 把选中**退回已保存的那一天** —— 它是「放弃这次改动」，
+ *   不是「把拍摄时间清掉」（用户 2026-10-11：「clear 回到上次 save 的时间」）
+ *
+ * ⚠️ **这一版没有「把拍摄时间清成空」的入口了。** 要的话得另找地方 ——
+ * 那个动作的语义是「这张没有拍摄时间」，和「放弃这次改动」是两件事，
+ * 混在同一个按钮上正是第一版的毛病。
+ *
  * 版式上只做一件事：**让它看起来像这个产品的一行字**，而不是一个控件。
  * 没有强调色（`02 §3`），选中靠 `--text-primary` 的实心圆，今天靠一圈发丝。
  */
@@ -174,27 +193,33 @@ function Calendar({
   fallback,
   busy,
   error,
-  onPick,
-  onClear,
+  onSave,
 }: {
   value: string | null;
   fallback: string;
   busy: boolean;
   error: string | null;
-  onPick: (day: Date) => void;
-  onClear: () => void;
+  /** 按了 `Save` 才走到这儿 */
+  onSave: (day: Date | null) => void;
 }) {
   const anchor = new Date(value ?? fallback);
   const [offset, setOffset] = useState<Date>(anchor);
   /** 面板里现在是哪一屏：日子，还是挑年月 */
   const [view, setView] = useState<"days" | "months">("days");
+  /** 还没存下去的那一天。null = 这张没有拍摄时间（显示的是导入时间） */
+  const [draft, setDraft] = useState<Date | null>(
+    value ? new Date(value) : null,
+  );
+
+  /** 已保存的那一天（本地日历日）。拿来和 `draft` 比，也拿来当 `Clear` 的落点 */
+  const savedDay = value ? new Date(value) : null;
+  const dirty = !sameDay(draft, savedDay);
 
   const { data, propGetters } = useDatePicker({
-    // ⚠️ `takenAt` 为空时**一个都不选中**：那时显示的是导入时间，
-    // 把它画成「选中的那一天」会让人以为那张照片真的有拍摄时间
-    selectedDates: value ? [new Date(value)] : [],
+    // 选中的是**没存下去的那一天** —— 挑完要看得见自己挑了哪儿
+    selectedDates: draft ? [draft] : [],
     onDatesChange: (dates) => {
-      if (dates[0]) onPick(dates[0]);
+      if (dates[0]) setDraft(dates[0]);
     },
     offsetDate: offset,
     onOffsetChange: setOffset,
@@ -321,26 +346,50 @@ function Calendar({
         </div>
       )}
 
-      {/* `Clear` 只在**有覆盖**时出现：没有 `takenAt` 的时候没什么可清的 */}
-      {(value || error) && (
-        <div className="mt-3 flex items-baseline justify-between gap-4">
-          {error ? (
-            <span className="text-micro text-text-primary/60" role="status">
-              {error}
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={onClear}
-              disabled={busy}
-              className="text-micro text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85 disabled:opacity-40"
-              style={{ transitionTimingFunction: "var(--ease-enter)" }}
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      )}
+      {/*
+        底下这一条：左 `Clear`、右 `Save`。
+
+        - `Clear` = **放弃这次改动**，回到上次保存的那一天。只在改动过时出现
+          （没改动时它没有事可做，摆着只是一个点不动的词）
+        - `Save` = 存下去。**只在改动过时才可按** —— 没什么可存的时候它该是暗的
+
+        ⚠️ 关掉面板（Esc / 点别处）**不保存**，改动丢掉。这是这一版刻意选的：
+        用户要的就是「挑完再按一下保存」这一步。
+      */}
+      <div className="mt-3 flex items-baseline justify-between gap-4">
+        {error ? (
+          <span className="text-micro text-text-primary/60" role="status">
+            {error}
+          </span>
+        ) : dirty ? (
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(savedDay);
+              // 退回那一天，视图也跟着回到那个月 —— 否则选中在别处看不见
+              if (savedDay) setOffset(savedDay);
+              setView("days");
+            }}
+            disabled={busy}
+            className="text-micro text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85 disabled:opacity-40"
+            style={{ transitionTimingFunction: "var(--ease-enter)" }}
+          >
+            Clear
+          </button>
+        ) : (
+          <span />
+        )}
+
+        <button
+          type="button"
+          onClick={() => onSave(draft)}
+          disabled={busy || !dirty}
+          className="text-micro text-text-primary opacity-70 underline-offset-4 transition-opacity duration-[350ms] hover:opacity-100 focus-visible:opacity-100 disabled:opacity-25"
+          style={{ transitionTimingFunction: "var(--ease-enter)" }}
+        >
+          {busy ? "…" : "Save"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -443,5 +492,23 @@ function NavButton({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * 两个日期是不是**同一个本地日历日**。
+ *
+ * 比年月日，不比时刻 —— 已保存的那个带着原来的时分（比如 14:32），
+ * 而挑出来的那天是午夜；直接比时间戳的话，**选回同一天也会被判成「改过」**，
+ * 于是 `Save` 亮着、`Clear` 冒出来，两处都在说假话。
+ *
+ * 两个都是 `null` 才算相同：`null` 在这个产品里是「这张没有拍摄时间」。
+ */
+function sameDay(a: Date | null, b: Date | null): boolean {
+  if (!a || !b) return a === b;
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
   );
 }
