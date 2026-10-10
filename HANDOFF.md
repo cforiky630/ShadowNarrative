@@ -543,9 +543,9 @@ scripts/                 setup.mjs + 环境脚本 + Hilbert 自检 + try-subtitl
 .data/                   shadow-narrative.db + photos/（已 gitignore）
 ```
 
-**HEAD**：`cb99bbf`。
+**HEAD**：`d3641a6`。
 
-⚠️ **`main` 领先 `origin/main` 26 个提交，还没推。**
+⚠️ **`main` 领先 `origin/main` 27 个提交，还没推。**
 
 **2026-10-10 那一批做了什么**：
 
@@ -578,7 +578,7 @@ hover 方向      全项目 12 处 `text-text-primary/40` + `hover:opacity-85` �
 出不来          影册那一层没有自己的出口（只靠顶栏「你已经在的那个空间」）
 Back 的位置     从页头左边挪到左下那条 46px 的带 —— 出口跟着内容走，不挂角上
 空态黑屏        把照片拖进空态的相册首屏之后整屏是黑的（useReveal 只在挂载时
-                找元素）；顺手把空态那句话改成一个词「捉影」
+                找元素）；空态那句话改成 `Capture a Moment`
 ```
 
 ⚠️ **`feat/thumbnail-particle-dock` 与 `docs/handoff-sync` 都已快进合进 `main`，

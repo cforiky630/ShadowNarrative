@@ -204,13 +204,15 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
             —— 拖放对第一次用的人不是显然的，库里又一张都没有、点哪儿都没
             反应，那是个死胡同。
 
-            ⚠️ **2026-10-11：从一句说明改成一个词。** 用户的原话是
-            「没照片时那句话太low了，换个说法」—— 那一句
+            ⚠️ **2026-10-11：从一句说明改成一个词，再改成英文的一句。**
+            用户先说的是「没照片时那句话太low了，换个说法」—— 那一句
             「把照片拖进来，或点这里捉影」在**解释这个界面怎么用**，
             而界面上不该有说明书（`07 §12.4`）。
 
-            现在只有产品的那个动词：**捉影**。它和照片页左下角那一项是同一个
-            词、同一个意思（把照片带进来），而这一屏上它本来就是唯一的动作。
+            当天最后定的是 **`Capture a Moment`**。英文是对的：这一行
+            与空间名同一族（`Memories` / `Timeline` / `Into this moment`），
+            而它是用户见到的第一句话。
+
             拖放不必用字去教 —— 拖着照片进来的时候 `DropFrame` 自己会亮。
           */}
           <PhotoPicker
@@ -218,7 +220,7 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
             className="text-meta cursor-pointer text-text-primary opacity-35 transition-opacity duration-[350ms] hover:opacity-85"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
-            捉影
+            Capture a Moment
           </PhotoPicker>
           {notice && (
             <button
