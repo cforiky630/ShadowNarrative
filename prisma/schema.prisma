@@ -132,16 +132,24 @@ model ConversationMessage {
   @@map("conversation_messages")
 }
 
-/// 挂在照片上。只能由用户主动触发生成（01 §9）——AI 不自动写日志。
+/// 随笔小记。挂在照片上，只能由用户主动触发生成（01 §9）——AI 不自动写。
+///
+/// ⚠️ **不叫「日志」。** 用户 2026-10-10 定的名字是**随笔小记**，而且它是
+/// **轻**的东西 —— 不是长文日志。`07 §5` 定的版式是「日期 + 正文」，
+/// 日期就是它的标识（一天才是记忆的单位）。
+///
+/// 这也解释了为什么这里**没有 `title`、也没有 `status`**（2026-10-10 删掉）：
+/// 原来那两列是照着「一篇长文 + 起草/定稿」设想的，而一个轻的东西不需要标题，
+/// 也不需要定稿仪式。**留一个永不写入的列，下一个人会以为它坏了** ——
+/// 与删 `UserSettings.autoAnalyze` 是同一条理由。
 model Journal {
   id      String @id @default(cuid())
   photoId String @unique
   photo   Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
 
-  title   String?
   content String
-  status  String @default("draft") // draft | published
-  // 每次 AI 重写 +1，用于并发检测（08 §8）
+  /// 每次写入 +1。PATCH 带上它，不一致就 409 —— 防止「AI 润色」把用户
+  /// 手改过的字盖掉（08 §8）。
   sourceVersion Int @default(1)
 
   createdAt DateTime @default(now())

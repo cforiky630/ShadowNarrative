@@ -1,19 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowUp } from "lucide-react";
 import { motion } from "motion/react";
 import type { ConversationMessage } from "@/types";
 
 /**
- * 对话（`16-ALBUM_SPACE.md` §9、`08 §7`、Round 8）。
+ * 对话 —— `PhotoOverlay` 里的**那一面**（`16-ALBUM_SPACE.md` §9、`08 §7`）。
  *
- * ⚠️ **根元素必须有 `pointer-events-auto`。**
- * 照片页的 `<main>` 是 `pointer-events: none` 的（指针要穿透到画布，
- * 否则拖拽旋转失效），而 `pointer-events` **会被继承** —— 浮层在 `main` 里，
- * 不显式开回来的话它会连指针一起继承成 `none`：鼠标穿过浮层直接打到画布上，
+ * ⚠️ **2026-10-10 拆过一次。** 在这之前它是整个浮层（自带全屏遮罩、居中、
+ * 点空白收起、Esc）。随笔小记那一面要用**同一层遮罩、同一条窄栏**，所以
+ * 遮罩与退出都搬去了 `PhotoOverlay`，这里只剩那一条列。
+ * 于是「对话 ⇄ 随笔小记」是**换内容**，不是叠两层（底下是还在跑的画布，
+ * 两层实时模糊既重又糊）。
+ *
+ * ⚠️ **`pointer-events` 会被继承。** 照片页的 `<main>` 是 `none` 的（指针要
+ * 穿透到画布，否则拖拽旋转失效），而浮层在 `main` 里 —— 整层由 `PhotoOverlay`
+ * 开 `pointer-events-auto` 兜住。
+ *  * 不显式开回来的话它会连指针一起继承成 `none`：鼠标穿过浮层直接打到画布上，
  * 于是「还能拖粒子，而且点不了聊天框」（用户 2026-10-10 报的正是这个）。
- *
- * 同一层楼里另外两处早就各自开过：文字层和左下角那组操作。这是第三个。
  * 判据不是「谁看着像要能点」，而是**它在不在那个 `none` 的子树里**。
  *
  * ── 形态是用户 2026-10-10 定的 ──────────────────────────────────────
@@ -24,9 +29,8 @@ import type { ConversationMessage } from "@/types";
  * 三条都落实了：
  *
  * 1. **入口只在粒子态**（`MemorySpace` 按 `displayMode` 决定），
- *    字幕上有一圈极淡的呼吸边框暗示可点（`.sn-hint`）。
- * 2. **全屏遮罩 + 实时模糊**：`backdrop-filter` 直接糊底下的画布 ——
- *    粒子还在跑，所以这片模糊是活的，不是一张静态底图。
+ *    字幕正下方有一条呼吸的线暗示可点（`.sn-hint`）。
+ * 2. **全屏遮罩 + 实时模糊** —— 现在那一层在 `PhotoOverlay` 里。
  * 3. **逐条从下面上来**：每条 `initial={{ y: 18 }}`，按序号错开。
  *    ⚠️ 只有**打开时已有的那些**参与错开，新发的那条延迟是 0 ——
  *    否则聊到第二十条时，每说一句都要等一秒才看见。
@@ -35,13 +39,20 @@ import type { ConversationMessage } from "@/types";
  *
  * - **不用气泡**（§9）。AI 的话是正文，用户的话更淡，靠明暗分层，
  *   没有边框、没有背景块。字幕就是列表的第一条（`08 §3`：不做两套数据）。
- * - **必须写明照片会离开这台机器**（`12 §5`）。这条对话**每条消息**都会
- *   把当前这张照片一起发给模型服务商 —— 用户按下发送之前要知道这件事。
+ * - 那句「照片会离开这台机器」**不在这儿**：用户当天要求浮层干净，它留在
+ *   设置卡里（`12 §5`、`07 §11.3`）。见下面输入区那段注释。
  */
 
 interface ConversationPanelProps {
   photoId: string;
-  onClose: () => void;
+  /**
+   * 用户刚说了一句。
+   *
+   * ⚠️ 这一条是给**对话那一面那颗笔**用的：随笔小记已经写过之后，只有
+   * 「又聊了几轮」才该让笔回来（用户 2026-10-10 定的）。判据在
+   * `PhotoOverlay` 那边算，这里只负责把「刚说过一句」报上去。
+   */
+  onUserMessaged?: () => void;
 }
 
 /**
@@ -53,7 +64,10 @@ interface ConversationPanelProps {
  */
 const MAX_CHARS = 2000;
 
-export function ConversationPanel({ photoId, onClose }: ConversationPanelProps) {
+export function ConversationPanel({
+  photoId,
+  onUserMessaged,
+}: ConversationPanelProps) {
   const [messages, setMessages] = useState<ConversationMessage[] | null>(null);
   /**
    * 打开时已有的条数。只有它们参与入场错开 —— 见文件头的说明。
@@ -92,15 +106,6 @@ export function ConversationPanel({ photoId, onClose }: ConversationPanelProps) 
     };
   }, [load]);
 
-  // Esc 关闭（04 §7 的退出顺序第一层）
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   // 新消息进来就滚到底
   useEffect(() => {
     if (messages?.length) {
@@ -128,6 +133,15 @@ export function ConversationPanel({ photoId, onClose }: ConversationPanelProps) 
         createdAt: new Date().toISOString(),
       },
     ]);
+
+    /*
+     * 报给 `PhotoOverlay`：现在多了一句用户说的话。
+     *
+     * 放这儿而不是发送成功之后 —— 服务端**在调模型之前**就把用户那句话落库了
+     * （见下面的对账注释），所以「说过」这件事在请求发出去的那一刻就已经成立，
+     * 失败了也一样。而那颗笔的判据正是「有没有比笔记更新的对话」。
+     */
+    onUserMessaged?.();
 
     try {
       const res = await fetch(`/api/photos/${photoId}/conversation/messages`, {
@@ -158,48 +172,32 @@ export function ConversationPanel({ photoId, onClose }: ConversationPanelProps) 
     } finally {
       setSending(false);
     }
-  }, [draft, sending, photoId, load]);
+  }, [draft, sending, photoId, load, onUserMessaged]);
 
   const list = messages ?? [];
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="与这张照片对话"
-      className="pointer-events-auto fixed inset-0 z-[15] flex items-center justify-center px-12"
-      style={{
-        /*
-         * 实时模糊：底下就是画布，粒子还在跑，所以这片模糊是活的。
-         *
-         * ⚠️ 用户 2026-10-10：「模糊度不要太高、要勉强能辨认背景」。
-         * 一开始是 28px + 72% 底色，糊成一块，照片彻底没了 ——
-         * 那样这片遮罩就只是「另一个界面」，不是「照片还在后面」。
-         * 现在 14px + 60%：背景勉强认得出，而文字仍然压得住。
-         */
-        backgroundColor: "color-mix(in oklab, var(--background) 60%, transparent)",
-        backdropFilter: "blur(14px) saturate(115%)",
-        WebkitBackdropFilter: "blur(14px) saturate(115%)",
-      }}
-      onClick={(e) => {
-        // 点列之外的空白收起。列是子元素，点里面的东西不会冒到这里
-        if (e.target === e.currentTarget) onClose();
-      }}
+    /*
+      这里只渲染**那一列**。
+
+      ⚠️ 遮罩、居中、点空白收起、Esc 都归 `PhotoOverlay`（2026-10-10 拆的）——
+      随笔小记那一面要用**同一层遮罩、同一条窄栏**，两套各写一份的话
+      「换内容」就会变成「跳一下」，而且会叠出两层实时模糊。
+      那一层底下就是还在跑的画布，叠两层既重又糊。
+
+      列本身仍然是「一块居中的窄栏」（用户 2026-10-10：「对话更集中于中心区域，
+      对话式聊天」）—— 一开始做成「文字贴顶、输入贴底」的分栏，那是 IM 客户端的
+      骨架，一屏只有两句话时中间是空的，读起来像没加载完。
+      现在消息和输入挨在一起，高度封顶，超出在内部滚。
+    */
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      // 用 spring 而不是写一条 cubic-bezier：`16 §11.2` 不许把曲线抄进代码，
+      // 而 spring 本来就不需要 token 里的曲线
+      transition={{ type: "spring", stiffness: 180, damping: 26 }}
+      className="flex max-h-[78dvh] min-h-0 w-full min-w-0 flex-1 flex-col"
     >
-      {/*
-        整块**居中**（用户 2026-10-10：「对话更集中于中心区域，对话式聊天」）。
-        一开始做成「文字贴顶、输入贴底」的分栏 —— 那是 IM 客户端的骨架，
-        一屏只有两句话时中间是空的，读起来像没加载完。
-        现在是一块居中的窄栏：消息和输入挨在一起，高度封顶，超出在内部滚。
-      */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        // 用 spring 而不是写一条 cubic-bezier：`16 §11.2` 不许把曲线抄进代码，
-        // 而 spring 本来就不需要 token 里的曲线
-        transition={{ type: "spring", stiffness: 180, damping: 26 }}
-        className="flex max-h-[78dvh] w-full max-w-[520px] flex-col"
-      >
         <div className="sn-noscrollbar min-h-0 flex-1 overflow-y-auto">
           {list.map((m, i) => (
               <motion.div
@@ -261,13 +259,26 @@ export function ConversationPanel({ photoId, onClose }: ConversationPanelProps) 
               maxLength={MAX_CHARS}
               className="text-body flex-1 bg-transparent text-text-primary/90 outline-none placeholder:text-text-primary/20"
             />
+            {/*
+              ⚠️ 原先这里是一个 **`说` 字**。用户 2026-10-10：
+              「输入框右边的发送用一个「说」字也太离谱了，改好看点」。
+
+              换成 `lucide-react` 的 `ArrowUp` —— 与产品里其余图标同一套语言
+              （16px / `strokeWidth 1.6`，和 `Settings` / `Star` /
+              `SlidersHorizontal` 一致）。**不用纸飞机（`Send`）**：
+              那个形状比这个产品吵，而且它在这里表达的是「提交」不是「寄出去」。
+
+              纯图标没有文字，所以 `aria-label` 是它唯一的自解释 ——
+              键盘和读屏器都靠它。
+            */}
             <button
               type="submit"
               disabled={!draft.trim() || sending}
-              className="text-micro text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-85 disabled:opacity-20"
+              aria-label="发送"
+              className="text-text-primary shrink-0 self-center opacity-40 transition-opacity duration-[350ms] hover:opacity-85 disabled:opacity-20"
               style={{ transitionTimingFunction: "var(--ease-enter)" }}
             >
-              说
+              <ArrowUp size={16} strokeWidth={1.6} aria-hidden />
             </button>
           </form>
 
@@ -282,6 +293,5 @@ export function ConversationPanel({ photoId, onClose }: ConversationPanelProps) 
           */}
         </div>
       </motion.div>
-    </div>
   );
 }

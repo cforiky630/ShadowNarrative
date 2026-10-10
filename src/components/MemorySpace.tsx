@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Star } from "lucide-react";
 import { useStage } from "@/components/ExperienceShell";
-import { ConversationPanel } from "@/components/ConversationPanel";
+import { PhotoOverlay } from "@/components/PhotoOverlay";
 import HoldButton from "@/components/HoldButton";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { Subtitle } from "@/components/Subtitle";
@@ -176,7 +176,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
    * 那就等于「先把这一天翻开，才谈得上跟它说话」，与 `16 §8.4` 那条
    * 「翻开了就是翻开了」是同一种语气。
    */
-  const [conversationOpen, setConversationOpen] = useState(false);
+  const [overlayFace, setOverlayFace] = useState<"conversation" | "note" | null>(null);
 
   /**
    * 字幕与 AI 状态。
@@ -221,6 +221,17 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
    */
   const [favorite, setFavorite] = useState(photo.favorite);
 
+  /**
+   * 这张照片有没有随笔小记。
+   *
+   * 初值来自服务端（`photo.hasNote` —— 与 `subtitle` 同一个道理：渲染时就要
+   * 知道，不能先空一下再等一次请求），之后由浮层回报。
+   *
+   * ⚠️ 它的唯一用途是**决定左下角那个本子图标在不在** —— 用户定的：那个图标
+   * 只在有内容时才有。正文被清空 = 那条笔记没了 = 图标也该消失。
+   */
+  const [hasNote, setHasNote] = useState(photo.hasNote);
+
   /** 上一次从服务端看到的照片 id。用来判断「服务端数据变了没有」。 */
   const serverIdRef = useRef<string | null>(photo.id);
 
@@ -239,6 +250,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     setSubtitle(photo.subtitle?.content ?? null);
     setAiState(photo.aiState);
     setFavorite(photo.favorite);
+    setHasNote(photo.hasNote);
     setAwaiting(photo.aiState === "pending");
   }, [photo]);
 
@@ -597,7 +609,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
       */}
       <div
         // 对话浮层开着时整层让开：它是 aria-modal 的，底下的东西不该还能 Tab 到
-        inert={conversationOpen}
+        inert={overlayFace !== null}
         className="pointer-events-none absolute inset-x-0 z-10 flex flex-col items-center px-6"
         style={{
           top: TEXT_TOP,
@@ -666,7 +678,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
           onRequest={() => void handleRetry()}
           // 只有粒子态可点开对话（用户 2026-10-10）
           interactive={inParticle}
-          onOpen={() => setConversationOpen(true)}
+          onOpen={() => setOverlayFace("conversation")}
         />
 
         {/*
@@ -828,10 +840,26 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
           照片空间里它是两格（参数 | 设置）约 89px 宽，加上 `left-6` 的 24px
           到 113px 为止。这一组从 128px 起，各占各的。
           （胶囊只有一格时它 44px 宽，这一组会显得空一截 —— 可接受：
-          位置换来换去更糟。） */}
+          位置换来换去更糟。）
+
+          ⚠️ **`bottom-6` + `h-11` 是为了和那颗胶囊对齐**，不是随手写的。
+          用户 2026-10-10：「处理好设置按钮部分和三个文字按钮的错位问题，
+          不在一条水平线上现在」。
+
+          胶囊是 `bottom-6` + `h-11`（44px），圆心在离底 46px 处。这一组
+          原先只有 `bottom-8`，高度由那行 11px 的字撑出来（约 22px），
+          于是文字的中心在 43px —— 比胶囊低 3px，看着就是没对齐。
+
+          给这一层定成和胶囊同一个盒子、内部 `items-center`，两者的中心就都在
+          离底 47px 处。**别把 `h-[46px]` 删掉**：那个高度是拿来对齐的，
+          不是留白。
+
+          ⚠️ 是 **46 不是 44** —— 胶囊自己没有写高度，它的 46 来自里面那颗
+          44px 的球**加上下各 1px 的边框**。写成 `h-11` 会差 1px（实测过：
+          文字的中心落在 949.99、胶囊在 949）。 */}
       <div
         ref={actionsRef}
-        inert={conversationOpen}
+        inert={overlayFace !== null}
         /*
          * 碰到它就重开「两秒没碰它」的倒计时 —— 这是自动收回不跟长按打架的
          * 全部秘密。少了这两行，按住到一半按钮会被计时器卸载、长按凭空断掉。
@@ -842,7 +870,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
         onPointerDown={armRevertTimer}
         onPointerUp={armRevertTimer}
         onPointerCancel={armRevertTimer}
-        className="pointer-events-auto text-micro absolute bottom-8 left-32 z-10 flex items-center gap-5"
+        className="pointer-events-auto text-micro absolute bottom-6 left-32 z-10 flex h-[46px] items-center gap-5"
       >
         {busy && (
           <span className="pointer-events-none text-text-primary/40">
@@ -895,6 +923,32 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
             >
               捉影
             </PhotoPicker>
+
+            {/*
+              随笔小记的入口 —— **只在有内容时出现**（用户 2026-10-10）。
+
+              ⚠️ **是文字，不是图标。** 用户先要的是本子图标，看到之后改成
+              「书本图标改成文字『随笔』吧」—— 这一组本来就是一行行字
+              （捉影 / 删除），插一个图标进去它自己就是那个突兀的东西。
+
+              ⚠️ 「只在有内容时出现」不是省事：一个点开是空白页的入口，就是
+              `TopNavigation` 开头那条要挡的「点不动的东西」。
+              `hasNote` 由浮层回报，正文一被清空它就跟着消失。
+
+              ⚠️ **不需要粒子态** —— 读改一篇已经写下的东西，不该先「翻开」
+              这一天。这正是把它放这儿、而不是放进对话里的理由。
+            */}
+            {hasNote && (
+              <button
+                type="button"
+                onClick={() => setOverlayFace("note")}
+                aria-haspopup="dialog"
+                className="text-text-primary opacity-30 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"
+                style={{ transitionTimingFunction: "var(--ease-enter)" }}
+              >
+                随笔
+              </button>
+            )}
 
             {/*
               删除的确认（`16 §7.3`：两步确认，放在左下角，不紧挨主操作）。
@@ -1023,13 +1077,23 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
       */}
 
       {/*
-        对话浮层。全屏遮罩 + 实时模糊（底下就是还在跑的画布），
+        浮层。全屏遮罩 + 实时模糊（底下就是还在跑的画布），
         所以它必须是 `main` 的最后一个兄弟 —— 要盖在所有文字层之上。
+
+        ⚠️ **一层遮罩、两面**（对话 / 随笔小记），`overlayFace` 决定从哪一面进：
+        字幕那条线进得来对话，左下角那个本子进得来随笔小记。两面在遮罩里
+        **换内容**而不是叠两层 —— 见 `PhotoOverlay` 的说明。
       */}
-      {conversationOpen && activeId && (
-        <ConversationPanel
+      {overlayFace && activeId && (
+        <PhotoOverlay
           photoId={activeId}
-          onClose={() => setConversationOpen(false)}
+          date={date}
+          initialFace={overlayFace}
+          // 对话只能从粒子界面进（16 硬约束 #10）—— 随笔小记那一面的
+          // 「回到对话」也照这条来：原图态下不给那个出口
+          canChat={inParticle}
+          onClose={() => setOverlayFace(null)}
+          onNoteChange={setHasNote}
         />
       )}
     </main>

@@ -4,12 +4,19 @@ import { getAiCredentials, type AiCredentials } from "@/lib/secrets";
 import type {
   Claim,
   ConversationMessage,
+  JournalNote,
   PhotoAnalysisPayload,
   SourceRef,
 } from "@/types";
 import { readStoredFile } from "./mediaService";
 import { appendMessage, listMessages, recordSubtitle } from "./conversationService";
-import { CONVERSATION_SYSTEM, SYSTEM_PROMPT, USER_INSTRUCTION } from "./aiPrompt";
+import { getNote, saveNote } from "./journalService";
+import {
+  CONVERSATION_SYSTEM,
+  JOURNAL_SYSTEM,
+  SYSTEM_PROMPT,
+  USER_INSTRUCTION,
+} from "./aiPrompt";
 
 /**
  * AI 服务 —— 调 DeepSeek（09-AI_SPEC.md）。
@@ -820,4 +827,218 @@ async function guardReply(
     throw new ApiError("AI_UPSTREAM_FAILED", "AI 没说出什么，再试一次");
   }
   return cleaned;
+}
+
+// ---------------------------------------------------------------------------
+// 随笔小记（Round 8 后半）
+// ---------------------------------------------------------------------------
+
+/**
+ * 发给模型的对话上限。
+ *
+ * 这个上限与 `HISTORY_LIMIT` 不是一回事：那个管的是**对话上下文**（最近 20 条
+ * 够接住话头），这里管的是**素材** —— 一篇随笔小记要从整段对话里取事实，
+ * 掐掉开头就等于丢掉最早说的那些。
+ *
+ * 单张照片的对话天然有界，所以给到 100；真超了也只是极端情况下的兜底。
+ *
+ * ⚠️ 与 `09 §17`「不把整个用户历史发送给模型」不冲突：那条说的是**所有照片**的
+ * 历史。这里是**当前这一张**的对话。
+ */
+const NOTE_MATERIAL_LIMIT = 100;
+
+/**
+ * 把这段对话收成一篇随笔小记（Round 8 后半）。
+ *
+ * 用户按那颗笔时调用。它与 `runConversationReply` 有三处不同，每一处都有理由：
+ *
+ * 1. **输出走 JSON。** `09 §12` 要的是一篇正文加两层证据（`factsUsed` /
+ *    `inferences`）——「哪些是他说的、哪些是我猜的」必须分得开，那是 `09 §6`
+ *    证据模型在这条路上的落点
+ * 2. **它自己判断这一遍是起稿还是润色**（看有没有现存那一行），不看客户端传
+ *    什么 —— 少一个得由前端维护、还可能过期的参数
+ * 3. **存下来再返回。** 用户按的那一下要的是**一篇成文**，不是一次建议；
+ *    存下来他就能直接在面板里改
+ *
+ * 这里**不发原图** —— 那笔钱 `runPhotoAnalysis` 已经花过，而它当时看懂了什么
+ * 就存在 `PhotoAnalysis.payload` 里（`09 §17`：只发当前这一张也不需要重复发）。
+ */
+export async function runJournalNote(params: {
+  photoId: string;
+}): Promise<JournalNote> {
+  const photo = await prisma.photo.findUnique({
+    where: { id: params.photoId },
+    select: { id: true },
+  });
+  if (!photo) throw new ApiError("NOT_FOUND", "照片不存在");
+
+  const credentials = await getAiCredentials();
+  if (!credentials) throw new ApiError("AI_UPSTREAM_FAILED", "AI 未配置");
+
+  const [analysis, messages, existing] = await Promise.all([
+    prisma.photoAnalysis.findUnique({
+      where: { photoId: photo.id },
+      select: { payload: true },
+    }),
+    listMessages(photo.id),
+    getNote(photo.id),
+  ]);
+
+  /*
+   * 一条用户说过的话都没有，就没有可整理的东西 —— 只有「AI 看过这张照片」。
+   *
+   * ⚠️ 这一条不是省一次调用，是守住 `01 §9`：**AI 不能替用户定义这段记忆
+   * 是什么**。没有他自己的话，模型只能把看图结果改写成第一人称，
+   * 那不是随笔小记，是伪造的记忆。
+   */
+  if (!messages.some((m) => m.role === "user")) {
+    throw new ApiError("INVALID_INPUT", "还没有什么可整理的 —— 先说两句");
+  }
+
+  const material = messages.slice(-NOTE_MATERIAL_LIMIT);
+
+  const messagesForModel: ChatMessage[] = [
+    {
+      role: "system",
+      content:
+        JOURNAL_SYSTEM +
+        journalContext(analysis?.payload ?? null, existing?.content ?? null),
+    },
+    ...material.map((m) => ({ role: m.role, content: m.content })),
+    // 最后这一句是必须的：对话最后一条多半是**用户说的**，不收尾的话模型
+    // 会去回应那一句，而不是写这篇随笔小记
+    { role: "user", content: "现在把上面这些收成一篇随笔小记，按 json 格式回答。" },
+  ];
+
+  return writeNoteFromModel(credentials, photo.id, messagesForModel);
+}
+
+/**
+ * 接在随笔小记系统提示后面的**素材**。
+ *
+ * 与 `photoContext` 同一个做法（都拼在系统提示之后），但它不提醒「这一轮有
+ * 没有图」—— 这条路本来就不发图。
+ *
+ * ⚠️ 与 `photoContext` 一样，末尾那句「不要向用户提起它的来源」是必需的：
+ * 不加的话模型会把「你看这张照片时记下的」这种**内部说法**讲给用户听。
+ */
+function journalContext(
+  payloadRaw: string | null,
+  existingContent: string | null,
+): string {
+  const lines: string[] = [];
+
+  if (payloadRaw) {
+    try {
+      const p = JSON.parse(payloadRaw) as PhotoAnalysisPayload;
+      const noted: string[] = [];
+      if (p.description) noted.push(`画面里客观有什么：${p.description}`);
+      if (p.people?.length) noted.push(`人：${p.people.join("、")}`);
+      if (p.objects?.length) noted.push(`物件：${p.objects.join("、")}`);
+      if (p.events?.length) noted.push(`可能发生：${p.events.join("、")}`);
+      if (p.uncertainties?.length) {
+        noted.push(`当时就没把握：${p.uncertainties.join("、")}`);
+      }
+      if (noted.length) {
+        lines.push("你看这张照片时记下的：", ...noted.map((l) => `- ${l}`));
+        lines.push(
+          "",
+          "（这些是你自己知道的，不要向用户提起它的来源，也不要复述这份清单。）",
+        );
+      }
+    } catch {
+      // payload 坏了就当没有 —— 它只是素材，不该让这一遍失败
+    }
+  }
+
+  if (existingContent) {
+    lines.push(
+      "",
+      "下面是这篇随笔小记的**现稿**（用户改过）：",
+      "",
+      existingContent,
+      "",
+      "保住他的措辞，你只把新聊到的织进去。不要重写。",
+    );
+  }
+
+  return lines.length ? `\n\n${lines.join("\n")}` : "";
+}
+
+/** 调模型 → 校验 → 语气守卫 → 落库。抽出来是为了「重生成一次」能复用。 */
+async function writeNoteFromModel(
+  credentials: AiCredentials,
+  photoId: string,
+  messagesForModel: ChatMessage[],
+): Promise<JournalNote> {
+  let lastProblem = "格式不正确";
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const withHint =
+      attempt === 0
+        ? messagesForModel
+        : messagesForModel.map((m, i) =>
+            i === messagesForModel.length - 1
+              ? {
+                  ...m,
+                  content: `${String(m.content)}\n\n上一次的 json ${lastProblem}。`,
+                }
+              : m,
+          );
+
+    let raw: string;
+    try {
+      raw = await chatCompletion(credentials, { messages: withHint, json: true });
+    } catch (error) {
+      if (attempt === 0) {
+        lastProblem = "没解析出来";
+        continue;
+      }
+      throw error;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = parseJsonObject(raw);
+    } catch {
+      lastProblem = "不是合法的 json";
+      continue;
+    }
+
+    const obj = parsed as Record<string, unknown>;
+    if (typeof obj.content !== "string" || !obj.content.trim()) {
+      lastProblem = "缺少 content";
+      continue;
+    }
+
+    const content = guardNote(obj.content);
+    if (!content) {
+      lastProblem = "content 是空的";
+      continue;
+    }
+
+    const saved = await saveNote({ photoId, content });
+    // saveNote 在正文为空时返回 null，而上面已经挡掉空了 —— 这里的兜底只是防御
+    if (!saved) throw new ApiError("AI_UPSTREAM_FAILED", "没能把它存下来");
+    return saved;
+  }
+
+  throw new ApiError("AI_UPSTREAM_FAILED", "AI 没写出可用的东西");
+}
+
+/**
+ * 输出后过滤（`09 §20` 第 2 层）—— 和另外两条路同一套判据，但**不截句**。
+ *
+ * ⚠️ 不截句是有意的：字幕有「最多两句」的硬约束（`09 §21.6`），随笔小记没有 ——
+ * 它是随笔，`aiPrompt` 里已经写了「宁短勿长」，再在外面按句数砍会把一篇
+ * 收在最后一句的话砍掉。
+ *
+ * 净化之后什么都不剩就返回空串，让调用方重试。
+ */
+function guardNote(raw: string): string {
+  const violations = findToneViolations(raw);
+  // 排他性表述改不掉（机械替换会改变整句意思），而这篇是要留下来的文字：
+  // 宁可让调用方重生成一次
+  if (violations.some((v) => v.startsWith("含排他性表述"))) return "";
+  return scrub(raw).trim();
 }

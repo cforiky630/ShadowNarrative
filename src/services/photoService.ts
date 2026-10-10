@@ -143,10 +143,14 @@ export async function createPhoto(input: CreatePhotoInput): Promise<Photo> {
 }
 
 /**
- * 取一张照片的完整视图，含字幕。
+ * 取一张照片的完整视图，含字幕与「有没有随笔小记」。
  *
  * `aiState` 让客户端知道还要不要继续轮询（08 §10），
  * `subtitle` 就是要显示在照片下方的那句话。
+ *
+ * ⚠️ `hasNote` **只回答在不在，不带正文** —— 照片页只需要据此决定左下角
+ * 那个本子图标出不出现，而正文可能很长。真要点开时再走
+ * `GET /api/photos/:id/journal`（与对话取消息同一条路）。
  */
 export async function getPhotoDetail(
   userId: string,
@@ -173,12 +177,14 @@ export async function getPhotoDetail(
           },
         },
       },
+      // 只要 id：判断在不在
+      journal: { select: { id: true } },
     },
   });
 
   if (!row) return null;
 
-  const { conversation, ...photoRow } = row;
+  const { conversation, journal, ...photoRow } = row;
   const message = conversation?.messages[0] ?? null;
 
   return {
@@ -193,6 +199,7 @@ export async function getPhotoDetail(
           createdAt: message.createdAt.toISOString(),
         }
       : null,
+    hasNote: journal !== null,
   };
 }
 

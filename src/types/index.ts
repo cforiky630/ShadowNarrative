@@ -310,13 +310,39 @@ export interface ConversationMessage {
 }
 
 /**
- * 照片 + 它的字幕。
+ * 随笔小记（`08 §3` 的 `Journal`）。
+ *
+ * ⚠️ **不叫「日志」。** 用户 2026-10-10 定的名字是随笔小记，而且它是**轻**的
+ * 东西 —— 不是长文日志。`07 §5` 定的版式是「日期 + 正文」，日期就是它的标识。
+ *
+ * ⚠️ **没有 `title`、也没有 `status`**（2026-10-10 连同 schema 一起删了）：
+ * 那两列是照着「一篇长文 + 起草/定稿」设想的，一个轻的东西不需要。
+ */
+export interface JournalNote {
+  id: string;
+  content: string;
+  /** 每次写入 +1。PATCH 带上它，不一致 → 409（`08 §8`） */
+  sourceVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * 照片 + 它的字幕 + 有没有随笔小记。
  *
  * 轮询 `GET /api/photos/:id` 拿的就是这个：`aiState` 让客户端知道还要不要继续等，
  * `subtitle` 直接就是要显示在照片下方的那句话。
  */
 export interface PhotoDetail extends Photo {
   subtitle: ConversationMessage | null;
+  /**
+   * 这张照片有没有随笔小记。
+   *
+   * ⚠️ **只回答「在不在」，不带正文** —— 照片页只需要据此决定左下角那个
+   * 本子图标出不出现，而正文可能很长。真要点开时再
+   * `GET /api/photos/:id/journal`，和对话一样。
+   */
+  hasNote: boolean;
 }
 
 /** 分组（08 §3）。可选，不拥有照片 —— 删分组不删照片。 */
