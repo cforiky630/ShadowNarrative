@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Star } from "lucide-react";
 import { useStage } from "@/components/ExperienceShell";
 import { ConversationPanel } from "@/components/ConversationPanel";
+import HoldButton from "@/components/HoldButton";
 import { Subtitle } from "@/components/Subtitle";
 import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
@@ -115,7 +116,12 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  /** 删除是两步确认：第一次点击进入待确认，不弹模态框（07 §1 不要重 UI） */
+  /**
+   * 删除的待确认状态。
+   *
+   * 两步：点「删除」进入待确认，然后**按住**才真的删。不弹模态框
+   * （`07 §1` 不要重 UI），第二次确认由 `HoldButton` 承担。
+   */
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   /**
@@ -340,17 +346,34 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
    */
   const dragging = usePhotoDrop(acceptFile);
 
-  // 进入待确认后 4 秒自动撤回，避免按钮一直停在危险状态
+  /**
+   * 待确认状态下的退出。
+   *
+   * ⚠️ **2026-10-10 起不再是「4 秒自动撤回」。** 那个计时器会和长按打架 ——
+   * 按到一半计时器到点，按钮被卸载，长按凭空断掉。
+   *
+   * 而长按本身已经足够「不可能误触」，它不需要超时护栏。要退出按 Esc
+   * （`04 §7` 的退出顺序里，Esc 管的就是这类「当前状态」）。
+   */
   useEffect(() => {
     if (!confirmDelete) return;
-    const t = setTimeout(() => setConfirmDelete(false), 4000);
-    return () => clearTimeout(t);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirmDelete(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [confirmDelete]);
 
-  /** 删除当前照片。顺序由服务端保证：先删文件再删记录（08 §16）。 */
+  /**
+   * 删除当前照片。顺序由服务端保证：先删文件再删记录（08 §16）。
+   *
+   * ⚠️ 这里**不再动 `busy`**。`busy` 会让左下角那一组整体换成「处理中…」，
+   * 于是 `HoldButton` 会被卸载 —— 它自己的 done 态（「删除中」）才是这一刻
+   * 该显示的进度，没必要再叠一个。成功就换路由（整页走掉），
+   * 失败就撤回长按状态并报出来。
+   */
   const handleDelete = useCallback(async () => {
     if (!activeId) return;
-    setBusy(true);
     setNotice(null);
 
     try {
@@ -376,8 +399,6 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "删除失败");
       setConfirmDelete(false);
-    } finally {
-      setBusy(false);
     }
   }, [activeId, router]);
 
@@ -764,22 +785,82 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
               </span>
             )}
 
-            {/* 面板没有强调色，所以用「提亮」而非红色来表达危险：
-                深色背景上接近纯白是最抢眼的，这是这套配色表达「注意」的方式 */}
-            <button
-              type="button"
-              onClick={
-                confirmDelete ? handleDelete : () => setConfirmDelete(true)
-              }
-              aria-live={confirmDelete ? "polite" : undefined}
-              className="transition-opacity duration-[200ms]"
-              style={{
-                opacity: confirmDelete ? 0.95 : 0.4,
-                transitionTimingFunction: "var(--ease-enter)",
-              }}
-            >
-              {confirmDelete ? "确认删除？" : "删除"}
-            </button>
+            {/*
+              删除的确认（`16 §7.3`：两步确认，放在左下角，不紧挨主操作）。
+
+              用户 2026-10-10：「删除改成，点击删除后显示长按以确认删除，
+              然后借鉴 reactbits 上的 Hold Button 组件实现」。
+
+              所以是**两步**：点「删除」是表态，**按住不放**才是真的删。
+              长按把「确认」从又一次点击变成一件要花掉时间的事 ——
+              删除不可逆（`08 §16` 先删文件再删记录），值得这道门。
+
+              ── 配色全部走项目 token，不用上游那个紫色 ──────────────────
+              `02 §3`：粒子颜色优先来自照片本身，整套配色里**没有强调色**。
+              所以「危险」在这个产品里的表达方式是**提亮，不是染色**
+              （深色背景上接近纯白是最抢眼的）—— 液体用 `--text-primary`，
+              漫过去之后字反成 `--background` 的深色。
+
+              `glow` 关掉：`02 §7` 说 Glow 只用来表达当前焦点 / 粒子节点 /
+              hover / loading，别让界面发光。
+
+              `resetAfter={0}`：完成态留着别弹回去 —— 那时候请求正在飞，
+              「删除中」就是这一刻该显示的进度（`handleDelete` 因此不再动
+              `busy`，见它的注释）。
+            */}
+            {confirmDelete ? (
+              <HoldButton
+                /*
+                 * ⚠️ **尺寸、字号、字体粗细全部压到和「删除」一样。**
+                 *
+                 * 用户 2026-10-10：「你需要平衡一下点击删除前后的视觉差」。
+                 * 第一版是 `size="sm"`（36px 高、13px 字、一层玻璃底色）——
+                 * 点一下，那颗 11px 的暗字忽然换成一块 124×36 的药丸，
+                 * 在那个角落里读起来是**另一样东西出现了**，
+                 * 而不是**这行字变了**。
+                 *
+                 * 现在 `h-auto` + `text-micro` + `px-2 py-1` 把它压回一行字，
+                 * 底色去掉（`transparent` + `shadow-none`），只留液体本身。
+                 * 于是点击前后的差别只剩三件：字变亮了、多了十二个字、
+                 * 以及一条从左边漫过来的白。
+                 *
+                 * ⚠️ 这几个 Tailwind 类**盖得住**组件自己的 `--sm` 预设，
+                 * 是因为 `hold-button.css` 写在 `@layer components` 里，
+                 * 而工具类在 `utilities` —— 后者永远赢，与选择器特异度无关。
+                 * 要是哪天那份 CSS 从 `@layer` 里挪出来，这一行会整个失效。
+                 */
+                className="h-auto px-2 py-1 text-micro text-text-primary/70 shadow-none"
+                radius={6}
+                holdTime={1400}
+                releaseTime={260}
+                backgroundColor="transparent"
+                fillColor="var(--text-primary)"
+                fillTextColor="var(--background)"
+                waveAmplitude={2}
+                glow={false}
+                resetAfter={0}
+                doneLabel="删除中"
+                onHold={() => void handleDelete()}
+              >
+                长按以确认删除
+              </HoldButton>
+            ) : (
+              /*
+               * `px-2 py-1` 与上面那颗按钮**必须一致** —— 否则点下去时
+               * 这一格的高度会变，整行跟着上下跳一下。
+               */
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="px-2 py-1 transition-opacity duration-[200ms]"
+                style={{
+                  opacity: 0.4,
+                  transitionTimingFunction: "var(--ease-enter)",
+                }}
+              >
+                删除
+              </button>
+            )}
           </>
         )}
       </div>
