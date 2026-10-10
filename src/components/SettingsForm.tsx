@@ -115,10 +115,13 @@ export function SettingsForm({ initial }: SettingsFormProps) {
           {/*
             09 §21.2 与 12 §5 要求这句话必须出现在界面上，不能只活在文档里。
             它说的是一件开关改变不了的事，所以单独一段、比上面那句更重。
+
+            2026-10-10 用户：「设置界面留一些必要的说明就行了」——
+            原先后面还跟着「这是『服务端 AI』的本来面目，不是设置能改变的」，
+            那是文档里的**推理**，不是用户要读的信息。去掉。
           */}
           <p className="text-meta mt-6 text-text-primary/55">
-            无论开关怎么设，照片都会离开这台机器，去第三方模型服务商。
-            这是「服务端 AI」的本来面目，不是设置能改变的。
+            无论开关怎么设，照片都会离开这台机器，发给模型服务商。
           </p>
 
           {/* --- API key --- */}
@@ -205,17 +208,27 @@ export function SettingsForm({ initial }: SettingsFormProps) {
             </div>
           )}
 
+          {/*
+            环境变量那一份只在开发期出现。它**必须**说明「清除清不到它」——
+            不说的话用户点「清除」会发现状态没变，看起来像坏了
+            （`src/lib/secrets.ts` 的 `getAiPublicInfo` 把两者分开报，就是为了这个）。
+          */}
           {view.aiKeyFromEnv && (
             <p className="text-meta mt-6 text-text-primary/45">
-              现在这个 key 来自 .env.local 的 AI_API_KEY —— 那是开发期的回退。
-              在上面填一个会覆盖它；但「清除」只清 secrets.json，
-              环境变量还在，AI 会继续可用。
+              这个 key 来自 .env.local 的 AI_API_KEY（开发期的回退）。
+              这里填一个会覆盖它，「清除」清不到它。
             </p>
           )}
 
+          {/*
+            `17 §4`：key 存 secrets.json，不进数据库、不进日志。
+
+            「服务端不回传 key、所以这里没有显示明文」那半句删了 ——
+            它是那条规矩的**理由**，属于代码注释；而输入框上面那句
+            「粘贴 key，保存后不再显示」已经把该让用户知道的说完了。
+          */}
           <p className="text-meta mt-6 text-text-primary/45">
-            存在本机 secrets.json，不进数据库、不进日志。服务端也不会再把 key
-            发回来 —— 所以这里没有「显示明文」。
+            存在本机 secrets.json，不进数据库、不进日志。
           </p>
           <p className="text-meta mt-2 text-text-primary/30">
             当前用 {view.aiModel}（{view.aiBaseUrl}）
@@ -227,11 +240,14 @@ export function SettingsForm({ initial }: SettingsFormProps) {
           <h2 className="text-micro text-text-primary/40">本机</h2>
           {/*
             17 §6 要求这句话必须写在设置页里，不能只写在文档里。
+
+            末句「真要局域网访问，请自己承担这个风险」删了（用户 2026-10-10：
+            「设置界面留一些必要的说明就行了」）—— 前半句已经把风险说完了，
+            那句只是重复。
           */}
           <p className="text-meta mt-8 text-text-primary/55">
             这个服务默认只监听 127.0.0.1。改成 0.0.0.0 等于把整个照片库暴露在
-            局域网上，而它没有任何鉴权 —— 谁连上都能看、都能删。真要局域网访问，
-            请自己承担这个风险。
+            局域网上 —— 它没有任何鉴权，谁连上都能看、都能删。
           </p>
         </section>
       </div>
