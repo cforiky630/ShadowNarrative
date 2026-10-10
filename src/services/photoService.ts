@@ -96,7 +96,16 @@ export async function createPhoto(input: CreatePhotoInput): Promise<Photo> {
         width: stored.width,
         height: stored.height,
         byteSize: stored.byteSize,
-        takenAt: input.takenAt ?? null,
+        /*
+         * 拍摄时间：**显式传的优先，其次 EXIF，最后 null**（`08 §6`）。
+         *
+         * `input.takenAt` 是客户端在表单里带的 —— 它会盖过 EXIF，因为
+         * 用户手动写的时间就是比相机时钟可信。两者都没有就留 null，
+         * 排序时回落到 `createdAt`（`08 §3`）。
+         *
+         * EXIF 读取在 `savePhotoFile` 里做（字节已经在手上，不必再读一遍盘）。
+         */
+        takenAt: input.takenAt ?? stored.takenAt ?? null,
         caption: input.caption?.trim() || null,
         aiState: "pending",
       },
