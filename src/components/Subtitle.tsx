@@ -26,16 +26,32 @@ interface SubtitleProps {
   awaitingManualTrigger?: boolean;
   /** 请求分析。失败重试与手动触发走同一条路。 */
   onRequest?: () => void;
+  /**
+   * 这时候字幕**可以点开对话**。
+   *
+   * 用户 2026-10-10：**只有粒子界面能进入对话**，而且字幕上要有一圈
+   * 「非常淡的若隐若现的边框」暗示它可点。
+   * 所以这个开关由 `MemorySpace` 按 `displayMode` 传进来，
+   * 提示样式是 `.sn-hint`（`components.css`，一条很慢的呼吸动画）。
+   */
+  interactive?: boolean;
+  onOpen?: () => void;
 }
 
 /** 一句占位的高度，等于一行 text-body（1.7 line-height）。 */
 const ONE_LINE = "1.7em";
+
+/** 主体文字的样式。可点与不可点共用一套 —— 点开前后不该换一种字 */
+const BODY_CLASS =
+  "text-body mt-2 block max-w-[26em] text-center text-balance text-text-primary/85";
 
 export function Subtitle({
   content,
   state,
   awaitingManualTrigger = false,
   onRequest,
+  interactive = false,
+  onOpen,
 }: SubtitleProps) {
   // 关掉自动分析：照片还没有被发出去，等用户决定。
   // 文案不用「分析」这种系统词 —— 说的是这件事本身。
@@ -75,12 +91,38 @@ export function Subtitle({
     );
   }
 
+  /*
+   * 可点的那一版。**用 <button> 而不是给 <p> 挂 onClick** ——
+   * 键盘、焦点环、读屏器的「按钮」角色都是白送的。
+   *
+   * ⚠️ 只在 `interactive && content` 时才算数：粒子态下字幕可能还没到
+   * （先翻了粒子、分析还没回来），那时候点是点不出东西的。
+   */
+  if (interactive && content) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-haspopup="dialog"
+        className={`${BODY_CLASS} sn-hint pointer-events-auto`}
+        style={{
+          minHeight: ONE_LINE,
+          // 与溶解同一条缓动（16 §11.2：缓动运行时从 CSS 变量读，不抄数字）
+          transition:
+            "opacity var(--duration-morph) var(--ease-morph), transform var(--duration-morph) var(--ease-morph)",
+        }}
+      >
+        {content}
+      </button>
+    );
+  }
+
   return (
     <p
       // 宽度用 em 不用 ch：`ch` 是数字 0 的宽度，一个汉字约合 2ch，
       // 用 ch 会得到「一行只放得下 17 个字」这种对中文毫无意义的行宽。
       // 26em ≈ 26 个汉字一行，正好是电影字幕的尺度。
-      className="text-body mt-2 max-w-[26em] text-center text-balance text-text-primary/85"
+      className={BODY_CLASS}
       style={{
         minHeight: ONE_LINE,
         // 与溶解同一条缓动和时长，让浮现成为镜头的一部分而不是文字突然出现

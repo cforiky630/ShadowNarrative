@@ -61,6 +61,35 @@
     opacity: 1;
   }
 
+  /* 字幕在粒子态是**可以点开对话的**，靠一圈极淡的呼吸边框暗示。
+     用户 2026-10-10：「粒子界面的主题可以有一个非常淡的若隐若现的边框效果
+     暗示点击」。
+
+     ⚠️ 用 `outline` 不用 `border`：border 会让文字块重新排版（字号不变但
+     行宽变了），而这一圈必须在出现和消失之间**不推动任何东西**。
+     outline-offset 把它撑到文字外面，像是给这句话留了一圈空气。
+
+     ⚠️ 这与 `16 §7.1`「没有边框、没有投影、没有背景块」不冲突：
+     那条禁的是**卡片**（传统 hero 卡那种把内容装进一个盒子），
+     而这是一圈提示可点性的空气，只在粒子态出现，平时完全不存在。 */
+  @keyframes sn-hint-breathe {
+    from {
+      outline-color: color-mix(in oklab, var(--text-primary) 5%, transparent);
+    }
+    to {
+      outline-color: color-mix(in oklab, var(--text-primary) 17%, transparent);
+    }
+  }
+
+  .sn-hint {
+    outline: 1px solid transparent;
+    outline-offset: 14px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    /* alternate + infinite：像呼吸，不像闪烁 */
+    animation: sn-hint-breathe 5.5s var(--ease-morph) infinite alternate;
+  }
+
   /* 隐藏滚动条但保留滚动。
      产品是「UI 是空气，照片和粒子才是主体」（02 §1）—— 一条系统滚动条
      盖在全屏的网格画廊上非常突兀。滚轮 / 触控板 / 键盘仍然可用，

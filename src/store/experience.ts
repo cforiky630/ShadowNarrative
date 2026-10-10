@@ -71,6 +71,19 @@ export interface StageState {
    * 这个字段是「谁最后说话谁算数」，没有默认值兜底。
    */
   space: "album" | "photo" | "timeline" | null;
+  /**
+   * 这一趟是从哪个空间走进照片的。
+   *
+   * 用户 2026-10-10：「无论从首页进入记忆页还是时间线进入，都应该有一个返回按钮
+   * 能够返回首页或时间线（**取决于从哪里进入**）」。
+   *
+   * 由 `ExperienceShell.enter` 在**覆写 `space` 之前**读一次旧值记下来 ——
+   * 那是唯一知道这件事的时刻。
+   *
+   * `null` = 不是走进来的（直接打开 `/?photo=<id>`、或者刷新），
+   * 这时候出口回落到第一屏（相册）。
+   */
+  entryFrom: "album" | "timeline" | null;
   /** 画布上该是哪张照片。null = 还没有（相册、空态） */
   photoId: string | null;
   /**
@@ -204,6 +217,7 @@ export const useExperience = create<ExperienceState>((set, get) => ({
 
   stage: {
     space: null,
+    entryFrom: null,
     photoId: null,
     origin: null,
     canvasShown: false,

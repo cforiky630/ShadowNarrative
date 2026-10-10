@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Star } from "lucide-react";
 import { ParticleControls } from "@/components/ParticleControls";
+import { ConversationPanel } from "@/components/ConversationPanel";
 import { Subtitle } from "@/components/Subtitle";
 import { useStage } from "@/components/ExperienceShell";
 import { uploadPhoto } from "@/lib/photoUpload";
@@ -82,10 +84,32 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
    */
   const entering = useExperience((s) => s.stage.origin !== null);
 
+  /**
+   * 出口往哪去 —— 取决于这一趟是从哪走进来的（`stage.entryFrom` 的注释里有理由）。
+   *
+   * 不是走进来的（直接打开 `/?photo=<id>`、或刷新过）就回落到第一屏 ——
+   * 相册。空着不给出口的话，用户就只剩浏览器的返回键了。
+   *
+   * ⚠️ **名字不随去向变，统一是 `Back`**（用户 2026-10-10：「不区分显示的
+   * 名字都用 Back」）。试过写「回相册 / 回时间线」——那是在替用户记路线，
+   * 而他只要知道「这一步能退回去」。
+   */
+  const entryFrom = useExperience((s) => s.stage.entryFrom);
+  const backHref = entryFrom === "timeline" ? "/timeline" : "/";
+
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   /** 删除是两步确认：第一次点击进入待确认，不弹模态框（07 §1 不要重 UI） */
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  /**
+   * 对话浮层开着没有。
+   *
+   * 入口**只有粒子态的字幕**（用户 2026-10-10：「只有粒子界面能进入对话」）——
+   * 那就等于「先把这一天翻开，才谈得上跟它说话」，与 `16 §8.4` 那条
+   * 「翻开了就是翻开了」是同一种语气。
+   */
+  const [conversationOpen, setConversationOpen] = useState(false);
 
   /**
    * 字幕与 AI 状态。
@@ -446,6 +470,8 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
         而画布有实心底色，症状是日期字幕整个消失（踩过两次，见 `05 §6.2`）。
       */}
       <div
+        // 对话浮层开着时整层让开：它是 aria-modal 的，底下的东西不该还能 Tab 到
+        inert={conversationOpen}
         className="pointer-events-none absolute inset-x-0 z-10 flex flex-col items-center px-6"
         style={{
           top: TEXT_TOP,
@@ -513,6 +539,9 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
           state={aiState}
           awaitingManualTrigger={!autoAnalyze}
           onRequest={() => void handleRetry()}
+          // 只有粒子态可点开对话（用户 2026-10-10）
+          interactive={inParticle}
+          onOpen={() => setConversationOpen(true)}
         />
 
         {/*
@@ -526,11 +555,26 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
          * 嵌套 <button> 会触发 hydration 错（踩过），而只换文案则是一瞬间的
          * 换字，读起来像控件跳了一下，不是空间在变。
          */}
-        <button
-          type="button"
-          onClick={toggleParticle}
-          className="text-meta pointer-events-auto relative mt-6 text-text-primary/45 hover:opacity-90 focus-visible:opacity-90"
-        >
+
+        {/*
+          主操作与「回上一步」并排。
+
+          用户 2026-10-10：「无论从首页进入记忆页还是时间线进入，都应该有一个
+          返回按钮能够返回首页或时间线（取决于从哪里进入），返回按钮与
+          into this moment 在一起」。同一个理由和他上一次说的一样 ——
+          手伸到哪儿，出口就在哪儿，不必跑到屏幕对角。
+
+          ⚠️ **文案统一是 `Back`，不按去向改名**（用户 2026-10-10）。
+          试过写「回相册 / 回时间线」—— 那是在替用户记路线，
+          而他只要知道「这一步能退回去」。
+          左边那一格在粒子态的「返回」是另一回事（回到原图，不是回上一屏）。
+        */}
+        <div className="pointer-events-auto mt-6 flex items-baseline gap-7">
+          <button
+            type="button"
+            onClick={toggleParticle}
+            className="text-meta relative text-text-primary/45 hover:opacity-90 focus-visible:opacity-90"
+          >
           {/*
             两段文字叠在同一格里，各自收起来的时候要对辅助技术隐藏 ——
             不标出来读屏器会把两个动作一起念成「Into this moment 返回」，
@@ -563,7 +607,21 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
           >
             返回
           </span>
-        </button>
+          </button>
+
+          {/*
+            回上一步。`entryFrom` 由外壳在推入时记下（它覆写 space 之前读了旧值）——
+            相册和照片页的 pathname 都是 `/`，事后从路由上推不出来。
+
+            不是走进来的（直接打开链接、或者刷新过）就回落到第一屏（相册）。
+          */}
+          <Link
+            href={backHref}
+            className="text-meta text-text-primary/30 underline-offset-4 hover:text-text-primary/70 hover:underline"
+          >
+            Back
+          </Link>
+        </div>
       </div>
 
       {/* 左下角：旋转提示 / 复位 / 删除 / 状态。
@@ -573,7 +631,10 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
 
           `left-20` 而不是 `left-12`：最角上是设置那颗球（`SettingsPanel`），
           球占 24–68px，这一组从 80px 起，各占各的。 */}
-      <div className="pointer-events-auto text-micro absolute bottom-8 left-20 z-10 flex items-center gap-5">
+      <div
+        inert={conversationOpen}
+        className="pointer-events-auto text-micro absolute bottom-8 left-20 z-10 flex items-center gap-5"
+      >
         {busy && (
           <span className="pointer-events-none text-text-primary/40">
             处理中…
@@ -632,6 +693,17 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
       )}
 
       <ParticleControls />
+
+      {/*
+        对话浮层。全屏遮罩 + 实时模糊（底下就是还在跑的画布），
+        所以它必须是 `main` 的最后一个兄弟 —— 要盖在所有文字层之上。
+      */}
+      {conversationOpen && activeId && (
+        <ConversationPanel
+          photoId={activeId}
+          onClose={() => setConversationOpen(false)}
+        />
+      )}
     </main>
   );
 }

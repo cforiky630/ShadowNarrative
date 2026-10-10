@@ -205,10 +205,16 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
        * 否则会把上一张的粒子状态带进这张。
        */
       useExperience.getState().setDisplayMode("photo");
+      /*
+       * 先读旧值再覆写 —— 这是唯一知道「从哪走进来的」的时刻。
+       * 相册和照片页的 pathname 都是 `/`，事后从路由上推不出来。
+       */
+      const cameFrom = useExperience.getState().stage.space;
       setStage({
         // 立刻声明成照片空间 —— 否则画布那一层要等路由落定（`MemorySpace` 挂载）
         // 才知道该亮，而飞行已经开始了
         space: "photo",
+        entryFrom: cameFrom === "timeline" ? "timeline" : "album",
         photoId,
         origin: { x: from.left, y: from.top, w: from.width, h: from.height },
       });

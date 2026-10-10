@@ -1,10 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/apiResponse";
 import { getAiCredentials, type AiCredentials } from "@/lib/secrets";
-import type { Claim, PhotoAnalysisPayload, SourceRef } from "@/types";
+import type {
+  Claim,
+  ConversationMessage,
+  PhotoAnalysisPayload,
+  SourceRef,
+} from "@/types";
 import { readStoredFile } from "./mediaService";
-import { recordSubtitle } from "./conversationService";
-import { SYSTEM_PROMPT, USER_INSTRUCTION } from "./aiPrompt";
+import { appendMessage, listMessages, recordSubtitle } from "./conversationService";
+import { CONVERSATION_SYSTEM, SYSTEM_PROMPT, USER_INSTRUCTION } from "./aiPrompt";
 
 /**
  * AI 服务 —— 调 DeepSeek（09-AI_SPEC.md）。
@@ -252,30 +257,26 @@ interface DeepSeekResponse {
   usage?: { completion_tokens?: number };
 }
 
+interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  /** 纯文本，或 OpenAI 的多模态 content 数组（看图那条路用数组） */
+  content: string | Array<Record<string, unknown>>;
+}
+
 /**
- * 调一次 chat/completions（看图），返回正文。
+ * 调一次 chat/completions，返回正文。
+ *
+ * 抽出来是因为现在有**两个调用方**：看图（理解 + 字幕）和对话。
+ * 之前只有一个，那层抽象是空的，所以合回去过一次；两个就不是了。
  *
  * 失败一律抛 `ApiError("AI_UPSTREAM_FAILED")`（08 §5 的 502）。
  * **错误信息里绝不带上游响应原文或 key**（12 §10）。
  */
-async function callModel(
+async function chatCompletion(
   credentials: AiCredentials,
-  params: { imageDataUrl: string; extraHint?: string },
+  params: { messages: ChatMessage[]; json?: boolean; maxTokens?: number },
 ): Promise<string> {
   const { apiKey, baseUrl, model } = credentials;
-
-  const userContent: Array<Record<string, unknown>> = [
-    {
-      type: "image_url",
-      image_url: { url: params.imageDataUrl, detail: DETAIL },
-    },
-    {
-      type: "text",
-      text: params.extraHint
-        ? `${USER_INSTRUCTION}\n\n上一次的回答有问题：${params.extraHint}。请重新给一版，仍然用 json 格式。`
-        : USER_INSTRUCTION,
-    },
-  ];
 
   let response: Response;
   try {
@@ -287,12 +288,10 @@ async function callModel(
       },
       body: JSON.stringify({
         model,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userContent },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: MAX_TOKENS,
+        messages: params.messages,
+        // 只有需要结构化输出的那条路才强制 JSON —— 对话要的是人话
+        ...(params.json ? { response_format: { type: "json_object" } } : {}),
+        max_tokens: params.maxTokens ?? MAX_TOKENS,
         effort: EFFORT,
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -327,6 +326,33 @@ async function callModel(
   }
 
   return choice.message.content;
+}
+
+/** 看图那条路的消息构造。09 §20 要求 prompt 里出现 "json" 字样并给出示例。 */
+async function callModel(
+  credentials: AiCredentials,
+  params: { imageDataUrl: string; extraHint?: string },
+): Promise<string> {
+  const userContent: Array<Record<string, unknown>> = [
+    {
+      type: "image_url",
+      image_url: { url: params.imageDataUrl, detail: DETAIL },
+    },
+    {
+      type: "text",
+      text: params.extraHint
+        ? `${USER_INSTRUCTION}\n\n上一次的回答有问题：${params.extraHint}。请重新给一版，仍然用 json 格式。`
+        : USER_INSTRUCTION,
+    },
+  ];
+
+  return chatCompletion(credentials, {
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userContent },
+    ],
+    json: true,
+  });
 }
 
 /** 从正文里取 JSON。模型偶尔会用 ```json 围栏包起来。 */
@@ -561,4 +587,237 @@ export async function runPhotoAnalysis(params: {
         // 连状态都写不进去说明库有问题，没有更多可做的
       });
   }
+}
+
+// ---------------------------------------------------------------------------
+// 对话（Round 8）
+// ---------------------------------------------------------------------------
+
+/**
+ * 带进 prompt 的历史最多几条。
+ *
+ * `09 §17`：不把整个用户历史都发送给模型。这个上限连同「只发当前这一张」
+ * 一起，是那条要求的具体落实 —— 一段关于单张照片的对话本来也不会很长，
+ * 真超了就从最早的开始丢（字幕那条留着，因为它是上下文的地基）。
+ */
+const HISTORY_LIMIT = 20;
+
+/** 用户一条消息的长度上限。超了直接拒（`08 §5` 的 `INVALID_INPUT`） */
+export const MESSAGE_MAX_CHARS = 2000;
+
+/**
+ * 用户说了一句，让 AI 回一句（Round 8，`09 §9`–§11）。
+ *
+ * ── 与 `runPhotoAnalysis` 的三处不同，每一处都是有意的 ──────────────
+ *
+ * 1. **不进 `after()`。** 用户在等这句话。它是一次有超时的同步请求，
+ *    失败就直接告诉他 —— 而不是像上传那样标个状态让他轮询。
+ *
+ * 2. **输出不解析 JSON。** `09 §11` 要的是「一到三句人话」，为一句人话
+ *    套一层 JSON 是没必要的仪式。代价是 `sourceRefs` 留空 ——
+ *    **这是刻意的**：`09 §6` 说「尽可能」标来源，而给一句自由回应
+ *    **编**一个来源比不标更糟。证据模型的牙在别处：图像理解的
+ *    `PhotoAnalysisPayload`（每个 Claim 带 source + confidence），
+ *    以及随笔小记的 `factsUsed` / `inferences`。
+ *
+ * 3. **失败时用户那句话不会丢。** 先落库再调模型 —— 模型挂了，
+ *    他说过的话还在，点一下就能重来。
+ *
+ * 发送范围见下面那段注释。
+ */
+export async function runConversationReply(params: {
+  photoId: string;
+  content: string;
+}): Promise<ConversationMessage> {
+  const content = params.content.trim();
+  if (!content) throw new ApiError("INVALID_INPUT", "说点什么");
+  if (content.length > MESSAGE_MAX_CHARS) {
+    throw new ApiError("INVALID_INPUT", `一条最多 ${MESSAGE_MAX_CHARS} 个字`);
+  }
+
+  const photo = await prisma.photo.findUnique({
+    where: { id: params.photoId },
+    select: { id: true, storageKey: true, mimeType: true },
+  });
+  if (!photo) throw new ApiError("NOT_FOUND", "照片不存在");
+
+  // 先落用户这句。模型失败也不能把他说过的话弄丢
+  await appendMessage({ photoId: photo.id, role: "user", content });
+
+  // 凭据来自 secrets.json（回退环境变量）。没配就明确失败，
+  // 而不是拿空 key 去撞上游（17 §4）
+  const credentials = await getAiCredentials();
+  if (!credentials) {
+    throw new ApiError("AI_UPSTREAM_FAILED", "AI 未配置");
+  }
+
+  const history = await listMessages(photo.id);
+  const recent = history.slice(-HISTORY_LIMIT);
+
+  /*
+   * 这一轮要不要把图片一起发出去。
+   *
+   * 用户 2026-10-10：「不要每次都发图片」。
+   * **只在第一轮发** —— 模型必须真的看过这张照片才有东西可说；
+   * 之后不发，靠**历史**加上面那段「你之前记下的」。
+   *
+   * 判据是「这段对话里 AI 回过话没有」（字幕不算）。所以上游失败之后重试，
+   * 仍然是第一轮，图还会再发一次 —— 那次本来就该重发。
+   */
+  const isFirstTurn = !history.some(
+    (m) => !m.isSubtitle && m.role === "assistant",
+  );
+
+  const analysis = await prisma.photoAnalysis.findUnique({
+    where: { photoId: photo.id },
+    select: { payload: true },
+  });
+
+  /*
+   * 发送范围（`12 §5`、`09 §17`）：**当前这一张照片 + 这段对话**。
+   * 不发别的照片、不发历史相册、不发 EXIF/GPS。
+   */
+  const messages: ChatMessage[] = [
+    {
+      role: "system",
+      content:
+        CONVERSATION_SYSTEM +
+        photoContext(analysis?.payload ?? null, isFirstTurn),
+    },
+  ];
+
+  for (const [index, m] of recent.entries()) {
+    const isLast = index === recent.length - 1;
+
+    if (isFirstTurn && isLast && m.role === "user") {
+      /*
+       * 图挂在**最后一条**上 —— 也就是用户刚说的那句。
+       * 读文件也放在这个分支里：不发图的那几轮就不必去读一遍盘。
+       */
+      const bytes = await readStoredFile(photo.storageKey);
+      messages.push({
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:${photo.mimeType};base64,${bytes.toString("base64")}`,
+              detail: DETAIL,
+            },
+          },
+          { type: "text", text: m.content },
+        ],
+      });
+    } else {
+      messages.push({ role: m.role, content: m.content });
+    }
+  }
+
+  /*
+   * 只记「这一轮发了什么**类型**的东西」，不记任何内容（`12 §10`）。
+   * 它同时也是「图片到底发了没有」的唯一可观测量 —— 那件事没有别的办法验。
+   *
+   * 放在调用**之前**：失败了也要留下「这一轮本打算发什么」。
+   */
+  console.info(
+    `[aiService] 对话 ${photo.id}：历史 ${recent.length} 条，本轮${isFirstTurn ? "含" : "不含"}图片`,
+  );
+
+  const raw = await chatCompletion(credentials, { messages });
+  const reply = await guardReply(credentials, messages, raw);
+
+  return appendMessage({ photoId: photo.id, role: "assistant", content: reply });
+}
+
+/**
+ * 接在对话系统提示后面的「这张照片」一段。
+ *
+ * ⚠️ **第一句必须说清楚这一轮有没有图。** 不说的话，模型会以为自己还在看图，
+ * 于是编出画面里的细节去回答 —— 那正是 `01 §9` 最不能容忍的那种编造
+ * （也是字幕那条路反复摔过的坑：滑成图注 / 滑成抒情）。
+ *
+ * 第一轮之后没有图，就给**上一次看它的结果**（`PhotoAnalysis.payload`）——
+ * 那是同一个模型写的，比让它凭上下文猜可靠得多。
+ */
+function photoContext(payloadRaw: string | null, withImage: boolean): string {
+  const lines: string[] = [
+    withImage
+      ? "这一轮你能看到照片本身。"
+      : "这一轮**看不到照片**，只能靠下面这段你之前看它时记下的内容。不要描述你没见过的细节，不知道就说不知道。",
+  ];
+
+  if (payloadRaw) {
+    try {
+      const p = JSON.parse(payloadRaw) as PhotoAnalysisPayload;
+      const noted: string[] = [];
+      if (p.description) noted.push(`画面里客观有什么：${p.description}`);
+      if (p.people?.length) noted.push(`人：${p.people.join("、")}`);
+      if (p.objects?.length) noted.push(`物件：${p.objects.join("、")}`);
+      if (p.events?.length) noted.push(`可能发生：${p.events.join("、")}`);
+      if (p.uncertainties?.length) {
+        noted.push(`当时就没把握：${p.uncertainties.join("、")}`);
+      }
+      if (noted.length) {
+        lines.push("", "你之前记下的：", ...noted.map((l) => `- ${l}`));
+        /*
+         * ⚠️ 这句话是必需的。不加的话模型会把这个内部说法讲给用户听 ——
+         * 实测出现过「记下的内容里没有这一条」，而用户根本不知道有什么
+         * 「记下的内容」。**这是提示词的措辞漏到对话里**，不是模型自己编的。
+         */
+        lines.push(
+          "",
+          "（以上都是你自己知道的，不要向用户提起它的来源，也不要复述这份清单。）",
+        );
+      }
+    } catch {
+      // payload 坏了就当没有 —— 它只是上下文，不该让这一轮对话失败
+    }
+  }
+
+  return `\n\n${lines.join("\n")}`;
+}
+
+/**
+ * 输出后过滤（`09 §20`）—— 和字幕那条路同一套判据，但**不解析 JSON**。
+ *
+ * 违反语气规范就带着提示重来一次；还是不行就**确定性**地净化 + 截断，
+ * 不指望模型听话（`09 §20` 的原话）。
+ *
+ * 净化之后什么都不剩的话**抛错**，不回一句万能的客套 ——
+ * 那种句子对任何照片、任何对话都成立，正是这个产品最不想要的东西
+ * （`01 §9`：AI 不替用户定义这段记忆是什么）。
+ */
+async function guardReply(
+  credentials: AiCredentials,
+  messages: ChatMessage[],
+  raw: string,
+): Promise<string> {
+  let text = raw.trim();
+  const violations = findToneViolations(text);
+
+  if (violations.length > 0) {
+    try {
+      text = (
+        await chatCompletion(credentials, {
+          messages: [
+            ...messages,
+            { role: "assistant", content: text },
+            {
+              role: "user",
+              content: `刚才那句有问题：${violations.join("；")}。请重说一遍，仍然只回应我说的事。`,
+            },
+          ],
+        })
+      ).trim();
+    } catch {
+      // 重试失败就用第一版。带一点瑕疵的一句，也比什么都没有强
+    }
+  }
+
+  // 4 句是硬上限（§11 说默认 1–3 句、最多 4 段），截断是兜底不是目标
+  const cleaned = limitSentences(scrub(text), 4).trim();
+  if (!cleaned) {
+    throw new ApiError("AI_UPSTREAM_FAILED", "AI 没说出什么，再试一次");
+  }
+  return cleaned;
 }

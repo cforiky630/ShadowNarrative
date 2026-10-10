@@ -125,3 +125,42 @@ export async function listMessages(
 
   return rows.map(toMessage);
 }
+
+/**
+ * 追加一条消息（Round 8）。
+ *
+ * ⚠️ **和 `recordSubtitle` 不是一回事，别合并。**
+ * 字幕是**替换**（只有一条，且必须永远是第一条，`09 §21.1`）；
+ * 对话是**追加**，用户和 AI 说的话只增不改。
+ *
+ * `Conversation` 表 1:1 挂在照片上，不预建 —— 没有对话的照片本来就该
+ * 一条记录都没有。`upsert` 是为了让「用户在第一句话之前就打开了面板」
+ * 这种情况也能写进去。
+ *
+ * `sourceRefs` 留空是**刻意的**：见 `aiService.runConversationReply` 里的说明 ——
+ * 不编造来源比标一个假的来源更符合 `09 §6`。
+ */
+export async function appendMessage(input: {
+  photoId: string;
+  role: "user" | "assistant";
+  content: string;
+}): Promise<ConversationMessage> {
+  const conversation = await prisma.conversation.upsert({
+    where: { photoId: input.photoId },
+    create: { photoId: input.photoId },
+    update: {},
+    select: { id: true },
+  });
+
+  const row = await prisma.conversationMessage.create({
+    data: {
+      conversationId: conversation.id,
+      role: input.role,
+      content: input.content,
+      isSubtitle: false,
+    },
+    select: MESSAGE_SELECT,
+  });
+
+  return toMessage(row);
+}
