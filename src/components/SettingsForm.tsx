@@ -111,11 +111,7 @@ export function SettingsForm({ initial }: SettingsFormProps) {
 
             <span className="flex shrink-0 items-baseline gap-4">
               <span className="text-meta text-text-primary/45">
-                {view.aiKeyConfigured
-                  ? "已配置"
-                  : view.aiKeyFromEnv
-                    ? "由环境变量提供"
-                    : "未配置"}
+                {view.aiKeyConfigured ? "已配置" : "未配置"}
               </span>
 
               {!editingKey && (
@@ -190,26 +186,18 @@ export function SettingsForm({ initial }: SettingsFormProps) {
           )}
 
           {/*
-            环境变量那一份只在开发期出现。它**必须**说明「清除清不到它」——
-            不说的话用户点「清除」会发现状态没变，看起来像坏了
-            （`src/lib/secrets.ts` 的 `getAiPublicInfo` 把两者分开报，就是为了这个）。
-          */}
-          {view.aiKeyFromEnv && (
-            <p className="text-meta mt-6 text-text-primary/45">
-              这个 key 来自 .env.local 的 AI_API_KEY（开发期的回退）。
-              这里填一个会覆盖它，「清除」清不到它。
-            </p>
-          )}
-
-          {/*
             `17 §4`：key 存 secrets.json，不进数据库、不进日志。
 
-            「服务端不回传 key、所以这里没有显示明文」那半句删了 ——
-            它是那条规矩的**理由**，属于代码注释；而输入框上面那句
-            「粘贴 key，保存后不再显示」已经把该让用户知道的说完了。
+            用户 2026-10-10：「apikey 那里不提供默认的，**说一下存在哪就行**」。
+            所以这里摆的是**解析出来的绝对路径** —— 数据目录是用户可配的
+            （`SN_DATA_DIR`，`17 §3`），说「存在本机 secrets.json」等于没说。
+
+            环境变量那条回退也在同一天删了（见 `src/lib/secrets.ts` 的文件头），
+            所以不再有「由环境变量提供」这个状态，也就不必再解释
+            「点清除为什么没用」——那个反常正是两个来源造成的。
           */}
-          <p className="text-meta mt-6 text-text-primary/45">
-            存在本机 secrets.json，不进数据库、不进日志。
+          <p className="text-meta mt-6 break-all text-text-primary/45">
+            存在 {view.secretsPath}，不进数据库、不进日志。
           </p>
           <p className="text-meta mt-2 text-text-primary/30">
             当前用 {view.aiModel}（{view.aiBaseUrl}）

@@ -335,17 +335,15 @@ export interface Memory {
  * ⚠️ `aiKeyConfigured` 是布尔值而不是 key —— 服务端**从不回传** key 本身。
  * 能回传就说明它出现在某个响应里过，那它就会进日志、进浏览器缓存、进抓包（12 §10）。
  *
- * ⚠️ 2026-10-10 删掉了 `autoAnalyze`：用户定「自动分析只能开」，
- * 开关与它那一列（`UserSettings.autoAnalyze`）一起没了。
+ * ⚠️ 2026-10-10 删掉了两个字段：`autoAnalyze`（用户定「自动分析只能开」）
+ * 和 `aiKeyFromEnv`（用户定「不提供默认的」—— key 只剩 `secrets.json`
+ * 一个来源，那个字段就没有存在意义了）。见 `17 §4`。
  */
 export interface SettingsView {
   /** `secrets.json` 里配了 key —— 这是设置卡唯一能改的那份 */
   aiKeyConfigured: boolean;
-  /**
-   * `secrets.json` 没配，但环境变量（`.env.local`）在供应 —— 开发期的回退。
-   * 必须和上面那个分开报，否则用户点「清除」会发现状态没变，像是坏了。
-   */
-  aiKeyFromEnv: boolean;
+  /** `secrets.json` 的绝对路径。用户要「说一下存在哪」，那就说清楚 */
+  secretsPath: string;
   aiBaseUrl: string;
   aiModel: string;
 }

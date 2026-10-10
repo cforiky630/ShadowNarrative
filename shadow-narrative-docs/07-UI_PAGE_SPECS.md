@@ -306,12 +306,22 @@ AI
 
   API key         已配置 / 未配置        [更换]  [清除]
 
-    这个 key 来自 .env.local 的 AI_API_KEY（开发期的回退）。
-    这里填一个会覆盖它，「清除」清不到它。      ← 只在环境变量供应时出现
-
-    存在本机 secrets.json，不进数据库、不进日志（17 §4）。
+    存在 <secrets.json 的绝对路径>，不进数据库、不进日志（17 §4）。
     当前用 deepseek-flash（https://api.deepseek.com）
 ```
+
+#### key 只有一个来源，所以只需要说它在哪
+
+2026-10-10 用户定了「**apikey 那里不提供默认的，说一下存在哪就行**」——
+`secrets.ts` 里读 `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` 环境变量那条回退
+删了，key 只剩 `secrets.json`。
+
+于是这一段从三句缩成一句半，而且不再有「由环境变量提供」这个状态、
+不必解释「点清除为什么没用」—— 那个反常正是两个来源造成的。
+
+「说一下存在哪」落成了**绝对路径**而不是「存在 secrets.json」：
+数据目录是用户自己配的（`SN_DATA_DIR`，`17 §3`），不把解析结果摆出来
+就等于没说。所以 `SettingsView` 多了一个 `secretsPath`。
 
 #### 「自动分析」不是一个设置
 

@@ -25,7 +25,7 @@ async function readView(): Promise<SettingsView> {
 
   return {
     aiKeyConfigured: ai.configured,
-    aiKeyFromEnv: ai.fromEnv,
+    secretsPath: ai.secretsPath,
     aiBaseUrl: ai.baseUrl,
     aiModel: ai.model,
   };
