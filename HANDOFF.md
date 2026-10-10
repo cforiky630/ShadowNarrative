@@ -401,6 +401,7 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
 | **SQLite 不支持 `createMany({ skipDuplicates })`** | Prisma 只在 Postgres / MySQL / SQLServer 上支持它，硬写会撞主键约束。影册加照片时是**先求差集再建**（两条查询，没有异常处理），顺手还能给出「这次真加进去几张」。同一条也提醒：**任何「批量塞进去，重复的跳过」都要先问一句驱动支不支持** |
 | **第一条动态段路由会报 `CLIENT_HOOK_DYNAMIC`** | `/memories/<id>` 是这个项目的第一个 `[id]` 页面。一出现它，Next 的 instant-navigation 校验就报「`usePathname()` 在 Client Component 里、在 `<Suspense>` 之外，挡住了预渲染」—— 而那个 hook 在 **layout** 里（`TopNavigation` / `ExperienceShell`），不在页面的 Suspense 里。两种修法：把 layout 包进 Suspense（顶栏会流式补进来，`fixed` 的一行字闪一下更难看），或者 `export const instant = false`（声明「进这条路由是允许阻塞的」）。取后者。⚠️ **这是开发期 warning 级校验，构建不受影响**（`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/02-route-segment-config/instant.md`） |
 | **把「上一级」的出口挂在左上角** | 这个产品的出口是**跟着内容走**的，不挂角上。用户 2026-10-10 就否过一次左上角（「放左上角交互不顺畅」），2026-10-11 又一次（「这里的 back 在上面，感觉很割裂」）。放哪要按**那一页的版式**定：舞台页（照片，一张占满画面）在画面中下；会滚动的列表页在**左下那条 46px 的带上**（`fixed`，与设置那颗球同一条水平线）。判据是「它跟不跟着内容」，不是「有没有出口」 |
+| **`useRef` + effect 建的观察器，元素晚一步出现就永远观察不到** | `useReveal` 原先在 `[rootMargin]` 的 effect 里 `observer.observe(ref.current)`，而 effect **只在挂载时跑一次** —— 那一下元素不在（相册首屏的空态里根本没有画廊那一层），`if (!el) return` 就退出了，观察器再也不会建起来，`revealed` 永远是 `false`，而 `revealStyle(false)` 就是 `opacity: 0`。症状：**空态里拖进一张照片，整屏是黑的**，刷新才好（那一次挂载时元素已经在 DOM 里了）。修法是**回调 ref** —— 元素什么时候挂上来，观察器就什么时候建。⚠️ 判据是「这个 effect 是不是只在挂载时跑、而它要碰的元素可能以后才出现」，凡是符合的都该用回调 ref |
 
 ---
 
@@ -542,9 +543,9 @@ scripts/                 setup.mjs + 环境脚本 + Hilbert 自检 + try-subtitl
 .data/                   shadow-narrative.db + photos/（已 gitignore）
 ```
 
-**HEAD**：`08f5970`。
+**HEAD**：`cb99bbf`。
 
-⚠️ **`main` 领先 `origin/main` 20 个提交，还没推。**
+⚠️ **`main` 领先 `origin/main` 26 个提交，还没推。**
 
 **2026-10-10 那一批做了什么**：
 
@@ -568,12 +569,16 @@ hover 方向      全项目 12 处 `text-text-primary/40` + `hover:opacity-85` �
 规格与交接      九处文档一次对齐，「日志 → 随笔小记」45 处（运行日志没动）
 ```
 
-**2026-10-11（Round 9，三个提交）**：
+**2026-10-11（Round 9 之后的三轮修补）**：
 
 ```text
 影册            /memories 架子 + /memories/<id> 一册 + 整理照片那张多选面板；
                 缩表迁移砍掉四列；entryFrom → entryFromHref（Back 回得了那一册）
 组字中的 Esc    修一个真 bug：React 合成事件上没有 isComposing
+出不来          影册那一层没有自己的出口（只靠顶栏「你已经在的那个空间」）
+Back 的位置     从页头左边挪到左下那条 46px 的带 —— 出口跟着内容走，不挂角上
+空态黑屏        把照片拖进空态的相册首屏之后整屏是黑的（useReveal 只在挂载时
+                找元素）；顺手把空态那句话改成一个词「捉影」
 ```
 
 ⚠️ **`feat/thumbnail-particle-dock` 与 `docs/handoff-sync` 都已快进合进 `main`，

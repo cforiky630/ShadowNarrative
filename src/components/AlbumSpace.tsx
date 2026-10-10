@@ -198,19 +198,27 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
       <main className="flex min-h-dvh items-center justify-center px-12">
         <div className="flex flex-col items-center gap-4">
           {/*
-            §4 空态：不显示空网格、不显示「暂无内容」，安静一行。
+            §4 空态：不显示空网格、不显示「暂无内容」，**安静一行**。
 
-            ⚠️ 这一行**必须是可点的**。原先只有「把照片拖进来」—— 而拖放
-            对第一次用的人不是显然的，库里又一张都没有、点哪儿都没反应，
-            那是个死胡同。用户 2026-10-10 的方向是「点击打开文件选择的那种」，
-            所以两条路在这里都给出来。
+            ⚠️ 这一行**必须是可点的**（2026-10-10）。原先只有「把照片拖进来」
+            —— 拖放对第一次用的人不是显然的，库里又一张都没有、点哪儿都没
+            反应，那是个死胡同。
+
+            ⚠️ **2026-10-11：从一句说明改成一个词。** 用户的原话是
+            「没照片时那句话太low了，换个说法」—— 那一句
+            「把照片拖进来，或点这里捉影」在**解释这个界面怎么用**，
+            而界面上不该有说明书（`07 §12.4`）。
+
+            现在只有产品的那个动词：**捉影**。它和照片页左下角那一项是同一个
+            词、同一个意思（把照片带进来），而这一屏上它本来就是唯一的动作。
+            拖放不必用字去教 —— 拖着照片进来的时候 `DropFrame` 自己会亮。
           */}
           <PhotoPicker
             onFile={(file) => void acceptFile(file)}
             className="text-meta cursor-pointer text-text-primary opacity-35 transition-opacity duration-[350ms] hover:opacity-85"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
-            把照片拖进来，或点这里捉影
+            捉影
           </PhotoPicker>
           {notice && (
             <button
