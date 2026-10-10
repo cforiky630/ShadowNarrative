@@ -87,17 +87,6 @@ export async function getAiPublicInfo(): Promise<{
   configured: boolean;
   baseUrl: string;
   model: string;
-  /**
-   * `secrets.json` 在磁盘上的**绝对路径**。
-   *
-   * 用户 2026-10-10：「apikey 那里不提供默认的，**说一下存在哪就行**」。
-   * 说「存在本机 secrets.json」等于没说 —— 数据目录是用户可配的
-   * （`SN_DATA_DIR`，`17 §3`），只有把解析出来的路径摆出来才算说清楚。
-   *
-   * 这不是敏感信息：它是用户自己机器上的一个路径，而且这正是要给他看的东西。
-   * （真正的敏感值 —— key 本身 —— 一个字都不回传，见上。）
-   */
-  secretsPath: string;
 }> {
   const secrets = await readSecrets();
 
@@ -105,7 +94,6 @@ export async function getAiPublicInfo(): Promise<{
     configured: Boolean(secrets.aiApiKey?.trim()),
     baseUrl: secrets.aiBaseUrl?.trim() || DEFAULT_AI_BASE_URL,
     model: secrets.aiModel?.trim() || DEFAULT_AI_MODEL,
-    secretsPath: resolveSecretsPath(),
   };
 }
 

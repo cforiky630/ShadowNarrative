@@ -86,123 +86,126 @@ export function SettingsForm({ initial }: SettingsFormProps) {
           </p>
         )}
 
-        {/* --- AI --- */}
-        <section className="mt-16">
-          <h2 className="text-micro text-text-primary/40">AI</h2>
+        {/*
+          ⚠️ **这里原本有一个 `AI` 小节标题、一句「上传后照片会自动发给模型
+          服务商分析」，更早还有一个「自动分析」开关。**
 
-          {/*
-            ⚠️ **这里原本有一个「自动分析」开关。** 2026-10-10 用户定了
-            「自动分析只能开，直接去掉这个设置」—— 开关、它那一列
-            （`UserSettings.autoAnalyze`）、以及服务端所有判断它地方一起删了
-            （`api/photos`、`api/photos/[id]`、`MemorySpace`、`Subtitle`）。
-            删列走了一次迁移：`prisma/migrations/*_drop_auto_analyze`。
+          2026-10-10 用户依次拿掉了它们：「自动分析只能开，直接去掉这个设置」
+          →「AI 和下面那句话都去掉」。
 
-            留下的这一句是**陈述**，不是设置 —— 它说的是这个产品会发生什么。
-            `12 §5` 要的「界面上必须告知照片会被发送给模型」仍然成立；
-            而且没有开关之后它更干净：不必再交代「开着怎样、关掉怎样」。
-          */}
-          <p className="text-meta mt-8 text-text-primary/45">
-            上传后照片会自动发给模型服务商分析，字幕随后浮现。
-          </p>
+          去掉的**不是「AI 这件事」**—— 下面三行说的全是它（API key、存在哪、
+          当前用哪个模型）。去掉的是**一句陈述**：那句话说的事情，用户上传
+          一张照片就知道了，摆在设置里只是每次打开都要重读一遍。
 
-          {/* --- API key --- */}
-          <div className="mt-14 flex items-baseline justify-between gap-8">
-            <span className="text-body text-text-primary/85">API key</span>
+          于是 `12 §5` 那条「界面上必须告知照片会被发送给模型」在界面上
+          **不再有落点**。那是用户的决定，不是遗漏 —— 规格里已经照改，
+          见 `07 §11.3`。
+        */}
 
-            <span className="flex shrink-0 items-baseline gap-4">
-              <span className="text-meta text-text-primary/45">
-                {view.aiKeyConfigured ? "已配置" : "未配置"}
-              </span>
+        {/* --- API key --- */}
+        <div className="mt-2 flex items-baseline justify-between gap-8">
+          <span className="text-body text-text-primary/85">API key</span>
 
-              {!editingKey && (
-                <button
-                  type="button"
-                  onClick={() => setEditingKey(true)}
-                  className="text-meta text-text-primary/45 underline-offset-4 hover:text-text-primary/85 hover:underline focus-visible:underline"
-                >
-                  {view.aiKeyConfigured ? "更换" : "填入"}
-                </button>
-              )}
-
-              {view.aiKeyConfigured && !editingKey && !confirmClear && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmClear(true)}
-                  className="text-meta text-text-primary/45 underline-offset-4 hover:text-text-primary/85 hover:underline focus-visible:underline"
-                >
-                  清除
-                </button>
-              )}
-
-              {confirmClear && (
-                <button
-                  type="button"
-                  onClick={clearKey}
-                  disabled={busy}
-                  aria-live="polite"
-                  className="text-meta text-text-primary/95 underline-offset-4 hover:underline disabled:opacity-40"
-                >
-                  确认清除？
-                </button>
-              )}
+          <span className="flex shrink-0 items-baseline gap-4">
+            <span className="text-meta text-text-primary/45">
+              {view.aiKeyConfigured ? "已配置" : "未配置"}
             </span>
-          </div>
 
-          {editingKey && (
-            <div className="mt-6">
-              <label className="text-meta block text-text-primary/45" htmlFor="ai-key">
-                粘贴 key，保存后不再显示
-              </label>
-              <input
-                id="ai-key"
-                type="password"
-                value={keyDraft}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(e) => setKeyDraft(e.target.value)}
-                className="text-body mt-3 w-full border-0 border-b border-border-subtle bg-transparent pb-2 text-text-primary/95 outline-none focus:border-text-primary/40"
-              />
-              <div className="mt-4 flex items-baseline gap-5">
-                <button
-                  type="button"
-                  onClick={saveKey}
-                  disabled={busy || !keyDraft.trim()}
-                  className="text-meta text-text-primary/85 underline-offset-4 hover:underline disabled:opacity-30"
-                >
-                  保存
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingKey(false);
-                    setKeyDraft("");
-                  }}
-                  className="text-meta text-text-primary/45 underline-offset-4 hover:underline"
-                >
-                  取消
-                </button>
-              </div>
+            {!editingKey && (
+              <button
+                type="button"
+                onClick={() => setEditingKey(true)}
+                className="text-meta text-text-primary/45 underline-offset-4 hover:text-text-primary/85 hover:underline focus-visible:underline"
+              >
+                {view.aiKeyConfigured ? "更换" : "填入"}
+              </button>
+            )}
+
+            {view.aiKeyConfigured && !editingKey && !confirmClear && (
+              <button
+                type="button"
+                onClick={() => setConfirmClear(true)}
+                className="text-meta text-text-primary/45 underline-offset-4 hover:text-text-primary/85 hover:underline focus-visible:underline"
+              >
+                清除
+              </button>
+            )}
+
+            {confirmClear && (
+              <button
+                type="button"
+                onClick={clearKey}
+                disabled={busy}
+                aria-live="polite"
+                className="text-meta text-text-primary/95 underline-offset-4 hover:underline disabled:opacity-40"
+              >
+                确认清除？
+              </button>
+            )}
+          </span>
+        </div>
+
+        {editingKey && (
+          <div className="mt-6">
+            <label className="text-meta block text-text-primary/45" htmlFor="ai-key">
+              粘贴 key，保存后不再显示
+            </label>
+            <input
+              id="ai-key"
+              type="password"
+              value={keyDraft}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              className="text-body mt-3 w-full border-0 border-b border-border-subtle bg-transparent pb-2 text-text-primary/95 outline-none focus:border-text-primary/40"
+            />
+            <div className="mt-4 flex items-baseline gap-5">
+              <button
+                type="button"
+                onClick={saveKey}
+                disabled={busy || !keyDraft.trim()}
+                className="text-meta text-text-primary/85 underline-offset-4 hover:underline disabled:opacity-30"
+              >
+                保存
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingKey(false);
+                  setKeyDraft("");
+                }}
+                className="text-meta text-text-primary/45 underline-offset-4 hover:underline"
+              >
+                取消
+              </button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/*
-            `17 §4`：key 存 secrets.json，不进数据库、不进日志。
+        {/*
+          `17 §4`：key 存 secrets.json，不进数据库、不进日志。
 
-            用户 2026-10-10：「apikey 那里不提供默认的，**说一下存在哪就行**」。
-            所以这里摆的是**解析出来的绝对路径** —— 数据目录是用户可配的
-            （`SN_DATA_DIR`，`17 §3`），说「存在本机 secrets.json」等于没说。
+          用户 2026-10-10：「apikey 那里不提供默认的，说一下存在哪就行」，
+          紧接着又补了一句「**那个路径显示相对路径吧，后面封装成 app**」。
 
-            环境变量那条回退也在同一天删了（见 `src/lib/secrets.ts` 的文件头），
-            所以不再有「由环境变量提供」这个状态，也就不必再解释
-            「点清除为什么没用」——那个反常正是两个来源造成的。
-          */}
-          <p className="text-meta mt-6 break-all text-text-primary/45">
-            存在 {view.secretsPath}，不进数据库、不进日志。
-          </p>
-          <p className="text-meta mt-2 text-text-primary/30">
-            当前用 {view.aiModel}（{view.aiBaseUrl}）
-          </p>
-        </section>
+          所以这里**不出现绝对路径**。绝对路径是这台机器的实现细节 ——
+          `F:\...\.data\secrets.json` 封装成桌面 app 之后那个前缀就不成立了
+          （数据目录会变成 `app.getPath('userData')`，见 `10` 的 Round 13）。
+          服务端因此**也不再回传路径**，`SettingsView` 里那个 `secretsPath`
+          一并删了 —— 传过去也只是为了显示，显示不了就不必传。
+
+          留下的是「数据目录里的 secrets.json」，它对开发态和封装态**都成立**。
+
+          环境变量那条回退也在同一天删了（见 `src/lib/secrets.ts` 的文件头），
+          所以不再有「由环境变量提供」这个状态，也就不必再解释
+          「点清除为什么没用」——那个反常正是两个来源造成的。
+        */}
+        <p className="text-meta mt-6 text-text-primary/45">
+          存在数据目录里的 secrets.json，不进数据库、不进日志。
+        </p>
+        <p className="text-meta mt-2 text-text-primary/30">
+          当前用 {view.aiModel}（{view.aiBaseUrl}）
+        </p>
 
         {/*
           ⚠️ 这里原本还有一个「本机」小节，讲 `SN_HOST` 默认只监听 127.0.0.1。
