@@ -31,7 +31,7 @@ Shadow Narrative 处理的是个人照片与可能的个人记忆内容。
 
 ## 4. Access Control
 
-用户只能访问自己的照片与分组。
+用户只能访问自己的照片与影册。
 
 API 所有资源必须检查 ownership，且一律**合成在查询条件里**
 （`where: { id, userId }`），不做「先查出再判断」的两段式。
@@ -134,7 +134,7 @@ API 所有资源必须检查 ownership，且一律**合成在查询条件里**
 
 用户删除照片后：
 
-- DB records（级联带走 analysis / conversation / journal / 分组关系）
+- DB records（级联带走 analysis / conversation / journal / 影册关系）
 - object storage
 - derived files
 - AI artifacts

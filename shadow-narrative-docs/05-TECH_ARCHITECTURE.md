@@ -199,7 +199,7 @@ components/
 ```text
 services/
   photoService          照片 CRUD
-  memoryService         分组（可选，不拥有照片）
+  memoryService         影册（可选，不拥有照片）
   mediaService          文件读写与校验，不处理像素
   conversationService
   journalService

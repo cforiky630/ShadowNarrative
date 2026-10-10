@@ -5,7 +5,7 @@
 **照片是主实体。**
 
 每一次上传生成一张独立的 Photo，它自带文件、AI 理解、对话与随笔小记。
-Memory（分组）是可选的、像相册一样的存在，一张照片可以同时属于多个分组。
+Memory（影册）是可选的、像相册一样的存在，一张照片可以同时属于多个影册。
 
 所有数据存在**本地 SQLite**（自托管形态，见 `17-SELF_HOSTING.md`）。
 
@@ -195,7 +195,11 @@ model Journal {
 留着永不写入的列，下一个人会以为它坏了 —— 与删
 `UserSettings.autoAnalyze` 是同一条理由。
 
-### Memory —— 可选分组
+### Memory —— 影册
+
+> ⚠️ 界面上一律叫**影册**，代码里叫 `Memory`（`01 §4` 的产品词汇是它，
+> 而首屏那个组件已经占了 `AlbumSpace` 这个名字）。名字的来龙去脉见
+> `07 §12`。
 
 ```prisma
 model Memory {
@@ -203,34 +207,43 @@ model Memory {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  title      String?
-  summary    String?
-  memoryDate DateTime?
+  // 必填 —— 名字就是这一册的标识（架子上那一格读的就是它）
+  title String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   photos MemoryPhoto[]
 
-  @@index([userId, memoryDate])
+  // 架子的排序：最近动过的在前
+  @@index([userId, updatedAt])
 }
 
-/// 多对多：一张照片可以同时属于多个分组，像真实相册。
-/// 删除分组不删照片，只断开关系。
+/// 多对多：一张照片可以同时属于多个影册，像真实相册。
+/// 删除影册不删照片，只断开关系。
 model MemoryPhoto {
   memoryId String
   photoId  String
   memory   Memory @relation(fields: [memoryId], references: [id], onDelete: Cascade)
   photo    Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
 
-  // 分组内的排序
-  order    Int    @default(0)
-  addedAt  DateTime @default(now())
-
   @@id([memoryId, photoId])
   @@index([photoId])
 }
 ```
+
+⚠️ **2026-10-11 从这张表上删掉四列**（迁移 `memory_slim_to_album`）：
+`summary`、`memoryDate`、`MemoryPhoto.order`、`MemoryPhoto.addedAt`。
+前两个的理由在 `01 §4`；后两个是**组内按拍摄时间排**这个决定的结果 ——
+用户当天定的，没有手动排序，两列都没有读取者。
+
+同一条理由第四次了（`autoAnalyze`、`Journal.title`、`Journal.status`）：
+**恒不写入的列会让下一个人以为它坏了。**
+
+⚠️ 组内的顺序**不在库里**：它是读出来的时候按
+`photoService.photoTime`（拍摄时间，缺则回落导入时间）排的 ——
+与相册、时间线**共用同一个函数**，各写一份迟早会出现「排在最前面但分到
+第二天」那种自相矛盾的结果。
 
 ### UserSettings
 
@@ -283,9 +296,9 @@ model DayTheme {
 }
 ```
 
-**天是时间轴上的刻度，不是用户建的分组。** 所以它刻意**不复用 `Memory`** ——
-§3 上面写着分组是**可选**的，而「每天自动有一个节点」如果做成分组，
-就等于自动给每一天建一个分组，和「可选」直接冲突。
+**天是时间轴上的刻度，不是用户建的影册。** 所以它刻意**不复用 `Memory`** ——
+§3 上面写着影册是**可选**的，而「每天自动有一个节点」如果做成一册，
+就等于自动给每一天建一册，和「可选」直接冲突。
 
 关于 `dayKey` 为什么是 `String` 而不是 `DateTime`：
 
@@ -302,8 +315,8 @@ model DayTheme {
 
 | 删除 | 数据库级联 | 应用层必须补做 |
 |---|---|---|
-| `Photo` | 级联删除 analysis / conversation / journal / 分组关系 | **删除磁盘上的原图与缩略图** |
-| `Memory` | 级联删除 `MemoryPhoto` 关系行 | **不删照片** —— 分组只是关系 |
+| `Photo` | 级联删除 analysis / conversation / journal / 影册关系 | **删除磁盘上的原图与缩略图** |
+| `Memory` | 级联删除 `MemoryPhoto` 关系行 | **不删照片** —— 影册只是关系 |
 | `User` | 级联删除全部 | 按存储前缀清理文件目录 |
 
 删除顺序见 §16。
@@ -539,16 +552,39 @@ AI 不替用户定义这段记忆是什么。
 
 生成必须由用户显式调用 —— 见 `01-PRODUCT_SPEC.md` §9。
 
-## 9. Memory（分组）API
+## 9. Memory（影册）API
 
 ```text
-GET    /api/memories
-POST   /api/memories
-PATCH  /api/memories/:id
-DELETE /api/memories/:id           只删分组，不删照片
-POST   /api/memories/:id/photos    把照片加进分组
-DELETE /api/memories/:id/photos/:photoId
+GET    /api/memories                        架子：全部影册 + 各自那几张封面
+POST   /api/memories                        新建（{ title }，必填）
+PATCH  /api/memories/:id                    改名（{ title }）
+DELETE /api/memories/:id                    删影册 —— 照片一张不动
+POST   /api/memories/:id/photos             加照片（{ photoIds: [] }）
+DELETE /api/memories/:id/photos/:photoId    把一张**移出**
 ```
+
+⚠️ **没有 `GET /api/memories/:id`。** 一册的内容由服务端组件
+（`memories/[id]/page.tsx`）直接走 service 渲染，不经 API；改完用
+`router.refresh()` 取新的。加一条只为对称的 GET，就是多一条要维护、
+却没人走的诊断路径。
+
+### 几条容易做错的
+
+- **删影册的照片归零，不是照片归零**：`MemoryPhoto` 只是关系，
+  `onDelete: Cascade` 带走的只有那几行（`§4`）。这条是产品里少有的
+  「删了不心疼」的操作，界面上那道门也因此比照片删除轻（两步，不长按）
+- **不是真删除就不叫删除**：把一张照片从册里拿掉叫**移出**（用户 2026-10-11
+  定的）。照片本身、它的对话、随笔小记全都在
+- **`POST .../photos` 要做两件事，混着做会漏**（`memoryService.addPhotos`）：
+  - **排重**：SQLite **不支持** `createMany({ skipDuplicates })`
+    （Prisma 只在 Postgres / MySQL / SQLServer 上支持），硬写会撞
+    `memory_photos` 的主键。先求差集再建
+  - **认一遍这些照片是谁的**：`photoIds` 必须用 `where: { userId, id: { in } }`
+    过一遍。⚠️ 不校验就是一条**越权写入**（把不相干的 photoId 塞进自己的
+    影册），不是参数不合法。查不到的那些**静默丢掉**，返回的 `added`
+    是「这次真加进去几张」
+- **封面是一组，不是一张**：架子那一格最多四张缩略图（
+  组内拍摄时间最新的前 4 张），理由与拼法见 `07 §12`
 
 ## 10. AI 结果的送达
 
@@ -653,10 +689,10 @@ services/
 2. 收集全部 storage key（原图 + 缩略图 + 任何派生）
 3. 逐个删文件；ENOENT 不算失败（目标状态已达成）
 4. 有失败 → 抛 DELETION_INCOMPLETE，**保留记录**，让用户重试
-5. 全部成功 → 删数据库记录（级联带走 analysis / conversation / journal / 分组关系）
+5. 全部成功 → 删数据库记录（级联带走 analysis / conversation / journal / 影册关系）
 ```
 
-**分组（Memory）的删除不同**：只断开关系，不碰照片文件。
+**影册（Memory）的删除不同**：只断开关系，不碰照片文件。
 
 ## 17. Timeline API
 

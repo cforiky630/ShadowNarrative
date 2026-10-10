@@ -185,7 +185,7 @@ Photo View（原图模式）
 8. Library 抽屉
 9. 字幕与 AI 对话
 10. 随笔小记
-11. 收藏与分组
+11. 收藏与影册
 12. SQLite 迁移与自托管形态
 13. 备份（`18-BACKUP_PROTOCOL.md`）
 14. Mobile

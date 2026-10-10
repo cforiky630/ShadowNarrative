@@ -27,16 +27,24 @@ Round 5 / 7 / 8 / 10 都完成了，时间线也落地了。但这一轮改得�
 | 对话 | `16 §9`、`08 §7` | ✅ 一致（2026-10-10 补了形态与入口） |
 | 随笔小记 | `16 §10`、`08 §8`、`09 §12`/`§13` | ✅ 一致，Round 8 后半 2026-10-10 落地 |
 | 缩略图 | `08 §6` | ✅ 一致（`08 §6` 已重写：客户端生成、服务端校验） |
+| 影册 | `07 §12`、`08 §9`、`01 §4`/§5 | ✅ 一致，Round 9 2026-10-11 落地。**界面叫影册、代码叫 `Memory`** |
+| Memory Theater | `07 §6` | ⏸ **待定**（用户 2026-10-11：「有待商榷，暂时不知道作用和实现效果」）。规格留着，别删也别做 |
 
 **仍然不一致 / 还没有的地方：**
 
 - `18` 的备份客户端未实现（Round 11）
-- **分组**（Round 9）、Memory Theater 都只有文档
 - **搜索**悬空（原在 Library 抽屉里，那个抽屉作废了）
+- **影册这一族的文案是新调子**（不要白话），**其余几屏还是旧写法** ——
+  要不要统一是另一个决定（`07 §12.4`）
 
 ⚠️ **「随笔小记」这个名字是用户 2026-10-10 定的**，不是「日志」——
 而且它是**轻**的东西，不是长文日志。文档里原先叫「日志」的地方当天全改过了
 （**运行日志**那几处除外，那是另一个东西）。
+
+⚠️ **「影册」这个名字是用户 2026-10-11 定的**（代码里仍叫 `Memory`）。
+文档里原先叫「分组」的地方当天改过 27 处 —— ⚠️ **「分组」这个词有一半是
+动词**（按天分组、分组规则、快照的分组键），那一半一个都没动。
+下次改名先分清词性，别拿 `sed` 一把梭。
 
 **Round 6（Library 抽屉）已作废** —— 时间线取代了它，不并存。
 规格已同步（`01 §5`、`16 §1`/§6、`07`、`10`），`16 §6` 留成空壳不重编号。
@@ -160,15 +168,15 @@ migrate 写进一个库、应用读另一个库，而且不会报错。
 | **随笔小记** | `services/journalService.ts`、`components/PhotoOverlay.tsx` + `NotePanel.tsx`、`api/photos/[id]/journal` | Round 8 **后半**，2026-10-10。**一层遮罩两面**（对话 / 笔记）；笔 = AI 动笔、本子 = 读写（`07 §4` §5）。自动存；**空正文 = 删掉这条** |
 | **左下角那一串** | `components/BottomDock.tsx` + `DockCard.tsx` | 参数那颗胶囊（`07 §11`）。加上照片页那组文字（复位视角 / 捉影 / 随笔 / 删除），都要和它对齐 —— 见 `16 §7.3` 的 46 与 `left-32` |
 | **缩略图** | `lib/makeThumbnail.ts`、`services/mediaService.ts`、`api/photos/[id]/thumbnail` | 2026-10-10。**浏览器生成、服务端校验落盘**（`08 §6`）。相册 / 时间线 / 飞行图走它；**画布与 AI 仍用原图** |
+| **影册** | `components/MemoriesSpace.tsx` + `MemoryAlbum.tsx` + `OrganizePanel.tsx`、`services/memoryService.ts`、`api/memories/**` | Round 9，2026-10-11。架子 `/memories` + 一册 `/memories/<id>`。**按钮用图标、文案不要白话**（`07 §12`）。删影册**不删照片** |
 
 实测：150k 粒子 / fps 240 / frame 4.2ms / draw calls 1–2（RTX 3060）。
 AI 单次调用实测 330–600ms（`effort: low`）。
 
 ### ❌ 未实现
 
-- **分组**（Round 9；Memory / MemoryPhoto 数据层早就有了，只差界面）
 - 备份客户端与端到端加密（Round 11；`18` 只有协议）
-- Memory Theater、移动端、`SN_HOST` 的局域网形态
+- **Memory Theater（待定）**、移动端、`SN_HOST` 的局域网形态
 
 ---
 
@@ -193,26 +201,30 @@ AI 单次调用实测 330–600ms（`effort: low`）。
 
 ## 5. 下一步
 
-Round 5（第一屏）、7、8、10 都完成了，时间线也落地了。剩下的按
+Round 5 / 7 / 8 / 9 / 10 都完成了，时间线也落地了。剩下的按
 `10-IMPLEMENTATION_PLAN.md`：
 
-- **Round 9 — 分组**（Memory / MemoryPhoto 数据层早就有了，只差界面）
 - **Round 11 — 备份**（`18` 有完整协议，客户端没写）
 - **Round 12 — Mobile / 性能 / 打磨**、**Round 13 — Electron 封装**（规划了没建）
+- **Memory Theater —— 待定**（用户 2026-10-11：「有待商榷，暂时不知道作用和
+  实现效果」）。规格在 `07 §6`，别删；要做的先把「它到底是什么」问清楚
 
 ⚠️ **Round 6（Library 抽屉）不要做了** —— 时间线取代了它，不并存。
 规格已同步（`01 §5`、`16 §1`/§6、`07`、`10`）。
 
 **几件悬着的小事**：
 
-1. **「看全部」暂时指向 `/timeline`** —— 等用户说的「memorys 板块
-   （全部照片库）」做出来，这里改指它
+1. **「看全部」还是指向 `/timeline`**，不动 —— 它原本等的是「memorys 板块
+   （全部照片库）」，而**那个东西被用户收回了**（「那就不做全部照片了，
+   保留原本的时间线」）。所以这一条不再是「等它做出来」，而是
+   「要不要换个地方，见下」
 2. ~~**缩略图**~~ —— **2026-10-10 已补**（见 §3）。做法是
    **客户端生成、服务端校验落盘**，没有引 `sharp`（`10` Round 13 的
    封装友好约束里点名禁的就是这种原生模块），也没等 Python 图像服务
    —— 那个服务的真正理由是 HEIC/RAW 解码，与缩略图无关。
    ⚠️ **已有照片不回填**，`thumbnailKey` 为 null 时 `/thumbnail` 回落原图
-3. `albumService` 的 `SCAN_LIMIT = 400`，照片库变大前要改成游标分页
+3. `albumService` 的 `SCAN_LIMIT = 400`、`memoryService.listMemories`
+   一次拉全部关系行 —— 照片库变大前都要改成游标分页（`08 §11`）
 4. ~~**对话的形态要补进 `16 §9`**~~ —— 2026-10-10 补了。那一节现在写的是
    **全屏遮罩 + 实时模糊、点字幕进、只在粒子态**；随笔小记与它是同一层遮罩的
    另一面（`07 §4` §5）
@@ -385,6 +397,9 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
 | **拿 A 路径去验 B 路径的提示词改动** | 改完起稿那段，我按的却是**润色**那颗笔（因为当时那颗笔在界面上顶着），而润色被要求「保住用户的措辞」—— 它忠实地把旧毛病一起保住了，看起来像改动没生效。**两条路各有各的提示词要求，验哪一条就用哪一条**（`09 §12` 那张表） |
 | **组字时按 Esc，整层浮层关掉了** | 用中文输入法打字时 **Esc 是「取消这次候选」**，而它照样冒到 `window` —— 对话里取消一次候选，整层浮层连同聊到一半的东西一起没了。用户报的原话是「对话**也总是**会被打断」，「总是」两个字是准的：用中文打字的人一天要取消几十次候选。判据要两条（`isComposing` + `keyCode === 229`，Safari 在组字结束那一下只剩后者），见 `lib/keyboard.ts`。**同类还有 Enter**（确认候选 ≠ 发送），对话的输入框与时间线的日期名输入各守了一处 |
 | **按下在列里、松开在列外 → 浮层自己关掉** | `click` 的 `target` 是**按下与松开两点最近的共同祖先**。所以「在输入框里按下、手一抖拖到列外松开」会得到一个 `target === currentTarget` 的 click，命中「点空白收起」那条。修法是**改听 `pointerdown`** —— 按下时指针在哪是明确的，从列里按的那一下根本不会到这一层（`DockCard` 与删除待确认本来就是这个做法）。用鼠标选一段字就中招，实测过 |
+| **React 合成事件上没有 `isComposing`** | `isImeKey`（`lib/keyboard.ts`）原先只看 `e.isComposing`，而 React 的 `SyntheticEvent` **只搬一部分字段过来，`isComposing` 不在名单里** —— 于是写 `onKeyDown` 的地方（对话输入框、两个起名框）拿到的是 `undefined`，组字中的 Esc 照旧把编辑态退了。真值在 `e.nativeEvent` 上，那个函数现在替调用方去那儿取。**实测出来的**（影册的改名框）；`keyCode === 229` 这一条顺带成了兜底 —— React 会搬 `keyCode` |
+| **SQLite 不支持 `createMany({ skipDuplicates })`** | Prisma 只在 Postgres / MySQL / SQLServer 上支持它，硬写会撞主键约束。影册加照片时是**先求差集再建**（两条查询，没有异常处理），顺手还能给出「这次真加进去几张」。同一条也提醒：**任何「批量塞进去，重复的跳过」都要先问一句驱动支不支持** |
+| **第一条动态段路由会报 `CLIENT_HOOK_DYNAMIC`** | `/memories/<id>` 是这个项目的第一个 `[id]` 页面。一出现它，Next 的 instant-navigation 校验就报「`usePathname()` 在 Client Component 里、在 `<Suspense>` 之外，挡住了预渲染」—— 而那个 hook 在 **layout** 里（`TopNavigation` / `ExperienceShell`），不在页面的 Suspense 里。两种修法：把 layout 包进 Suspense（顶栏会流式补进来，`fixed` 的一行字闪一下更难看），或者 `export const instant = false`（声明「进这条路由是允许阻塞的」）。取后者。⚠️ **这是开发期 warning 级校验，构建不受影响**（`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/02-route-segment-config/instant.md`） |
 
 ---
 
@@ -468,6 +483,23 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
     `finally` 里回头报一句 —— **别挪进 effect**：用户说完一句就翻去随笔小记
     那一面时，这一面是卸载的，effect 的清理正好会把这个信号掐断
     （而那个「正在回答」就永远没人负责关掉）
+16. **影册那一族：按钮用图标、文案不要白话**（用户 2026-10-11，
+    `07 §12` 是完整规格）：
+
+    > 「按钮用图标吧，位置放好」
+    > 「**所有的文字都不要太白话了，很 low 啊**」
+
+    - 架子那一格是**一组缩略图**（最多 4 张），不是一个封面 ——
+      一张说不出这一册里都有些什么
+    - ⚠️ **不搬时间线那个可拖的叠放**：用户说「这种册可能单册照片偏多
+      不太适合那个滑动，不然压力太大」
+    - 一册的三个动作各归其位：**改名 = 点名字**、**整理 / 删除 = 右上角
+      两颗图标**。删册是两步，第二下**换成文字**「只删这一册」
+    - ⚠️ **不留解释性的句子**。说明书留给文档，界面上只有标识与状态：
+      册名、`N 张`、「已在册」、`+3 −1`、`New Collection`、`Done`
+    - ⚠️ **不是真删除的就不叫删除**：把一张照片从册里拿掉叫**移出**
+    - ⚠️ **删影册 ≠ 删照片**（`08 §4`）。所以那道门比照片删除轻
+      （两步，不长按）—— 同一道门用在两件分量不同的事上，门本身就不值钱了
 
 ### 关于「要不要拆独立后端服务」
 
@@ -484,17 +516,17 @@ Prisma / DeepSeek / Python」，Route Handlers 就是后端；`18 §1` 还明确
 ## 8. 当前仓库状态
 
 ```
-src/                     68 个源文件（ts/tsx/css）
+src/                     80 个源文件（ts/tsx/css）
 shadow-narrative-docs/   19 份规格 + recon/
-prisma/                  schema + 四份迁移（init、day_theme、drop_auto_analyze、
-                         journal_drop_title_status）
+prisma/                  schema + 五份迁移（init、day_theme、drop_auto_analyze、
+                         journal_drop_title_status、memory_slim_to_album）
 scripts/                 setup.mjs + 环境脚本 + Hilbert 自检 + try-subtitles.mjs
 .data/                   shadow-narrative.db + photos/（已 gitignore）
 ```
 
-**HEAD**：`d304ed4`。工作区干净。
+**HEAD**：`08f5970`。
 
-⚠️ **`main` 领先 `origin/main` 17 个提交，还没推。**
+⚠️ **`main` 领先 `origin/main` 20 个提交，还没推。**
 
 **2026-10-10 那一批做了什么**：
 
@@ -518,8 +550,20 @@ hover 方向      全项目 12 处 `text-text-primary/40` + `hover:opacity-85` �
 规格与交接      九处文档一次对齐，「日志 → 随笔小记」45 处（运行日志没动）
 ```
 
-⚠️ 前 13 个是在 `feat/thumbnail-particle-dock` 上做的、`docs/handoff-sync` 上做的
-文档同步也合过，两个分支都已快进合进 `main`，可以删。
+**2026-10-11（Round 9，三个提交）**：
+
+```text
+影册            /memories 架子 + /memories/<id> 一册 + 整理照片那张多选面板；
+                缩表迁移砍掉四列；entryFrom → entryFromHref（Back 回得了那一册）
+组字中的 Esc    修一个真 bug：React 合成事件上没有 isComposing
+```
+
+⚠️ **`feat/thumbnail-particle-dock` 与 `docs/handoff-sync` 都已快进合进 `main`，
+可以删。** 另外 `claude/lucid-edison-c72df1` 上有一个**没合进来**的提交
+（`1486927`，10-09 那条「无障碍警告的真正来源 —— aria-hidden 换成 inert」）——
+**它是作废的**：改的是 `TopNavigation` 里的「返回 / MEMORY」，那两处早搬进
+`MemorySpace` 了，而且搬过去时就带了 `inert`；实时控制台也没有那条警告。
+不用挑拣，直接删。
 
 ⚠️ **推送**：2026-10-10 那个 session 里 `git push` **被权限规则挡了三次**，
 每次都是用户自己推的。想让我以后能推，需要在设置里给 Bash 加一条允许
