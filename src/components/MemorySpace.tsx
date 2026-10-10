@@ -81,6 +81,18 @@ const BACK_HIDE = [
  */
 const CONFIRM_IDLE_MS = 2000;
 
+/**
+ * 「删除 ⇄ 长按以确认删除」的交叉淡化。
+ *
+ * `--duration-ui`（350ms）而不是溶解那条 `--duration-morph`（1200ms）——
+ * 那一条是给「空间在变化」的，这一次只是同一格里换了个状态。
+ *
+ * 两个状态是**叠在同一格**里的两段内容（见下面那段 JSX），所以交叉淡化
+ * 顺手把宽度跳变也吃掉了：格子恒为两者中较宽的那个。
+ */
+const STATE_SWAP =
+  "opacity var(--duration-ui) var(--ease-enter), filter var(--duration-ui) var(--ease-enter)";
+
 interface MemorySpaceProps {
   /**
    * ⚠️ 2026-10-10 起**不再可空**。在这之前没有 `?photo=` 时会回落显示
@@ -880,59 +892,94 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
               「删除中」就是这一刻该显示的进度（`handleDelete` 因此不再动
               `busy`，见它的注释）。
             */}
-            {confirmDelete ? (
-              <HoldButton
-                /*
-                 * ⚠️ **尺寸、字号、字体粗细全部压到和「删除」一样。**
-                 *
-                 * 用户 2026-10-10：「你需要平衡一下点击删除前后的视觉差」。
-                 * 第一版是 `size="sm"`（36px 高、13px 字、一层玻璃底色）——
-                 * 点一下，那颗 11px 的暗字忽然换成一块 124×36 的药丸，
-                 * 在那个角落里读起来是**另一样东西出现了**，
-                 * 而不是**这行字变了**。
-                 *
-                 * 现在 `h-auto` + `text-micro` + `px-2 py-1` 把它压回一行字，
-                 * 底色去掉（`transparent` + `shadow-none`），只留液体本身。
-                 * 于是点击前后的差别只剩三件：字变亮了、多了十二个字、
-                 * 以及一条从左边漫过来的白。
-                 *
-                 * ⚠️ 这几个 Tailwind 类**盖得住**组件自己的 `--sm` 预设，
-                 * 是因为 `hold-button.css` 写在 `@layer components` 里，
-                 * 而工具类在 `utilities` —— 后者永远赢，与选择器特异度无关。
-                 * 要是哪天那份 CSS 从 `@layer` 里挪出来，这一行会整个失效。
-                 */
-                className="h-auto px-2 py-1 text-micro text-text-primary/70 shadow-none"
-                radius={6}
-                holdTime={1400}
-                releaseTime={260}
-                backgroundColor="transparent"
-                fillColor="var(--text-primary)"
-                fillTextColor="var(--background)"
-                waveAmplitude={2}
-                glow={false}
-                resetAfter={0}
-                doneLabel="删除中"
-                onHold={() => void handleDelete()}
-              >
-                长按以确认删除
-              </HoldButton>
-            ) : (
-              /*
-               * `px-2 py-1` 与上面那颗按钮**必须一致** —— 否则点下去时
-               * 这一格的高度会变，整行跟着上下跳一下。
-               */
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                className="px-2 py-1 transition-opacity duration-[200ms]"
+            {/*
+              ⚠️ **两个状态都常驻，叠在同一格里交叉淡化。**
+
+              用户 2026-10-10：「两个状态切换可以加点效果不，太生硬了」。
+
+              生硬的根子不在「缺一条 transition」，而在**它们是分别挂载/卸载的**
+              —— 进场那个从「不存在」跳到「存在」，给单个元素加过渡也拦不住。
+              叠起来之后才有东西可以互相淡。
+
+              这和 `Into this moment` / `返回` 是同一个解法（`16 §8.6`），
+              只是那一对绑在溶解上（1200ms / `--ease-morph`），
+              这一次只是同一格里的状态换代，用 350ms（`--duration-ui`）。
+
+              顺带把宽度跳变也吃掉了：格子的宽是**两者中较宽的那个**（99px），
+              恒定不变，左边那些字不会被推着动。
+
+              ⚠️ **闲着的那一个必须 `inert`。** `HoldButton` 常驻意味着它的
+              指针与键盘处理一直挂着 —— 不关掉的话，「未点」状态下按住它
+              照样会走完删除。
+            */}
+            <div className="grid">
+              <span
+                inert={confirmDelete}
+                aria-hidden={confirmDelete}
                 style={{
-                  opacity: 0.4,
-                  transitionTimingFunction: "var(--ease-enter)",
+                  gridArea: "1 / 1",
+                  opacity: confirmDelete ? 0 : 1,
+                  // 用 `blur(0px)` 不用 `none` —— `none` 与 `blur()` 之间的插值
+                  // 各家实现不完全一致，写个 0 没有歧义
+                  filter: confirmDelete ? "blur(3px)" : "blur(0px)",
+                  transition: STATE_SWAP,
                 }}
               >
-                删除
-              </button>
-            )}
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="px-2 py-1"
+                  style={{ opacity: 0.4 }}
+                >
+                  删除
+                </button>
+              </span>
+
+              <span
+                inert={!confirmDelete}
+                aria-hidden={!confirmDelete}
+                style={{
+                  gridArea: "1 / 1",
+                  opacity: confirmDelete ? 1 : 0,
+                  filter: confirmDelete ? "blur(0px)" : "blur(3px)",
+                  transition: STATE_SWAP,
+                }}
+              >
+                <HoldButton
+                  /*
+                   * ⚠️ **尺寸、字号、字体粗细全部压到和「删除」一样。**
+                   *
+                   * 用户 2026-10-10：「你需要平衡一下点击删除前后的视觉差」。
+                   * 第一版是 `size="sm"`（36px 高、13px 字、一层玻璃底色）——
+                   * 点一下，那颗 11px 的暗字忽然换成一块 124×36 的药丸，
+                   * 在那个角落里读起来是**另一样东西出现了**，
+                   * 而不是**这行字变了**。
+                   *
+                   * 现在 `h-auto` + `text-micro` + `px-2 py-1` 把它压回一行字，
+                   * 底色去掉（`transparent` + `shadow-none`），只留液体本身。
+                   *
+                   * ⚠️ 这几个 Tailwind 类**盖得住**组件自己的 `--sm` 预设，
+                   * 是因为 `hold-button.css` 写在 `@layer components` 里，
+                   * 而工具类在 `utilities` —— 后者永远赢，与选择器特异度无关。
+                   * 要是哪天那份 CSS 从 `@layer` 里挪出来，这一行会整个失效。
+                   */
+                  className="h-auto px-2 py-1 text-micro text-text-primary/70 shadow-none"
+                  radius={6}
+                  holdTime={1400}
+                  releaseTime={260}
+                  backgroundColor="transparent"
+                  fillColor="var(--text-primary)"
+                  fillTextColor="var(--background)"
+                  waveAmplitude={2}
+                  glow={false}
+                  resetAfter={0}
+                  doneLabel="删除中"
+                  onHold={() => void handleDelete()}
+                >
+                  长按以确认删除
+                </HoldButton>
+              </span>
+            </div>
           </>
         )}
       </div>

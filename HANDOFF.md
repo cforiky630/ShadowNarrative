@@ -373,6 +373,8 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
 | **粒子数是绝对值，不随视口变** | 220k 在 1400px 宽的窗口里是一层疏朗的沙，在 Claude 那种 532px 宽的面板里是 2 个粒子/px、几乎糊成一张照片。**在预览面板里调粒子参数会调过头** —— 那个面板比真实窗口窄得多。判据是「粒子数 ÷ 照片在屏幕上的像素数」，不是「看起来够不够密」 |
 | **包一层的 `span` 会丢掉字号** | 给 `Back` 套了个收放用的 `span`（要动画 `max-width`），忘了把 `text-meta` 也挂上去 —— 它按默认的 16px / 24px 撑行盒，而按钮那边是 13px / 18.2px，`items-center` 一居中，里面的字反而**错开 1px 多**（用户报的「into 和 back 水平错位了」）。判据不是「看着差不多」，是**两边的行盒高度必须相等** |
 | **flex 子项写 `inline-block` 没用** | 上面那个 `span` 写了 `inline-block`，`getComputedStyle` 回来的是 `block` —— flex 容器会把子项 blockify。不影响功能，但排查时容易看懵 |
+| **`dispatchEvent` 会绕过 `inert`** | `inert` 挡的是**真实**指针（命中测试阶段就不落上去），而 `element.dispatchEvent(new PointerEvent(...))` 直接投递给元素，压根不走命中测试 —— 于是「未点状态下按住那颗被 `inert` 藏起来的按钮」会给出「按住成功」的**假读数**。**验证 `inert` 要用 `document.elementFromPoint(x, y)`**：它走的是真的命中测试，被挡住会返回 null 或下层元素 |
+| **两个状态分别挂载/卸载，再怎么加过渡也生硬** | 进场的那个是从「不存在」跳到「存在」，`transition` 对它没有起点。要交叉淡化就得**两个都常驻、叠在同一格**（`grid` + `grid-area: 1/1`）—— 删除那一格和 `Into this moment` / `返回` 是同一个解法。顺带还吃掉了宽度跳变：格子宽是两者中较宽的那个 |
 
 ---
 
