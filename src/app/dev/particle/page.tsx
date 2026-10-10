@@ -95,7 +95,7 @@ export default function ParticleDevPage() {
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="text-meta fixed inset-0 z-10 flex flex-col items-center justify-center gap-3 text-text-primary/40 transition-opacity duration-[350ms] hover:opacity-80"
+          className="text-meta fixed inset-0 z-10 flex flex-col items-center justify-center gap-3 text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-80"
           style={{ transitionTimingFunction: "var(--ease-enter)" }}
         >
           <span>拖入一张照片，或者点击选择</span>
@@ -122,7 +122,7 @@ export default function ParticleDevPage() {
           <button
             type="button"
             onClick={() => canvasRef.current?.resetView()}
-            className="text-micro text-text-primary/45 transition-opacity duration-[350ms] hover:opacity-90"
+            className="text-micro text-text-primary opacity-45 transition-opacity duration-[350ms] hover:opacity-90"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
             复位视角
@@ -130,7 +130,7 @@ export default function ParticleDevPage() {
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="text-micro text-text-primary/45 transition-opacity duration-[350ms] hover:opacity-90"
+            className="text-micro text-text-primary opacity-45 transition-opacity duration-[350ms] hover:opacity-90"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
             换一张
@@ -142,7 +142,7 @@ export default function ParticleDevPage() {
               setFileName(null);
               window.location.reload();
             }}
-            className="text-micro text-text-primary/45 transition-opacity duration-[350ms] hover:opacity-90"
+            className="text-micro text-text-primary opacity-45 transition-opacity duration-[350ms] hover:opacity-90"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
             重置

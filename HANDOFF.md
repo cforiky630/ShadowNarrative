@@ -375,6 +375,7 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
 | **flex 子项写 `inline-block` 没用** | 上面那个 `span` 写了 `inline-block`，`getComputedStyle` 回来的是 `block` —— flex 容器会把子项 blockify。不影响功能，但排查时容易看懵 |
 | **`dispatchEvent` 会绕过 `inert`** | `inert` 挡的是**真实**指针（命中测试阶段就不落上去），而 `element.dispatchEvent(new PointerEvent(...))` 直接投递给元素，压根不走命中测试 —— 于是「未点状态下按住那颗被 `inert` 藏起来的按钮」会给出「按住成功」的**假读数**。**验证 `inert` 要用 `document.elementFromPoint(x, y)`**：它走的是真的命中测试，被挡住会返回 null 或下层元素 |
 | **两个状态分别挂载/卸载，再怎么加过渡也生硬** | 进场的那个是从「不存在」跳到「存在」，`transition` 对它没有起点。要交叉淡化就得**两个都常驻、叠在同一格**（`grid` + `grid-area: 1/1`）—— 删除那一格和 `Into this moment` / `返回` 是同一个解法。顺带还吃掉了宽度跳变：格子宽是两者中较宽的那个 |
+| **`text-text-primary/40` + `hover:opacity-85` = hover 变暗** | 前者是**颜色的 alpha**，元素的 `opacity` 仍然是 1，所以 `hover:opacity-85` 把整块压到 0.85 —— 有效亮度 0.40×0.85 = 0.34，**方向和意图相反**。要把「暗」写在 **`opacity-*`** 上（`text-text-primary opacity-40`）才通。2026-10-10 全项目扫过一遍，12 处。⚠️ 靠**换颜色**做的（`hover:text-text-primary/70`）本来是对的，别一起改 |
 
 ---
 

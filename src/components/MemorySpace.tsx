@@ -698,7 +698,8 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
           <button
             type="button"
             onClick={toggleParticle}
-            className="text-meta relative text-text-primary/45 hover:opacity-90 focus-visible:opacity-90"
+            className="text-meta relative text-text-primary opacity-45 transition-opacity duration-[350ms] hover:opacity-90 focus-visible:opacity-90"
+            style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
           {/*
             两段文字叠在同一格里，各自收起来的时候要对辅助技术隐藏 ——
@@ -803,8 +804,14 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
                * 而这一整行的用意恰恰是「出口是一段文字，不是一个控件」。
                *
                * `whitespace-nowrap` 是为了上面那个收放：盒子变窄时不许折行。
+               *
+               * ⚠️ **0.45 这个亮度必须写成 `opacity-45` 而不是
+               * `text-text-primary/45`** —— 后者是颜色的 alpha，元素的
+               * `opacity` 仍是 1，于是 `hover:opacity-90` 会把字**压得更暗**，
+               * 与意图相反。全项目这一类的写法 2026-10-10 一并改过。
                */
-              className="whitespace-nowrap text-text-primary/45 hover:opacity-90 focus-visible:opacity-90"
+              className="whitespace-nowrap text-text-primary opacity-45 transition-opacity duration-[350ms] hover:opacity-90 focus-visible:opacity-90"
+              style={{ transitionTimingFunction: "var(--ease-enter)" }}
             >
               Back
             </Link>
@@ -859,7 +866,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
               <button
                 type="button"
                 onClick={() => canvasRef.current?.resetView()}
-                className="text-text-primary/40 transition-opacity duration-[350ms] hover:opacity-85"
+                className="text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-85"
                 style={{ transitionTimingFunction: "var(--ease-enter)" }}
               >
                 复位视角
@@ -874,14 +881,19 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
 
               腾出来的位子给**点一下打开文件选择** —— 拖放与点击本来就是
               这个动作的两条路，而这里原本只有前者。文案跟着从「提示」
-              变成「动作」，所以不再是「拖入照片 ·」而是「选一张照片」。
+              变成「动作」，所以不再是「拖入照片 ·」而是「**捉影**」。
+
+              ⚠️ 「捉影」是用户定的（同一天，紧接着「选一张照片」那版）。
+              它和 `Into this moment` 是同一路做法：把「选个文件上传」这个
+              技术动作，说成一件关于影的事 —— 而「影」正是这个产品的词根。
+              **不要把它改回「选照片」这类功能描述。**
             */}
             <PhotoPicker
               onFile={(file) => void acceptFile(file)}
               className="cursor-pointer text-text-primary opacity-30 transition-opacity duration-[350ms] hover:opacity-85"
               style={{ transitionTimingFunction: "var(--ease-enter)" }}
             >
-              选一张照片
+              捉影
             </PhotoPicker>
 
             {/*

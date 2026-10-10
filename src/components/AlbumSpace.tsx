@@ -210,7 +210,7 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
             className="text-meta cursor-pointer text-text-primary opacity-35 transition-opacity duration-[350ms] hover:opacity-85"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
-            把照片拖进来，或点这里选一张
+            把照片拖进来，或点这里捉影
           </PhotoPicker>
           {notice && (
             <button
@@ -322,7 +322,7 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
               className="text-micro cursor-pointer text-text-primary opacity-25 transition-opacity duration-[350ms] hover:opacity-85"
               style={{ transitionTimingFunction: "var(--ease-enter)" }}
             >
-              选一张照片
+              捉影
             </PhotoPicker>
           )}
         </div>

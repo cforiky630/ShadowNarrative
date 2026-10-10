@@ -264,7 +264,7 @@ export function ConversationPanel({ photoId, onClose }: ConversationPanelProps) 
             <button
               type="submit"
               disabled={!draft.trim() || sending}
-              className="text-micro text-text-primary/40 transition-opacity duration-[350ms] hover:opacity-85 disabled:opacity-20"
+              className="text-micro text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-85 disabled:opacity-20"
               style={{ transitionTimingFunction: "var(--ease-enter)" }}
             >
               说

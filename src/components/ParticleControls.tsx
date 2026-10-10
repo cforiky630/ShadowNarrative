@@ -126,7 +126,7 @@ export function ParticleControls() {
         <button
           type="button"
           onClick={resetParams}
-          className="text-micro mt-10 text-text-primary/40 transition-opacity duration-[200ms] hover:opacity-85"
+          className="text-micro mt-10 text-text-primary opacity-40 transition-opacity duration-[200ms] hover:opacity-85"
         >
           恢复默认
         </button>

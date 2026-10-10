@@ -144,7 +144,7 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
             className="text-meta cursor-pointer text-text-primary opacity-35 transition-opacity duration-[350ms] hover:opacity-85"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
-            还没有照片。选一张，这里会长出一条时间线。
+            还没有照片。捉影，这里会长出一条时间线。
           </PhotoPicker>
         )}
 

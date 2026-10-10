@@ -59,7 +59,7 @@ export function TopNavigation() {
       <div className="pointer-events-auto relative">
         <Link
           href="/"
-          className="text-micro block text-text-primary/55 transition-opacity duration-[350ms] hover:opacity-100 focus-visible:opacity-100"
+          className="text-micro block text-text-primary opacity-55 transition-opacity duration-[350ms] hover:opacity-100 focus-visible:opacity-100"
           style={{ transitionTimingFunction: "var(--ease-enter)" }}
         >
           Shadow Narrative
@@ -74,7 +74,7 @@ export function TopNavigation() {
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className="text-micro text-text-primary/40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"
+              className="text-micro text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"
               style={{ transitionTimingFunction: "var(--ease-enter)" }}
             >
               {item.label}

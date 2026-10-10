@@ -107,7 +107,7 @@ export function DockCard({ label, open, onClose, children }: DockCardProps) {
             type="button"
             onClick={onClose}
             aria-label="收起"
-            className="text-meta text-text-primary/40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"
+            className="text-meta text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
             ×
