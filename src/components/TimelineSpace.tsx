@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useStage } from "@/components/ExperienceShell";
 import { revealStyle, useReveal } from "@/lib/useReveal";
@@ -392,6 +392,7 @@ function calcOffset(index: number, fraction: number, currentPage: number): numbe
 
 function PhotoStack({ photos }: { photos: Photo[] }) {
   const n = photos.length;
+  const { enter } = useStage();
 
   /** 连续的「页位置」。整数 = 停稳在某一张上。对应源码的 `_offsetX`。 */
   const [page, setPage] = useState(0);
@@ -449,6 +450,11 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
      * 就没有东西可以触发** —— 不需要再单独写一套"吞掉它"的机制。
      * （上一版就是因为漏了那套机制，导致手指一松就跳进照片页。）
      *
+     * ⚠️ **只有一张时是例外** —— 那时卡片本身是个 `<Link>`（见下面那段）。
+     * 「点它什么都不做」是为了让「拖」和「点」不打架，而一张时没有可拖的，
+     * 那条理由不存在；不这么做的话那一天的照片**根本没有入口**
+     * （「N 张」标签在 `count < 2` 时不渲染）。
+     *
      * tabIndex + 方向键是给键盘用户的：没有点击不代表没有交互。
      */
     <div
@@ -488,49 +494,92 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
         // 源码：translate(-offset) → scale → rotateZ(-rotation)，以中心为原点
         const transform = `translate(${-offset}px, 0) scale(${scale}) rotate(${-rotation}rad)`;
 
+        const cardStyle: CSSProperties = {
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: CARD_W,
+          height: CARD_H,
+          marginLeft: -CARD_W / 2,
+          marginTop: -CARD_H / 2,
+          transform,
+          transformOrigin: "center",
+          // 源码 initState：zIndex = _itemsLength - key；当前页置顶
+          zIndex: isCurrent ? n + 1 : n - i,
+          // 拖拽中不加过渡 —— 跟手必须即时，有过渡会「拽不动」
+          transition: dragging
+            ? "none"
+            : "transform var(--duration-ui) var(--ease-enter)",
+          borderRadius: "var(--radius-md)",
+          overflow: "hidden",
+          boxShadow: "0 12px 36px rgb(0 0 0 / 0.6)",
+          background: "var(--surface-elevated)",
+        };
+
+        /*
+          只画当前页 ±SHOW_COUNT 张（源码的 _showCount = 5）。
+          更远的连 DOM 都不进 —— 这是真正的懒加载。
+
+          缩略图（08 §6）。卡片宽 160 CSS px，原图在这里是几十倍的浪费。
+          不走 next/image：那要 sharp，等于把刚避开的原生模块换个地方
+          引进来（05 §7、10 的 Round 13）
+        */
+        const cardInner = Math.abs(fraction) <= SHOW_COUNT && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`/api/photos/${photo.id}/thumbnail`}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            className="h-full w-full object-cover"
+          />
+        );
+
+        /*
+          ⚠️ **只有一张时，卡片本身要能点开。**
+
+          用户 2026-10-10：「时间线页面有问题，单张照片居然点不开」。
+
+          这一格原本是**死的**：叠放「只负责左右滑动、点它什么都不做」
+          （源码如此），而进照片的唯一入口是上面那个「N 张」标签 ——
+          它在 `count < 2` 时返回 `null`。于是**一天只有一张照片时两条路都没有**，
+          那张照片永远打不开。
+
+          一张的时候本来也没有歧义：没有别的东西可滑，点它只能是「打开这张」。
+          （≥2 张时仍旧按源码：点它不做事，「N 张」开网格画廊。
+          卡片跟着手指走，再叠一个点击会分不清是拖还是点。）
+        */
+        if (n === 1) {
+          return (
+            <Link
+              key={photo.id}
+              href={`/?photo=${photo.id}`}
+              aria-label="打开这张照片"
+              onClick={(e) => {
+                // 修饰键/中键保留原义：新标签页打开一张照片是合理的
+                if (
+                  e.metaKey ||
+                  e.ctrlKey ||
+                  e.shiftKey ||
+                  e.altKey ||
+                  e.button !== 0
+                ) {
+                  return;
+                }
+                e.preventDefault();
+                enter(photo.id, e.currentTarget.getBoundingClientRect());
+              }}
+              style={{ ...cardStyle, cursor: "pointer" }}
+            >
+              {cardInner}
+            </Link>
+          );
+        }
+
         return (
-          <div
-            key={photo.id}
-            style={{
-              position: "absolute",
-              left: "50%",
-              top: "50%",
-              width: CARD_W,
-              height: CARD_H,
-              marginLeft: -CARD_W / 2,
-              marginTop: -CARD_H / 2,
-              transform,
-              transformOrigin: "center",
-              // 源码 initState：zIndex = _itemsLength - key；当前页置顶
-              zIndex: isCurrent ? n + 1 : n - i,
-              // 拖拽中不加过渡 —— 跟手必须即时，有过渡会「拽不动」
-              transition: dragging
-                ? "none"
-                : "transform var(--duration-ui) var(--ease-enter)",
-              borderRadius: "var(--radius-md)",
-              overflow: "hidden",
-              boxShadow: "0 12px 36px rgb(0 0 0 / 0.6)",
-              background: "var(--surface-elevated)",
-            }}
-          >
-            {/*
-              只画当前页 ±SHOW_COUNT 张（源码的 _showCount = 5）。
-              更远的连 DOM 都不进 —— 这是真正的懒加载。
-            */}
-            {Math.abs(fraction) <= SHOW_COUNT && (
-              // 缩略图（08 §6）。卡片宽 160 CSS px，原图在这里是几十倍的浪费。
-              // 不走 next/image：那要 sharp，等于把刚避开的原生模块换个地方
-              // 引进来（05 §7、10 的 Round 13）
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={`/api/photos/${photo.id}/thumbnail`}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                draggable={false}
-                className="h-full w-full object-cover"
-              />
-            )}
+          <div key={photo.id} style={cardStyle}>
+            {cardInner}
           </div>
         );
       })}
