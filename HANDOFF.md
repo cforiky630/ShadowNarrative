@@ -483,9 +483,9 @@ scripts/                 setup.mjs + 环境脚本 + Hilbert 自检 + try-subtitl
 .data/                   shadow-narrative.db + photos/（已 gitignore）
 ```
 
-**HEAD**：`27dd377`。工作区干净。
+**HEAD**：`d304ed4`。工作区干净。
 
-⚠️ **`main` 领先 `origin/main` 15 个提交，还没推。**
+⚠️ **`main` 领先 `origin/main` 17 个提交，还没推。**
 
 **2026-10-10 那一批做了什么**：
 
@@ -502,9 +502,11 @@ scripts/                 setup.mjs + 环境脚本 + Hilbert 自检 + try-subtitl
 时间线 bug      一天只有一张照片时那张点不开 —— 「N 张」标签与叠放两条路原本同时断
 选照片入口      PhotoPicker 铺到四处；有照片时那个入口叫「捉影」
 hover 方向      全项目 12 处 `text-text-primary/40` + `hover:opacity-85` 是反的
-── 后面两个（Round 8 后半）───────────────────────────────────────────
+── 后面四个（Round 8 后半）───────────────────────────────────────────
 随笔小记        一层遮罩两面；笔 / 本子；自动存；空正文 = 删掉这条（08 §8、09 §12）
 提示词那一改    「不写照片」改成「不要只会描述」—— 白描也是本事（09 §13）
+那一格拆两半    润色那颗笔搬到笔记面；对话面有笔记时换成「进笔记」的本子
+规格与交接      九处文档一次对齐，「日志 → 随笔小记」45 处（运行日志没动）
 ```
 
 ⚠️ 前 13 个是在 `feat/thumbnail-particle-dock` 上做的、`docs/handoff-sync` 上做的
