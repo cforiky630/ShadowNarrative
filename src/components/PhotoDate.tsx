@@ -130,7 +130,6 @@ export function PhotoDate({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title="点一下改"
         className="text-meta text-text-primary/55 underline-offset-4 transition-colors duration-[350ms] hover:text-text-primary/90 hover:underline focus-visible:text-text-primary/90 focus-visible:underline"
         style={{ transitionTimingFunction: "var(--ease-enter)" }}
       >
@@ -264,7 +263,6 @@ function Calendar({
           <button
             type="button"
             onClick={() => setView("months")}
-            title="改年月"
             className="text-micro tracking-[0.08em] text-text-primary/70 underline-offset-4 transition-colors duration-[350ms] hover:text-text-primary/95 hover:underline focus-visible:text-text-primary/95"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >

@@ -583,6 +583,33 @@ AI_BASE_URL=https://api.deepseek.com
 - 并发上限 2500（账号级）
 - 支持 thinking 与非 thinking 模式
 
+### 思考档位：哪条路开、开到哪
+
+> 2026-10-11 加。用户：「ai 对话还是太死板了……**可以开思考限制一下强度
+> 和时间就行**」。
+
+| 哪条路 | `effort` | `max_tokens` | 为什么 |
+|---|---|---|---|
+| **看图**（字幕 / analysis） | `low` | 4000 | **必须低**：reasoning 也计入 `max_tokens`，而它要吐一整块 JSON —— 实测给 900 时 852 个 token 被推理吃掉，JSON 断在中间（`finish_reason: "length"`） |
+| 随笔小记 | `low`（跟随默认） | 4000 | 同上，它也要 JSON |
+| **对话** | **`medium`** | 4000 | 它不要 JSON、只吐一两句话，而且没有 30 秒轮询在催 —— 多花几百毫秒换「接得上话」 |
+
+两道闸都在：**时间**那道是 `REQUEST_TIMEOUT_MS`（20 秒），**token** 那道是
+`max_tokens`。
+
+⚠️ **medium 是有代价的**，实测：
+
+- **慢**：1.2 – 6.3 秒（`effort: low` 那条路是 0.3 – 0.6 秒）
+- **偶尔想过头**：推理把 `max_tokens` 吃光 → `finish_reason: "length"` →
+  用户看到的是「AI 的回应不完整」。**四次里中了一次**
+
+所以对话那条路**带兜底**：超预算时降回 `low` 重来一次
+（`aiService.replyWithFallback`）。**平淡比报错好** —— 在聊天里弹一个错
+是不能接受的，而那一条 `low` 的路又快又稳（字幕一直用它）。
+
+⚠️ `max_tokens` **不能给 2000**：第一版就是那么设的，medium 的推理一把吃光，
+四次里错两次。
+
 ### 图像输入
 
 ```json

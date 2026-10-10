@@ -52,6 +52,33 @@ const EFFORT = "low";
 const MAX_TOKENS = 4000;
 
 /**
+ * 对话那一路的思考强度：**开着，但拧到中档**。
+ *
+ * 用户 2026-10-11：「ai 对话还是太死板了……**可以开思考限制一下强度和时间就行**」。
+ *
+ * ⚠️ **字幕那一路必须是 `low`**（上面写了理由：reasoning 会把 JSON 挤断），
+ * 而对话和它不一样：不要求 JSON、输出只有一两句话、也没有 30 秒轮询在催。
+ * 多花几百毫秒换「接得上话」，这笔账划算。
+ *
+ * 两道闸都在：时间那道是 `REQUEST_TIMEOUT_MS`（20 秒），
+ * token 那道是下面这个数。
+ */
+const CONVERSATION_EFFORT = "medium";
+
+/**
+ * 对话那一路的上限。
+ *
+ * ⚠️ **和 `MAX_TOKENS` 一样是 4000，不能小。** 第一版给的是 2000 ——
+ * 实测 medium 档的推理一把就把那 2000 吃光，`finish_reason: "length"`，
+ * 用户收到的是「AI 的回应不完整」（正是 `09 §20` 警告的那个失败模式）。
+ * 回复本身只有一两句，给够的是**思考的余量**。
+ *
+ * ⚠️ 真正卡住「别想太久」的是时间那道闸（`REQUEST_TIMEOUT_MS`，20 秒），
+ * 加上提示词里「默认一到三句」那一条 —— 不是这个数。
+ */
+const CONVERSATION_MAX_TOKENS = 4000;
+
+/**
  * 单次调用超时。必须显著小于客户端的 30 秒轮询预算（08 §10），
  * 否则前端已经放弃、服务端还在跑，用户看到的是「失败」但后台在烧钱。
  */
@@ -281,7 +308,16 @@ interface ChatMessage {
  */
 async function chatCompletion(
   credentials: AiCredentials,
-  params: { messages: ChatMessage[]; json?: boolean; maxTokens?: number },
+  params: {
+    messages: ChatMessage[];
+    json?: boolean;
+    maxTokens?: number;
+    /**
+     * 思考强度。默认跟随 `EFFORT`（那一档是为「要 JSON 的那几条路」定的）。
+     * 对话那一路单独调高 —— 见 `CONVERSATION_EFFORT`。
+     */
+    effort?: string;
+  },
 ): Promise<string> {
   const { apiKey, baseUrl, model } = credentials;
 
@@ -299,7 +335,7 @@ async function chatCompletion(
         // 只有需要结构化输出的那条路才强制 JSON —— 对话要的是人话
         ...(params.json ? { response_format: { type: "json_object" } } : {}),
         max_tokens: params.maxTokens ?? MAX_TOKENS,
-        effort: EFFORT,
+        effort: params.effort ?? EFFORT,
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
@@ -730,10 +766,51 @@ export async function runConversationReply(params: {
     `[aiService] 对话 ${photo.id}：历史 ${recent.length} 条，本轮${isFirstTurn ? "含" : "不含"}图片`,
   );
 
-  const raw = await chatCompletion(credentials, { messages });
+  const raw = await replyWithFallback(credentials, messages);
   const reply = await guardReply(credentials, messages, raw);
 
   return appendMessage({ photoId: photo.id, role: "assistant", content: reply });
+}
+
+/**
+ * 对话那一次调用：**先开着思考，实在不行就降下来重来一次**。
+ *
+ * ── 为什么要有那一趟兜底 ─────────────────────────────────────────────
+ *
+ * 用户 2026-10-11 要的是「**开思考，限制一下强度和时间**」。实测下来，
+ * medium 档确实让回复活了一点（同一段对话，思考开着之后从「复述他的话 +
+ * 一个问句」变成了接得住话的短句），但它是**有代价**的：
+ *
+ * - 慢：实测 1.2s – 6.3s（`effort: low` 那条路是 0.3 – 0.6s）
+ * - 而且**偶尔想过头**：推理把 max_tokens 吃光，`finish_reason: "length"`，
+ *   用户收到的是「AI 的回应不完整」。实测四次里中了一次
+ *
+ * 聊天里偶尔弹一个错是不能接受的 —— 所以超预算时**降一档重来**：
+ * `effort: low` 那条路又快又稳（字幕一直用它），代价只是这一条回复平淡些。
+ * **平淡比报错好。**
+ *
+ * ⚠️ 只对「上游失败」兜底，别的错误照旧往上抛（网络、鉴权、限流不是
+ * 降档能解决的）。
+ */
+async function replyWithFallback(
+  credentials: AiCredentials,
+  messages: ChatMessage[],
+): Promise<string> {
+  try {
+    return await chatCompletion(credentials, {
+      messages,
+      // 对话是唯一一条**开着思考**的路：见 `CONVERSATION_EFFORT`
+      effort: CONVERSATION_EFFORT,
+      maxTokens: CONVERSATION_MAX_TOKENS,
+    });
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.code !== "AI_UPSTREAM_FAILED") {
+      throw error;
+    }
+    // 只记类型，不记内容（12 §10）
+    console.warn("[aiService] 对话思考超预算，降档重试");
+    return chatCompletion(credentials, { messages });
+  }
 }
 
 /**
