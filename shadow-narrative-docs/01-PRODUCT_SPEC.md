@@ -83,7 +83,7 @@ Memory
 |---|---|---|
 | **Album** | 收藏的照片沿一条斜轴排布在 3D 空间里 | **第一屏** |
 | **Photo View** | 看一张照片。默认原图，可切换粒子 | 点相册里的照片 |
-| **Photo Particle** | 照片粒子化后的交互状态 | Photo View 里点「翻开这一天」 |
+| **Photo Particle** | 照片粒子化后的交互状态 | Photo View 里点「Into this moment」 |
 | **Conversation** | 字幕 + 对话 | 照片下方 |
 | **Journal** | 沉浸式文字阅读 / 编辑 | 用户主动触发 |
 | **Library** | 全部照片，按时间的侧边列表 | 左侧抽屉 |
@@ -140,7 +140,7 @@ Album（斜轴，收藏的照片）
     ↓
 Photo View —— 默认原图模式
     ↓
-点「翻开这一天」
+点「Into this moment」
     ↓
 原图 → 粒子，无缝切换
     ↓

@@ -75,7 +75,7 @@ const FIT_PADDING = 1.18;
 /**
  * 专注模式的推近比例。
  *
- * 点「翻开这一天」之后相机推近到 fitDistance 的这个倍数。
+ * 点「Into this moment」之后相机推近到 fitDistance 的这个倍数。
  * 用户 2026-10-09 的要求是「类似专注模式，主体稍微放大一点」——
  * 所以幅度刻意小（12%），是"近了一点"而不是"推上去"。
  */
@@ -775,6 +775,49 @@ export class ParticleSystem {
   // -------------------------------------------------------------------------
   // 尺寸
   // -------------------------------------------------------------------------
+
+  /**
+   * 照片平面此刻落在视口里的矩形（CSS 像素）。
+   *
+   * 给「从时间线推入照片」用：那张照片要从缩略图的位置飞到这里，
+   * 所以外壳必须知道**终点在哪**。让引擎自己报，而不是在外面把
+   * `fillDistance / offsetY / FOV` 那一套再算一遍 —— 算第二遍就一定会漂。
+   *
+   * 实现上是把平面的四角投影后取包围盒，所以**相机转过也成立**
+   * （虽然进照片时总是正视角，§8.7）。
+   *
+   * 纯读取，不改变任何渲染状态。
+   */
+  photoScreenRect(): { x: number; y: number; w: number; h: number } | null {
+    const cam = this.camera;
+    if (!cam) return null;
+
+    const aspect = this.currentSample?.aspect ?? 1;
+    const halfW = aspect >= 1 ? 1 : aspect;
+    const halfH = aspect >= 1 ? 1 / aspect : 1;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const w = Math.max(1, rect.width);
+    const h = Math.max(1, rect.height);
+
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (const [sx, sy] of [
+      [-1, -1],
+      [1, -1],
+      [-1, 1],
+      [1, 1],
+    ] as const) {
+      const v = new Vector3(sx * halfW, sy * halfH, 0).project(cam);
+      xs.push((v.x * 0.5 + 0.5) * w);
+      // NDC 的 y 向上，CSS 的 y 向下
+      ys.push((1 - (v.y * 0.5 + 0.5)) * h);
+    }
+
+    const x0 = Math.min(...xs);
+    const y0 = Math.min(...ys);
+    return { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 };
+  }
 
   resize(): void {
     if (!this.renderer || !this.camera) return;

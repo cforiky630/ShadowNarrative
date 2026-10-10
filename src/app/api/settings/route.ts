@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { ApiError, failFrom, ok } from "@/lib/apiResponse";
 import { getAiPublicInfo, setAiApiKey } from "@/lib/secrets";
 import { getLocalUserId, getSettings, setAutoAnalyze } from "@/services/userService";
@@ -33,6 +34,17 @@ async function readView(userId: string): Promise<SettingsView> {
 }
 
 export async function GET() {
+  /**
+   * ⚠️ 必须在 try 之外，见 api/timeline/route.ts 的详细说明 —— 两件事：
+   * 不读请求的 handler 会被预渲染，而 better-sqlite3 是同步驱动，
+   * 查询真的会在预渲染时执行；而 connection() 本身是靠抛出终止预渲染的，
+   * 放进 try 会被当成业务失败。
+   *
+   * 这里比 timeline 更隐蔽：读 secrets.json 的失败被 `readSecrets` 吞掉，
+   * 所以**不会报错**，只会静默固化一个错的设置快照。
+   */
+  await connection();
+
   try {
     return ok(await readView(await getLocalUserId()));
   } catch (error) {

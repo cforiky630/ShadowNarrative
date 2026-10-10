@@ -16,6 +16,11 @@ export interface ParticleCanvasHandle {
   setMode: (mode: DisplayMode, options?: { immediate?: boolean }) => void;
   /** 回到正视角。旋转是探索，但用户需要随时能回到「照片」。 */
   resetView: () => void;
+  /**
+   * 照片此刻在视口里的矩形。给「从时间线推入」算 FLIP 终点用。
+   * 引擎还没装上图时为 null。
+   */
+  photoScreenRect: () => { x: number; y: number; w: number; h: number } | null;
 }
 
 interface ParticleCanvasProps {
@@ -30,6 +35,15 @@ interface ParticleCanvasProps {
   onStats?: (s: EngineStats) => void;
   /** 视角在「正对」与「已旋转」之间切换时触发 */
   onViewChange?: (rotated: boolean) => void;
+  /**
+   * 停掉渲染循环。
+   *
+   * 2026-10-10：画布搬进 `(experience)/layout` 之后，它**在所有路由上都在**——
+   * 包括时间线。时间线是纯 DOM 空间，画布那一层只是藏起来（opacity 0），
+   * 不停的话 15 万粒子会一直在没人看的地方跑满一个核。
+   * 改动之前画布只存在于照片页，不存在这个问题 —— 所以这是这次改动**带来的**账。
+   */
+  paused?: boolean;
 }
 
 /**
@@ -47,6 +61,7 @@ export function ParticleCanvas({
   onUnsupported,
   onStats,
   onViewChange,
+  paused = false,
 }: ParticleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<ParticleSystem | null>(null);
@@ -86,6 +101,7 @@ export function ParticleCanvas({
       resetView: () => {
         engineRef.current?.resetView();
       },
+      photoScreenRect: () => engineRef.current?.photoScreenRect() ?? null,
     }),
     [],
   );
@@ -178,6 +194,21 @@ export function ParticleCanvas({
     ro.observe(canvas);
     return () => ro.disconnect();
   }, [ready]);
+
+  /*
+   * 停/走渲染循环。
+   *
+   * `stop()` 只是把 `running` 置 false，循环尾巴上的
+   * `if (this.running) requestAnimationFrame(...)` 就不再排下一帧；
+   * `start()` 会重置 `lastFrameMs`，所以恢复时不会有一帧带着巨大的 dt。
+   * 这是引擎本来就有的公开开关，不是新加的行为。
+   */
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !ready) return;
+    if (paused) engine.stop();
+    else engine.start();
+  }, [paused, ready]);
 
   // --- 指针 ---
   useEffect(() => {

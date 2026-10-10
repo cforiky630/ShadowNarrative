@@ -31,9 +31,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  photos   Photo[]
-  memories Memory[]
-  settings UserSettings?
+  photos    Photo[]
+  memories  Memory[]
+  dayThemes DayTheme[]
+  settings  UserSettings?
 
   @@map("users")
 }
@@ -181,6 +182,48 @@ model MemoryPhoto {
   @@id([memoryId, photoId])
   @@index([photoId])
   @@map("memory_photos")
+}
+
+/// 某一天的主题名。
+///
+/// 用户 2026-10-10 决定：「主题名落在天」。
+///
+/// ⚠️ **由用户自己写，不做 AI 自动提炼**（同日下午推翻了上午的「默认提炼」）。
+/// 两个理由：`01 §9` 不允许 AI 替用户定义这段记忆是什么，而给一天起名正是这件事；
+/// 而且个人相册里大多数天只有一两张照片，AI 在那个信息量下只能把某一张的描述
+/// 压成一个词 —— 实测产出「仰头的布偶猫」，那是照片里的东西，不是这一天。
+///
+/// 没写的时候前端显示一个**淡淡的占位**：那一天的拍摄时段（"夜里"、"午后到傍晚"）。
+/// 时间是事实不是推测，所以它可以当占位 —— 名字得是用户自己的话。
+///
+/// 刻意**不做成 Memory**：`01-PRODUCT_SPEC.md` §4 说分组是**可选**的，
+/// 而「每天自动有一个节点」如果复用分组，就等于自动给每一天建一个分组 ——
+/// 和「可选」直接冲突。天是时间轴上的刻度，不是用户建的分组。
+model DayTheme {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// "YYYY-MM-DD"，**本地日历日**，不是 UTC 日期。
+  ///
+  /// 用字符串而不是 DateTime 是刻意的：这是一个「日历日」，不是一个时刻。
+  /// 存成 DateTime 就会在时区上漂 —— 23:30 拍的照片属于哪一天，
+  /// 会取决于你在哪个时区读它。存成 "2026-10-09" 则永远是那一天。
+  dayKey String
+
+  title String
+  /// ai | user。09 §6 的证据模型要求标出来源。
+  ///
+  /// 默认是 `user` —— 现在**只有用户会写**（见本模型的说明）。
+  /// 默认值写成 `ai` 会是个陷阱：将来谁 create 时忘了带 source，
+  /// 那天的名字就会被标成 AI 说的。
+  source String @default("user")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, dayKey])
+  @@map("day_themes")
 }
 
 model UserSettings {

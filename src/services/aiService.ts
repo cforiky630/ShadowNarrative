@@ -253,7 +253,7 @@ interface DeepSeekResponse {
 }
 
 /**
- * 调一次 chat/completions，返回正文。
+ * 调一次 chat/completions（看图），返回正文。
  *
  * 失败一律抛 `ApiError("AI_UPSTREAM_FAILED")`（08 §5 的 502）。
  * **错误信息里绝不带上游响应原文或 key**（12 §10）。
@@ -544,6 +544,7 @@ export async function runPhotoAnalysis(params: {
       where: { id: photo.id },
       data: { aiState: "done", aiError: null },
     });
+
   } catch (error) {
     const message =
       error instanceof ApiError ? error.message : "分析过程出错了";

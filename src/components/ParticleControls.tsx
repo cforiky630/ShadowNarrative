@@ -91,7 +91,7 @@ export function ParticleControls() {
         <div
           aria-hidden
           onClick={() => setOpen(false)}
-          className="fixed inset-0 z-30"
+          className="pointer-events-auto fixed inset-0 z-30"
         />
       )}
 
@@ -100,7 +100,7 @@ export function ParticleControls() {
         role="dialog"
         aria-label="粒子参数"
         inert={!open}
-        className="fixed right-0 top-0 z-30 flex h-dvh w-[340px] flex-col border-l border-border-faint bg-glass-strong backdrop-blur-2xl"
+        className="pointer-events-auto fixed right-0 top-0 z-30 flex h-dvh w-[340px] flex-col border-l border-border-faint bg-glass-strong backdrop-blur-2xl"
         style={{
           transform: open ? "translateX(0)" : "translateX(100%)",
           transition: "transform var(--duration-ui) var(--ease-enter)",

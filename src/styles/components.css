@@ -60,4 +60,59 @@
   .sn-range:focus-visible::-moz-range-thumb {
     opacity: 1;
   }
+
+  /* 隐藏滚动条但保留滚动。
+     产品是「UI 是空气，照片和粒子才是主体」（02 §1）—— 一条系统滚动条
+     盖在全屏的网格画廊上非常突兀。滚轮 / 触控板 / 键盘仍然可用，
+     所以隐藏的只是那根指示条，不是功能。
+
+     （Windows 上的常驻滚动条尤其难看：它不淡出，一直占着十几像素。） */
+  .sn-noscrollbar {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* 旧 Edge */
+  }
+
+  .sn-noscrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 路由内容层（ExperienceShell）。
+
+     ⚠️ **这一层只能有 `data-leaving` 那一条规则，不能给它加动画、也不能
+     常驻 `opacity`。**
+
+     `opacity < 1` 和「挂着一条 opacity 动画」都会让元素成为**层叠上下文**，
+     而层叠上下文是一个整体、按它在父级里的位置参与层叠。这层是 `static`
+     的普通块，一旦成了层叠上下文就被归到「块级内容」那一拨，
+     **整层（连同 `main` 里的日期和字幕）都会被画到画布那一层底下** ——
+     而画布有实心底色，症状就是文字全没了。（踩过：加了个入场关键帧。）
+
+     退场那条是安全的：那时候画布还没亮（`canvasShown` 还是 false），
+     而且用的是 `transition` 不是 `animation` —— 撤销属性时没有过渡，
+     opacity 直接回到 1，层叠上下文当场消失。 */
+  .sn-content[data-leaving] {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-ui) var(--ease-enter);
+  }
+
+  /* 揭示效果（src/lib/useReveal.ts）在 reduced-motion 下整个失效。
+     放在 CSS 而不是 JS 是有意的：这是「表现」，不是「状态」——
+     在 effect 体里同步 setState 会触发级联渲染，eslint 的
+     react-hooks/set-state-in-effect 会直接报错，而且那个报错是对的。
+
+     !important 是必须的：揭示样式是元素上的**内联样式**，
+     优先级最高，不写 !important 覆盖不掉。 */
+  @media (prefers-reduced-motion: reduce) {
+    .sn-reveal {
+      opacity: 1 !important;
+      transform: none !important;
+      filter: none !important;
+      transition: none !important;
+    }
+
+    .sn-content[data-leaving] {
+      transition: none !important;
+    }
+  }
 }

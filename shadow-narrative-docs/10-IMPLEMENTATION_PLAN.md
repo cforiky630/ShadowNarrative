@@ -46,7 +46,7 @@ Next.js 16 + React 19 + TS strict + Tailwind 4 + 设计 token + 目录骨架。�
 验收：
 
 - 进入照片默认是**清晰的原图**，不是粒子
-- 按钮文案是「翻开这一天」
+- 按钮文案是「Into this moment」
 - 点击后波前**从中心**向外扩散，1200ms 内完成
 - **同一时刻同一位置只显示照片或粒子中的一种** —— 没有交叉淡入淡出
 - 切换可逆、可打断
@@ -183,6 +183,66 @@ Next.js 16 + React 19 + TS strict + Tailwind 4 + 设计 token + 目录骨架。�
 - 键盘可完成全部主流程
 
 ---
+
+## Round 13 — 桌面封装（Electron）
+
+用户 2026-10-10 定的交付形态：**独立的桌面 app**，不是「起个服务、用浏览器打开」。
+但**先做内容**，封装放到后面 —— 这一轮提前立在这里，是为了让前面每一轮都不挡它的路。
+
+### 前提已经实测过了（2026-10-10）
+
+封装的做法是：Electron 主进程把 Next 的 standalone 服务器**当子进程起**，
+`BrowserWindow` 指向它。所以「standalone 产物跑不跑得起来」就是分水岭：
+
+- ✅ `output: "standalone"` 已常开（`next.config.ts`），`.next/standalone/` 能起
+- ✅ **原生模块被正确追踪** —— 这是最容易翻车的地方，而我们的 `better-sqlite3`
+  在**嵌套路径**下：`.next/standalone/node_modules/@prisma/adapter-better-sqlite3/node_modules/better-sqlite3/build/Release/better_sqlite3.node`
+- ✅ 实测 `SN_DATA_DIR=... PORT=3111 node server.js` 起得来，`/api/timeline` 返回真实数据
+
+### ⚠️ `HOSTNAME=127.0.0.1` 必须显式设置
+
+**实测：standalone 服务器默认绑 `0.0.0.0`**（日志里 `Network: http://0.0.0.0:PORT`）。
+
+这是**安全相关**的：默认开着，应用一启动整个照片库就暴露在同网段，
+而本产品**没有任何鉴权**（`17 §6`）。加上 `HOSTNAME=127.0.0.1` 之后
+Local 与 Network 都是 127.0.0.1（已验证）。
+
+**Electron 起子进程时必须带这个环境变量。**
+
+### 已知的坑（来自同技术栈的真实项目）
+
+参考 [OmniRoute 的 Electron 指南](https://github.com/diegosouzapw/OmniRoute)
+（它用的就是 `better-sqlite3`）：
+
+- 服务器要用 **Electron 自带的 Node** 跑 —— `spawn(process.execPath, ...)` 加
+  `ELECTRON_RUN_AS_NODE=1`。否则原生模块的 ABI 和系统 Node 对不上，
+  直接 `ERR_DLOPEN_FAILED`
+- Electron 大版本升级后报 `Cannot find module 'better-sqlite3'` → `npm rebuild`
+- 冒烟测试：起打包后的二进制，探测一个路由返回 200，然后退出
+
+### 要做的事
+
+1. **`dataDir.ts` 加打包分支** —— Electron 下用 `app.getPath('userData')`，
+   不再回落到 `process.cwd()`
+2. 新增 `electron/` 工作区（main / preload / electron-builder 配置）
+3. **打包时把 `.next/static` 与 `public` 复制进 standalone 目录** ——
+   Next 不会自动做，不复制的话静态资源全 404
+4. **`.env.local` 不会进 standalone 产物** —— 环境变量要由启动器传
+5. **重写 `17-SELF_HOSTING.md` §1** —— 它现在写的是「用浏览器访问」，和这个决定冲突
+6. 手机怎么办要单独决定：桌面 app 装到电脑上，手机上就看不到了，
+   而后端是哑存储（`18 §2`），没法直接给手机渲染界面
+
+### 封装友好约束（前面每一轮都要守）
+
+这几条**现在就是对的，别破坏它们**：
+
+1. **路径一律经 `src/lib/dataDir.ts`**，不要出现 `process.cwd()` 或绝对路径
+2. **客户端不许有硬编码的服务地址或端口** —— 一律相对路径 `/api/...`
+   （现在全项目没有一处 `localhost:`）
+3. **原生模块不要随手加**。每多一个，封装就多一份 ABI 重编译的风险。
+   加之前在 `next.config.ts` 的 `serverExternalPackages` 里显式登记
+4. **端口的唯一来源是 `PORT` 环境变量**，不写死
+5. 新增路由/页面后，**构建一次确认 `.next/standalone` 仍然起得来**
 
 ## 每轮完成模板
 

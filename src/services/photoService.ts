@@ -12,8 +12,13 @@ import { removeStoredFiles, savePhotoFile } from "./mediaService";
  * 不泄露「这个资源存在」（08 §5 —— 404 不区分这两种情况）。
  */
 
-/** 客户端可见的字段。刻意不含 userId —— 客户端不需要，也不该拿。 */
-const PHOTO_SELECT = {
+/**
+ * 客户端可见的字段。刻意不含 userId —— 客户端不需要，也不该拿。
+ *
+ * 导出给 timelineService 复用：**不要写第二份映射**。两份拷贝一定会在
+ * 加字段时漂移，而漂移的那一份不会报错，只会让某些界面少一个字段。
+ */
+export const PHOTO_SELECT = {
   id: true,
   storageKey: true,
   thumbnailKey: true,
@@ -31,14 +36,14 @@ const PHOTO_SELECT = {
   updatedAt: true,
 } satisfies Prisma.PhotoSelect;
 
-type PhotoRow = Prisma.PhotoGetPayload<{ select: typeof PHOTO_SELECT }>;
+export type PhotoRow = Prisma.PhotoGetPayload<{ select: typeof PHOTO_SELECT }>;
 
 /** 库里是 String（SQLite 没有 enum），出库时收敛回联合类型。 */
 function toAiState(value: string): AiState {
   return value === "done" || value === "failed" ? value : "pending";
 }
 
-function toPhoto(row: PhotoRow): Photo {
+export function toPhoto(row: PhotoRow): Photo {
   return {
     ...row,
     aiState: toAiState(row.aiState),

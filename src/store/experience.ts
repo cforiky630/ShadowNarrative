@@ -29,6 +29,60 @@ interface UiState {
   debugOpen: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// 舞台（ExperienceShell）
+// ---------------------------------------------------------------------------
+
+/** 视口坐标的矩形。进入动画的起点，FLIP 用。 */
+export interface StageRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * 画布那一层的状态。
+ *
+ * ── 为什么这些必须放在全局 ──────────────────────────────────────────
+ *
+ * 2026-10-10：画布从 `MemorySpace` 提到了 `(experience)` 路由组的 layout 里
+ * （`ExperienceShell`），它**不再属于任何一条路由**。于是两件事必须跨子树传递：
+ *
+ *   1. 时间线（`/timeline`）点一张照片时，要驱动一个不在它这棵子树里的画布
+ *   2. 画布不卸载 ⇒ 「该显示哪张」「这一层可不可见」没有天然的归属者
+ *
+ * 这正是这一层存在的理由：路由换掉时画布**存活**，所以
+ * 「时间线 → 照片」不再是切页面，是同一个空间里的两个状态
+ * （`01-PRODUCT_SPEC.md` §5、`16-ALBUM_SPACE.md` §8.6）。
+ */
+export interface StageState {
+  /** 画布上该是哪张照片。null = 还没有（空态，外壳回落到内置示例图） */
+  photoId: string | null;
+  /**
+   * 进入动画的起点（视口坐标）。
+   *
+   * 非 null 有两个含义，它们是同一件事的两面：
+   *   - 外壳：正在把这张照片从 `origin` 推到它在画布里的位置（FLIP）
+   *   - 路由内容：正在退场，透明度归零
+   * 动画结束后归 null，两边同时恢复。
+   */
+  origin: StageRect | null;
+  /**
+   * 画布那一层可见。
+   *
+   * 平时由路由决定（在 `/` 就可见），但**进入动画期间由动画自己接管** ——
+   * 它要等飞行过半才亮起来。早了整张照片会先于缩略图出现，成了叠影。
+   *
+   * 单独一个字段而不是从 `pathname` 现推，就是因为这半秒里它与路由是不同步的。
+   */
+  canvasShown: boolean;
+  /** 设备跑不了 WebGL2（15 §7）。外壳判定，路由页面据此走静态降级 */
+  unsupported: boolean;
+  /** 相机偏离了正视角。照片页左下角的「复位视角」据此显示 */
+  rotated: boolean;
+}
+
 interface ExperienceState {
   // --- 状态机 ---
   mode: ExperienceMode;
@@ -66,7 +120,10 @@ interface ExperienceState {
    * 原图 ⇄ 粒子（`16-ALBUM_SPACE.md` §8）。
    *
    * 状态不持久化 —— 每次进入照片都是 `photo`，由 MemorySpace 挂载时重置。
-   * 放在全局是因为左上角的「返回」在 TopNavigation 里。
+   *
+   * 放在全局是因为**它跨越了两棵不相邻的子树**：写它的是照片页的文字层
+   * （那一格里的「Into this moment / 返回」，`16 §8.6`），读它的是
+   * `ExperienceShell` 里的画布 —— 画布在 layout 里，不在页面里。
    */
   displayMode: DisplayMode;
   setDisplayMode: (mode: DisplayMode) => void;
@@ -74,6 +131,10 @@ interface ExperienceState {
   // --- 无障碍 ---
   reducedMotion: boolean;
   setReducedMotion: (v: boolean) => void;
+
+  // --- 舞台 ---
+  stage: StageState;
+  setStage: (patch: Partial<StageState>) => void;
 
   // --- UI ---
   ui: UiState;
@@ -126,6 +187,15 @@ export const useExperience = create<ExperienceState>((set, get) => ({
 
   displayMode: "photo",
   setDisplayMode: (displayMode) => set({ displayMode }),
+
+  stage: {
+    photoId: null,
+    origin: null,
+    canvasShown: false,
+    unsupported: false,
+    rotated: false,
+  },
+  setStage: (patch) => set((s) => ({ stage: { ...s.stage, ...patch } })),
 
   ui: { controlsOpen: false, debugOpen: false },
   setControlsOpen: (controlsOpen) =>

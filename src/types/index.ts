@@ -37,8 +37,9 @@ export type ExperienceMode =
 /**
  * 原图 ⇄ 粒子。
  *
- * 放在全局状态而不是局部 state：左上角的「返回」在 TopNavigation 里，
- * 它需要知道当前是不是粒子模式才能决定显示 MEMORY 还是返回。
+ * 放在全局状态而不是局部 state：写它的是照片页的文字层
+ * （那一格里的「Into this moment / 返回」，`16 §8.6`），而读它的是
+ * `ExperienceShell` 里的画布 —— 画布在 layout 里、不在页面里，两棵子树不相邻。
  */
 export type DisplayMode = "photo" | "particle";
 
@@ -323,4 +324,25 @@ export interface SettingsView {
   aiKeyFromEnv: boolean;
   aiBaseUrl: string;
   aiModel: string;
+}
+
+// ---------------------------------------------------------------------------
+// Timeline（用户 2026-10-10 定的空间）
+// ---------------------------------------------------------------------------
+
+/**
+ * 时间轴上的一天。
+ *
+ * `title` 与 `titleSource` **必须分开**：主题名默认由 AI 从当天照片提炼，
+ * 点击可改。改过之后它就不再是 AI 说的了 —— `09 §6` 的证据模型要求
+ * AI 产出的东西标出来源，不标就等于让 AI 的话冒充用户自己写的。
+ */
+export interface TimelineDay {
+  /** "YYYY-MM-DD"，**本地日历日**（见 DayTheme 的 schema 注释） */
+  dayKey: string;
+  title: string | null;
+  /** null 表示这天还没有主题名 */
+  titleSource: "ai" | "user" | null;
+  /** 这天最晚的拍摄时间，倒序排列用 */
+  photos: Photo[];
 }

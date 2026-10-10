@@ -1,6 +1,6 @@
 # Shadow Narrative — 交接文档
 
-> 写于 2026-10-09，同日更新（数据层迁移 + AI 字幕完成后重写）。
+> 写于 2026-10-09，2026-10-10 更新（时间线 + 体验外壳：画布不再随路由卸载）。
 > 面向**新开窗口的 Claude**，目标是让新会话不必重新发现任何东西。
 >
 > 先读这份，再读 `shadow-narrative-docs/`。
@@ -24,7 +24,9 @@
 **仍然不一致的地方**（做之前先确认改哪一层）：
 
 - `18-BACKUP_PROTOCOL.md` 的备份客户端**尚未实现**（Round 11）。文档已按端到端加密改写，代码没有
-- 斜轴相册、Library 抽屉（Round 5/6）、对话展开与日志（Round 8）、分组（Round 9）都只有文档
+- 斜轴相册（Round 5）、对话展开与日志（Round 8）、分组（Round 9）都只有文档
+- **时间线取代了 Library 抽屉，那几份规格还没改**：`16 §6`、`01 §5`、`07` 里
+  都还写着 Library。代码里已在 `TimelineSpace.tsx` 顶部标了 ⚠️
 
 ---
 
@@ -115,6 +117,8 @@ migrate 写进一个库、应用读另一个库，而且不会报错。
 | **AI 字幕** | `services/aiService.ts`、`components/Subtitle.tsx` | 上传即异步分析，字幕浮在照片下方 |
 | **SQLite 数据层** | `prisma/schema.prisma`、`lib/dataDir.ts` | 照片为主实体，多用户结构保留 |
 | **设置页** | `app/settings/`、`components/SettingsForm.tsx` | 自动分析开关 + 发送披露 + AI key（`07 §11`） |
+| **时间线** | `components/TimelineSpace.tsx`、`services/timelineService.ts` | 中央时间线、按天节点、iMessage 式叠放 + 网格画廊、可编辑主题名 |
+| **体验外壳** | `components/ExperienceShell.tsx`、`app/(experience)/` | 画布的唯一所有者，路由切换时不卸载（`05 §6.1`） |
 
 实测：150k 粒子 / fps 240 / frame 4.2ms / draw calls 1–2（RTX 3060）。
 AI 单次调用实测 330–600ms（`effort: low`）。
@@ -149,24 +153,22 @@ AI 单次调用实测 330–600ms（`effort: low`）。
 
 ## 5. 下一步
 
-Round 7 的代码部分已完成，Round 10 提前做完了。`10-IMPLEMENTATION_PLAN.md` 里
-**Round 5（斜轴相册）和 Round 6（Library 抽屉）**是自然的下一批 —— 它们都只差界面，
-数据层已经就位（`GET /api/photos?favorite=true`、游标分页都在）。
+Round 7 的代码部分已完成，Round 10 提前做完了，**时间线**（用户 2026-10-10 定的
+新空间，取代 Library 抽屉）也已落地。`10-IMPLEMENTATION_PLAN.md` 里
+**Round 5（斜轴相册）**是自然的下一批 —— 它只差界面，数据层已经就位
+（`GET /api/photos?favorite=true`、游标分页都在）。
+
+⚠️ Round 6（Library 抽屉）**不要做了**：时间线取代了它，不并存。
+要先把 `16 §6`、`01 §5`、`07` 里的 Library 改成时间线。
 
 ### 还欠用户一个答复的
 
 - 备份后端到底是谁的？用户说过「同步到**我的**后端存储」。
   `18 §11` 假设后端管理员就是用户自己；多用户共享后端 + 端到端加密解决了隐私问题，
   但**谁来跑那个后端**还没定。Round 11 前要明确
-
-### 顺带发现的死链（还没处理）
-
-顶栏的 `NAV_ITEMS` 里有 `/journal` 与 `/create` 两个路由 —— **两者都不存在**，
-点进去是 404。它们是上一版设计留下的（`Memories` 现在指向 `/` 是对的）。
-`Journal` 在 `01 §5` 里是体验状态而不是顶层导航目的地，`Create` 在任何文档里都找不到。
-
-要处理的话：等 Round 8 做 Journal 时把它接上（但那时的入口应该来自照片，
-不是顶栏），`Create` 直接删掉。
+- **顶栏的空间入口只剩 `Memories` 与 `时间线`**（2026-10-09 删掉了 `/journal`
+  与 `/create` 两个 404 死链）。Album 是 Round 5 的事，做完再加进去 ——
+  入口宁可少，也不要留点不动的
 
 ### 做 AI 时别丢的判定标准
 
@@ -233,6 +235,17 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
 | **手动重试永远失败** | 超时扫描比对的是 `createdAt`，而重试不会重置它 —— 老照片一重试就被立刻判超时。**必须比 `updatedAt`**（`resetAnalysisState` 会触发 `@updatedAt`），语义是「上次有进展是什么时候」 |
 | AI 返回的 JSON 总是被截断 | `deepseek-flash` 的 `effort` 默认 `high`，**reasoning token 也计入 `max_tokens`**。实测 max_tokens=900 时 852 个被推理吃掉，`finish_reason: "length"`，JSON 断在中间。必须显式传 `effort: "low"` 且把 max_tokens 给到 4000 |
 | 中文行宽用 `ch` 不对 | `ch` 是数字 0 的宽度，一个汉字约合 2ch，`max-w-[34ch]` 实际一行只放得下 17 个字。中文用 `em` |
+| 构建时报「Cannot open database because the directory does not exist」 | 不读请求、也没有 `params` 的 route handler **会被预渲染**，而 **better-sqlite3 是同步驱动**，查询在预渲染阶段真的会执行（那时 `NODE_ENV=production`，数据目录解析到 `~/.shadow-narrative`）。修法是在查询前 `await connection()`。见 `04-functions/connection.md`，那节专门点了 `better-sqlite3` 的名 |
+| `export const dynamic = "force-dynamic"` 不生效 | 项目开了 `cacheComponents`，**Next 16 已移除** `dynamic` / `dynamicParams` / `revalidate` / `fetchCache`。只能用 `connection()` |
+| `connection()` 放进 `try` 里，构建照报「未预期的失败」 | **它是靠抛出终止预渲染的**。那个抛出不是业务错误，被 `catch` 吞掉就等于把预渲染的终止信号当成了失败。必须在 `try` 之外 |
+| 静默预渲染了一个错的设置快照 | 比上一条更隐蔽：`/api/settings` 读 `secrets.json` 的失败被 `readSecrets` 兜住了，所以**不报错**，只是构建时固化了一个错值。凡是「不读请求 + 碰数据库」的 handler 都要 `connection()` |
+| 路由组搬完，dev server 报 `Cannot read properties of undefined` | 移动 `page.tsx` 到 `(experience)/` 之后，Turbopack 的模块图是旧的，`store` 里新加的 `stage` 读不到。**重启 dev server**，别去改代码 |
+| `@starting-style` 写了不生效 | 嵌在 `@layer components { }` 里会被构建链整条丢掉（实测规则根本没进样式表，Chrome 152 本身是支持的）。同类写法改用 `@keyframes` |
+| 用内联 `opacity` 压关键帧，压不住 | **动画的优先级高于内联声明**。要让一个元素在当前状态下被动画按住，得用属性选择器，不是写 `style={{ opacity: 0 }}` |
+| **抬了 z-index，日期和字幕整个消失** | 画布那一层有**实心底色**。它一被抬到 `main` 之上，`main` 里那些 z-index 更小的文字就全被压在它底下了。**不要给画布层加 z-index** |
+| **给外层包一个带 opacity 动画的 div，文字也整个消失** | 更隐蔽的同一条：`opacity < 1` 或「挂着一条 opacity 动画」都会让元素成为**层叠上下文**，于是它整棵子树被当成一个整体、按它自己的位置参与层叠。那层是 `static` 的普通块 ⇒ 归到「块级内容」那一拨 ⇒ 整个被画到 `fixed` 的画布底下。**要做淡入淡出，只能放在 `main` 里面、带正 z-index 的定位后代上**（如文字层 `absolute z-10`），判据是「它在根层叠上下文里走第几步」——见 `05 §6.2` |
+| 画布拖拽旋转失效，`elementFromPoint` 到处返回 `MAIN` | 照片页的 `<main>` 是 `relative` 的整屏块、DOM 上排在画布之后，把画布**整个盖住**了，OrbitControls（挂在 canvas 元素上）一次 `pointerdown` 都收不到。修法是 `main` 自己 `pointer-events: none`，该点的东西各自 `pointer-events: auto` —— **不是靠 z-index**。同一条也适用于拖入照片：`<main>` 收不到 `dragover`，监听要挂 `window` |
+| 飞行的元素被它出发的那层盖住 | 网格画廊是 `z-40`、顶栏 `z-20`。飞行图必须 `z-50` —— 它正从网格里朝观者出来，被自己刚离开的那层盖住就读不出这件事 |
 
 ---
 
@@ -243,8 +256,15 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
    （`16 §11.2`，缓动是**运行时从 CSS 变量读**的，不是抄数字）
 3. **删除是先删文件再删记录**，顺序不可交换（`08 §16`）
 4. **AI 不自动写日志**，日志必须用户主动触发（`01 §9`）
-5. **「翻开这一天」是单向的**，不做双向切换开关（`16 §8.4`）
-6. **不能让人感觉是切换页面**（`16 §8.6`）—— 这是产品最核心的主张
+5. **「翻开 / 返回」是同一格里的一个动作，不是双向开关**（`16 §8.4`、§8.6）。
+   外面看着像能来回，但同一时刻只显示得下**一个**动作 —— 所以它读起来
+   是一次进出的动作，不是「原图 ⇄ 粒子」两个并列的显示模式。
+   **不要做成并排两个常驻选项。**
+6. **不能让人感觉是切换页面**（`16 §8.6`）—— 这是产品最核心的主张。
+   实现方式是**画布不归任何一条路由**（`05 §6.1`）：它长在 `(experience)/layout`
+   里的 `ExperienceShell`，路由换掉时它不卸载。想让一个空间进出照片，
+   就把那一步做成「那张照片从它原来的位置飞进画布」（`16 §11.5`），
+   而不是 `router.push` 完事
 7. **userId 只能由服务端解析**，绝不从请求里读（`12 §4`）。唯一解析点是
    `userService.getLocalUserId()`
 8. **`src/services/*` 不得 import `next/server`、`next/headers`、React**。

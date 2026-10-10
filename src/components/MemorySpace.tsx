@@ -2,16 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ParticleCanvas,
-  type ParticleCanvasHandle,
-} from "@/components/ParticleCanvas";
 import { ParticleControls } from "@/components/ParticleControls";
-import { DebugOverlay } from "@/components/DebugOverlay";
 import { Subtitle } from "@/components/Subtitle";
+import { useStage } from "@/components/ExperienceShell";
 import { SAMPLE_MEMORY } from "@/lib/sampleMemory";
 import type { AiState, PhotoDetail } from "@/types";
-import type { EngineStats } from "@/engine/particle/ParticleSystem";
 import { useExperience } from "@/store/experience";
 
 /**
@@ -19,8 +14,15 @@ import { useExperience } from "@/store/experience";
  *
  * 规格：07-UI_PAGE_SPECS.md §1、16-ALBUM_SPACE.md §7.1
  *
+ * ⚠️ **画布不在这里**。2026-10-10 起 `ParticleCanvas` 归 `ExperienceShell`
+ * 所有（`(experience)/layout.tsx`），因为它必须在路由切换时**存活** ——
+ * 那就不能长在任何一条路由的组件树里。
+ *
+ * 这里只剩**文字层**：日期、字幕、操作区。所以这个组件的每一次重渲染
+ * 都只跟文字有关，粒子一帧都不过 React（`05 §18`）。
+ *
  * 尺寸表（16 §7.1，基准视口 1440×900）：
- *   照片主体     画面高度 55–65% · 水平居中 · 垂直偏上 4%
+ *   照片主体     画面高度 55–65% · 水平居中 · 垂直偏上 4%  ← 现在在 ExperienceShell
  *   日期         照片下 24px · text-meta · opacity 0.55
  *   字幕         日期下 8px   ← **占用原来"标题"的位置**
  *   操作区       字幕下 24px
@@ -31,14 +33,20 @@ import { useExperience } from "@/store/experience";
  * 不能出现传统 hero 卡片：没有边框、没有投影、没有背景块。
  */
 
-const FILL_HEIGHT = 0.60;
-const OFFSET_Y = 0.04;
 /** 云占 60% 且上移 4% ⇒ 下边缘约在 76%，文字从 78% 起排 */
 const TEXT_TOP = "78%";
 
 /** 轮询间隔与上限（08 §10：800ms 一次，最多 30 秒） */
 const POLL_INTERVAL_MS = 800;
 const POLL_TIMEOUT_MS = 30_000;
+
+/**
+ * 进/出这一格用的交叉淡化：与溶解**同一条缓动和时长**。
+ *
+ * `16 §8.6` 的纪律 —— 用 UI 的 350ms 会让它读成「界面在响应」，
+ * 而这里发生的是「空间在变化」。
+ */
+const CROSSFADE = "opacity var(--duration-morph) var(--ease-morph)";
 
 interface MemorySpaceProps {
   photo: PhotoDetail | null;
@@ -52,12 +60,20 @@ interface MemorySpaceProps {
 }
 
 export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
-  const canvasRef = useRef<ParticleCanvasHandle>(null);
+  const { canvas: canvasRef, markLoaded } = useStage();
   const router = useRouter();
 
-  const [stats, setStats] = useState<EngineStats | null>(null);
-  const [unsupported, setUnsupported] = useState(false);
-  const [rotated, setRotated] = useState(false);
+  const setStage = useExperience((s) => s.setStage);
+  const unsupported = useExperience((s) => s.stage.unsupported);
+  const rotated = useExperience((s) => s.stage.rotated);
+  /**
+   * 正在从时间线推入某张照片（外壳 FLIP 进行中）。
+   *
+   * 用派生布尔而不是整个 `stage` 对象：zustand 比的是引用，
+   * 订阅整个 `stage` 会让每次无关的改动（比如 `rotated`）都重渲染这里。
+   */
+  const entering = useExperience((s) => s.stage.origin !== null);
+
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -118,7 +134,7 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
   /**
    * 显示模式。
    *
-   * 进入照片默认**原图**（16 §8.1），点「翻开这一天」才切粒子。
+   * 进入照片默认**原图**（16 §8.1），点「Into this moment」才切粒子。
    * 状态不持久化 —— 每次进入都是原图，这样粒子的第一次出现才有分量。
    */
   const displayMode = useExperience((s) => s.displayMode);
@@ -127,48 +143,25 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
     setDisplayMode("photo");
   }, [setDisplayMode]);
 
+  const inParticle = displayMode === "particle";
+
   /**
-   * 记住「画布上现在显示的是哪张图」。
+   * 把「现在是哪张照片」交给外壳。
    *
-   * 不能用「只跑一次」的 boolean ref 守卫：StrictMode 下 effect 会跑两遍
-   * （挂载 → 清理 → 再挂载），第一遍的 fetch 被 cleanup 取消，第二遍又被
-   * 那个已经置位的 ref 挡掉，结果是图片永远不加载。
+   * 外壳（`ExperienceShell`）拥有画布，负责取图、装图、以及从时间线飞进来时的
+   * 终点计算 —— 但它看不到路由数据（它在 layout 里，不在页面里）。
+   * 这一句就是那个交接点，而且**只此一处**：`activeId` 已经收拢了
+   * 首次挂载、`?photo=` 切换、上传、删除四条路径，跟着它走就不会漏。
    *
-   * 改成比对 URL：第二次挂载时 loadedUrl 仍是 null，会正常加载；
-   * 上传之后 router.refresh() 带来新 URL 时也不会重复 setImage
-   * （acceptFile 里已经把它标记过了），避免重置用户刚调好的视角。
+   * 空态（`activeId === null`）交给外壳回落到内置示例图（07 §1）。
+   *
+   * ⚠️ 不能反过来让外壳自己读 `?photo=`：`useSearchParams` 会把外壳拖进
+   * 一个 Suspense 边界，而它包着整个体验 —— 一次查询参数变化就会让画布
+   * 连同一切重新挂载，正好毁掉这个改动要做的事。
    */
-  const loadedUrlRef = useRef<string | null>(null);
-
-  const imageUrl = activeId
-    ? `/api/photos/${activeId}/file`
-    : SAMPLE_MEMORY.imageUrl;
-
   useEffect(() => {
-    if (loadedUrlRef.current === imageUrl) return;
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(imageUrl);
-        if (!res.ok) throw new Error(String(res.status));
-        const bitmap = await createImageBitmap(await res.blob());
-        if (cancelled) {
-          bitmap.close();
-          return;
-        }
-        loadedUrlRef.current = imageUrl;
-        // 注意：不 close() —— 所有权转给引擎，贴图会引用它（见 ParticleSystem.setImage）
-        await canvasRef.current?.setImage(bitmap);
-      } catch {
-        // 示例图或首张照片加载失败不是致命问题，页面保持空态即可
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [imageUrl]);
+    setStage({ photoId: activeId });
+  }, [activeId, setStage]);
 
   /**
    * 轮询 AI 结果（08 §10）。
@@ -264,9 +257,9 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
         const newId = body?.data?.id;
 
         if (newId) {
-          // 画布上已经是这张图了，先把它标记为「已加载」，
-          // 免得下面 refresh 带来新数据后又 setImage 一次、把视角重置掉。
-          loadedUrlRef.current = `/api/photos/${newId}/file`;
+          // 画布上已经是这张图了（上面 morphTo 过）—— 告诉外壳别再取一次，
+          // 否则它会 setImage 一遍，把用户刚调好的视角重置掉
+          markLoaded(newId);
           // 换照片 → 旧字幕必须立刻清掉，否则新照片下面挂着上一张的话
           setActiveId(newId);
           setSubtitle(null);
@@ -284,8 +277,52 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
         setBusy(false);
       }
     },
-    [router, autoAnalyze],
+    // canvasRef 来自 ExperienceShell 的 context，是个**每次渲染都同一个**
+    // 的 ref 对象（useMemo 过的）。列进依赖只会让 eslint 满意，不改变行为。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [router, autoAnalyze, markLoaded],
   );
+
+  /**
+   * 拖入照片。
+   *
+   * ⚠️ 监听挂在 `window` 上，**不能挂在 `<main>` 上**。
+   *
+   * 画布现在压在 `main` 之上（它得收得到指针才转得动，见 ExperienceShell 里的
+   * 层级说明），所以文件拖到页面上时命中的是画布那一层 —— `main` 的
+   * `onDragOver` / `onDrop` 一次都不会触发，照片拖进去毫无反应（踩过）。
+   *
+   * 拖拽事件会冒泡到 window，所以这里照样接得到；而且这段监听的生命周期
+   * 就跟着照片页 —— 时间线上拖文件什么都不会发生。
+   */
+  useEffect(() => {
+    const onOver = (e: DragEvent) => {
+      // 只认文件。拖着选中的文字晃过页面不该触发上传提示
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      // 不 preventDefault 浏览器就不允许落下（drop 不会触发）
+      e.preventDefault();
+      setDragging(true);
+    };
+    const onLeave = (e: DragEvent) => {
+      // dragleave 在子元素之间也会触发；relatedTarget 为空才是真的离开了窗口
+      if (!e.relatedTarget) setDragging(false);
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      const file = e.dataTransfer?.files?.[0];
+      if (file) void acceptFile(file);
+    };
+
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [acceptFile]);
 
   // 进入待确认后 4 秒自动撤回，避免按钮一直停在危险状态
   useEffect(() => {
@@ -314,12 +351,11 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
       canvasRef.current?.setMode("photo", { immediate: true });
       setDisplayMode("photo");
 
-      // 画布回到内置示例 —— 不能留着一张已经不在数据库里的照片
-      const sampleRes = await fetch(SAMPLE_MEMORY.imageUrl);
-      const bitmap = await createImageBitmap(await sampleRes.blob());
-      loadedUrlRef.current = SAMPLE_MEMORY.imageUrl;
-      await canvasRef.current?.setImage(bitmap);
-
+      /*
+       * 画布回到哪去由外壳决定：`activeId` 变 null ⇒ 上面那个 effect
+       * 把 `stage.photoId` 也置 null ⇒ 外壳回落到内置示例图。
+       * 这里不再自己取一遍示例图 —— 两个地方都能换图，迟早会打架。
+       */
       setActiveId(null);
       setSubtitle(null);
       setAiState("done");
@@ -332,6 +368,8 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
     } finally {
       setBusy(false);
     }
+    // canvasRef 同上：context 里的稳定 ref 对象
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, router, setDisplayMode]);
 
   /** 请求分析。失败重试与「关掉自动分析后手动看一眼」走同一条路（08 §10、09 §21.2）。 */
@@ -352,20 +390,22 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
     }
   }, [activeId]);
 
-  const onViewChange = useCallback((isRotated: boolean) => {
-    setRotated(isRotated);
-  }, []);
-
   /**
-   * 翻开这一天：溶解 + 专注推近（`16-ALBUM_SPACE.md` §8.3、§8.5）。
+   * 同一格里的进与出（`16 §8.6`）。
    *
-   * **没有手动切回的入口** —— 出口是左上角的「返回」（§8.6）。
-   * 把这件事做成一个双向开关，就把它说成了显示选项，
-   * 而它其实是一次关于记忆的动作（§8.4）。
+   * 用户 2026-10-10：出口从左上角搬到「Into this moment」那一格 ——
+   * 进得去的门就是出得来的门，不必跑到屏幕对角去找。
+   *
+   * ⚠️ 这不是把 §8.4 的「不要手动切回的入口」推翻了。那条禁的是
+   * **并排两个常驻选项**（「原图 | 粒子」那种），那会把这件事说成显示模式。
+   * 这里任何时刻只显示得下**一个**动作：原图态是「进入」，粒子态是「回来」。
+   * 同一时刻没有「选哪个」的问题，所以它仍然是一次关于记忆的动作。
+   *
+   * 也没有焦点交接要操心：按钮本身没变、没被 inert，点完之后焦点还在原地。
    */
-  const enterParticle = useCallback(() => {
-    setDisplayMode("particle");
-  }, [setDisplayMode]);
+  const toggleParticle = useCallback(() => {
+    setDisplayMode(inParticle ? "photo" : "particle");
+  }, [inParticle, setDisplayMode]);
 
   const hasPhoto = activeId !== null;
   const date = formatDate(photo?.takenAt ?? photo?.createdAt ?? null);
@@ -381,34 +421,61 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
   }
 
   return (
-    <main
-      className="relative min-h-dvh overflow-hidden"
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        const file = e.dataTransfer.files?.[0];
-        if (file) void acceptFile(file);
-      }}
-    >
-      <ParticleCanvas
-        ref={canvasRef}
-        className="fixed inset-0 block h-full w-full"
-        fillHeight={FILL_HEIGHT}
-        offsetY={OFFSET_Y}
-        onUnsupported={() => setUnsupported(true)}
-        onStats={setStats}
-        onViewChange={onViewChange}
-      />
+    /*
+     * `pointer-events-none` 是必须的，不是顺手加的。
+     *
+     * 画布在 `ExperienceShell` 里、DOM 上排在这一层之前，拖拽旋转和滚轮缩放
+     * 由 OrbitControls 直接挂在 canvas 元素上。而这一层是 `relative` 的整屏块，
+     * 默认会把整个画布盖住 —— `elementFromPoint` 到处都返回 MAIN，
+     * 拖拽旋转直接失效（踩过）。
+     *
+     * 关掉之后指针穿透到画布，而**该点的东西各自开回来**：
+     * 文字层本来就有 `pointer-events-auto` 的按钮，`ParticleControls` 自己开。
+     * 拖入照片的监听挂在 window 上（见上面那个 effect），不依赖这一层。
+     */
+    <main className="pointer-events-none relative min-h-dvh overflow-hidden">
+      {/*
+        画布不在这里 —— 它归 ExperienceShell（`(experience)/layout.tsx`）。
+        它是 `fixed inset-0`、**没有 z-index**，画在底；这一层的 `main` 是
+        `relative` 且在 DOM 上排在它之后，所以压在它上面。
 
-      {/* 文字层。指针事件默认穿透，只有按钮自己接收 —— 否则会挡住拖拽旋转。 */}
+        拖入照片的监听也不在这一层 —— 见上面那个挂 window 的 effect。
+      */}
+
+      {/*
+        文字层。
+
+        指针事件默认穿透，只有按钮自己接收 —— 否则会挡住拖拽旋转
+        （`main` 整体是 `pointer-events: none` 的，见 render 顶部）。
+
+        ── 为什么透明度可以放在这一层 ──────────────────────────────────
+        用户 2026-10-10 要求日期与字幕「淡入」，而这一层做得到、别的层做不到。
+
+        任何带 `opacity < 1` 的元素都会成为**层叠上下文**，然后按它自己在父级里的
+        身份参与层叠。这一层是 `absolute` + `z-index: 10`，属于「正 z-index 的
+        定位后代」—— 在根层叠上下文里永远排在最后，也就是**永远在画布之上**。
+        所以它淡入淡出，只是文字自己在淡，不会掉到画布底下去。
+
+        反过来，往 `.sn-content`（`static` 的普通块）或 `main` 上加透明度，
+        它们就会被归到「块级内容」那一拨、整块沉到 `fixed` 的画布之下 ——
+        而画布有实心底色，症状是日期字幕整个消失（踩过两次，见 `05 §6.2`）。
+      */}
       <div
         className="pointer-events-none absolute inset-x-0 z-10 flex flex-col items-center px-6"
-        style={{ top: TEXT_TOP }}
+        style={{
+          top: TEXT_TOP,
+          /*
+           * 从时间线推入时先藏着，等那张照片飞到位再浮出来。
+           *
+           * `stage.origin` 非 null 就是「正在推入」—— 外壳握着的那个状态，
+           * 飞行结束时它才归 null，所以这里不需要自己计时。
+           * 用 `--duration-ui` 而不是 `--duration-scene`：照片落地已经用掉
+           * 800ms，文字再慢慢淡 800ms 会让整段镜头拖到两秒以上。
+           * 它是最后一个拍子，轻一点就好。
+           */
+          opacity: entering ? 0 : 1,
+          transition: "opacity var(--duration-ui) var(--ease-enter)",
+        }}
       >
         <p className="text-meta text-text-primary/55">
           {date ?? SAMPLE_MEMORY.date}
@@ -428,31 +495,62 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
           </h1>
         )}
 
-        {/* 收起用 inert，不用 aria-hidden + tabIndex：元素自己还带着焦点时
-            aria-hidden 会被浏览器挡下来并打警告，inert 则是阻止聚焦本身，
-            不会出现那种自相矛盾的状态（同一个模式在 TopNavigation 里）。
-            消失后焦点落在 body —— 此时文档里第一个可聚焦元素正好是左上角的
-            「返回」，一次 Tab 就到，顺着「翻开这一天」之后的意图走。 */}
+        {/*
+         * 这一格里有两个动作，交叉淡化（`16 §8.6`）。
+         *
+         * 用户 2026-10-10：「返回放到和 into 一样的位置，放左上角交互不顺畅」。
+         * 进来和出去用同一个位子 —— 进得去的门就是出得来的门，
+         * 不必再跑到屏幕对角去找。
+         *
+         * 两个动作是**同一格里互相压着的两段文字**，不是两个按钮：
+         * 嵌套 <button> 会触发 hydration 错（踩过），而只换文案则是一瞬间的
+         * 换字，读起来像控件跳了一下，不是空间在变。
+         */}
         <button
           type="button"
-          onClick={enterParticle}
-          inert={displayMode === "particle"}
-          className="text-meta pointer-events-auto mt-6 text-text-primary/45 hover:opacity-90 focus-visible:opacity-90"
-          style={{
-            // 与溶解同一条缓动和时长，让它的退场成为镜头的一部分
-            // 而不是控件突然消失（16 §8.6）
-            opacity: displayMode === "photo" ? 1 : 0,
-            transition: "opacity var(--duration-morph) var(--ease-morph)",
-            pointerEvents: displayMode === "photo" ? "auto" : "none",
-          }}
+          onClick={toggleParticle}
+          className="text-meta pointer-events-auto relative mt-6 text-text-primary/45 hover:opacity-90 focus-visible:opacity-90"
         >
-          翻开这一天
+          {/*
+            两段文字叠在同一格里，各自收起来的时候要对辅助技术隐藏 ——
+            不标出来读屏器会把两个动作一起念成「Into this moment 返回」，
+            听起来像有两个按钮。
+
+            这里用 aria-hidden 是安全的（和 TopNavigation 里那条告诫不冲突）：
+            它挡的是「焦点落在 aria-hidden 里面」，而这里是 <span>，
+            永远不可能有焦点。
+
+            ⚠️ 两个 span 都要标，而且是**相反**的条件。
+            React 对 aria-* 传 false 会写成 `aria-hidden="false"`（明确暴露），
+            不是把属性删掉 —— 所以只标一个的话，另一个永远露着。
+          */}
+          <span
+            aria-hidden={inParticle}
+            style={{
+              opacity: inParticle ? 0 : 1,
+              transition: CROSSFADE,
+            }}
+          >
+            Into this moment
+          </span>
+          <span
+            aria-hidden={!inParticle}
+            className="absolute inset-x-0 text-center"
+            style={{
+              opacity: inParticle ? 1 : 0,
+              transition: CROSSFADE,
+            }}
+          >
+            返回
+          </span>
         </button>
       </div>
 
       {/* 左下角：旋转提示 / 复位 / 删除 / 状态。
-          删除放在这里而不是紧挨主操作 —— 主操作的旁边不该放破坏性动作。 */}
-      <div className="text-micro absolute bottom-8 left-12 z-10 flex items-center gap-5">
+          删除放在这里而不是紧挨主操作 —— 主操作的旁边不该放破坏性动作。
+          `pointer-events-auto` 是给 `main` 的 `pointer-events-none` 补的：
+          这几个按钮要能点，而它们所在的那一小块挡住画布无所谓。 */}
+      <div className="pointer-events-auto text-micro absolute bottom-8 left-12 z-10 flex items-center gap-5">
         {busy && (
           <span className="pointer-events-none text-text-primary/40">
             处理中…
@@ -513,8 +611,6 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
       )}
 
       <ParticleControls />
-
-      {process.env.NODE_ENV !== "production" && <DebugOverlay stats={stats} />}
     </main>
   );
 }
