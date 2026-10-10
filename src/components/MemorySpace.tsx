@@ -70,6 +70,17 @@ const BACK_HIDE = [
   "margin-left var(--duration-morph) var(--ease-morph)",
 ].join(", ");
 
+/**
+ * 删除的待确认状态**没被碰**多久就自己收回（ms）。
+ *
+ * 用户 2026-10-10 提的两秒。注意它量的是「没碰它的时间」而不是「从点删除
+ * 算起」—— 按下与松开都会重新计时，见下面那个 effect。
+ *
+ * ⚠️ 它必须**大于「发现按钮 + 把指针挪上去」所需的时间**，否则手还在半路
+ * 它就缩回「删除」了。两秒是个偏紧但够用的值；嫌紧就改这一个数。
+ */
+const CONFIRM_IDLE_MS = 2000;
+
 interface MemorySpaceProps {
   /**
    * ⚠️ 2026-10-10 起**不再可空**。在这之前没有 `?photo=` 时会回落显示
@@ -123,6 +134,27 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
    * （`07 §1` 不要重 UI），第二次确认由 `HoldButton` 承担。
    */
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  /**
+   * 左下角那一组（旋转提示 / 复位 / 删除 / 状态）。
+   *
+   * 两个用处：判断「点的是不是别处」（在外面就收回待确认），
+   * 以及**碰到它就重开倒计时** —— 见下面那个 effect。
+   *
+   * ⚠️ 判据是**整组**而不是「删除那两个字的盒子」。差别只在「复位视角」
+   * 那一项上：它出现时删除也在，而点它本来就还在这一组里操作，
+   * 不该当作「走开了」。为这一个边界再包一层 span 不值。
+   */
+  const actionsRef = useRef<HTMLDivElement>(null);
+  /** 「两秒没碰它」的倒计时。按下 / 松开都会把它重开一遍 */
+  const revertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armRevertTimer = useCallback(() => {
+    if (revertTimer.current) clearTimeout(revertTimer.current);
+    revertTimer.current = setTimeout(
+      () => setConfirmDelete(false),
+      CONFIRM_IDLE_MS,
+    );
+  }, []);
 
   /**
    * 对话浮层开着没有。
@@ -349,20 +381,49 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
   /**
    * 待确认状态下的退出。
    *
-   * ⚠️ **2026-10-10 起不再是「4 秒自动撤回」。** 那个计时器会和长按打架 ——
-   * 按到一半计时器到点，按钮被卸载，长按凭空断掉。
+   * 三条路，缺一条用户就会被困在这一格里：
    *
-   * 而长按本身已经足够「不可能误触」，它不需要超时护栏。要退出按 Esc
-   * （`04 §7` 的退出顺序里，Esc 管的就是这类「当前状态」）。
+   *   1. **两秒没碰它** → 自动收回。用户 2026-10-10：「怎么取消删除呢，
+   *      两秒不点自动恢复状态？」
+   *   2. **点到别处** → 收回。这是这个产品里所有浮层的规矩（设置卡、
+   *      参数卡、对话浮层都是点空白收起），删除这一格没理由例外
+   *   3. **Esc** → 收回（`04 §7` 的退出顺序）
+   *
+   * ⚠️ **倒计时必须被「碰到它」重置**，否则它会和长按打架 —— 按到一半
+   * 计时器到点、按钮被卸载，长按凭空断掉（第一版就是这么坏的）。
+   * 所以 `pointerdown` 与 `pointerup` 都重新计时：手一搭上去，倒计时重走。
+   * 于是「两秒」量的是**没碰它的时间**，不是「从点删除算起的时间」。
    */
   useEffect(() => {
     if (!confirmDelete) return;
+
+    const disarm = () => setConfirmDelete(false);
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setConfirmDelete(false);
+      if (e.key === "Escape") disarm();
     };
+
+    /*
+     * 点到别处收起。用 `pointerdown` 不用 `click` —— 和 `DockCard` 一样：
+     * 按下就该有反应，等到抬起已经慢了一拍。
+     *
+     * React 的合成事件挂在容器上、这个监听挂在 window 上，而 window 在
+     * 容器之上 —— 所以按在按钮上时，先是按钮自己的 `onPointerDown`
+     * 重开倒计时，然后才轮到这个判断，`contains` 会认出它在里面。
+     */
+    const onOutside = (e: PointerEvent) => {
+      if (!actionsRef.current?.contains(e.target as Node)) disarm();
+    };
+
+    armRevertTimer();
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [confirmDelete]);
+    window.addEventListener("pointerdown", onOutside);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onOutside);
+      if (revertTimer.current) clearTimeout(revertTimer.current);
+    };
+  }, [confirmDelete, armRevertTimer]);
 
   /**
    * 删除当前照片。顺序由服务端保证：先删文件再删记录（08 §16）。
@@ -749,7 +810,18 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
           （胶囊只有一格时它 44px 宽，这一组会显得空一截 —— 可接受：
           位置换来换去更糟。） */}
       <div
+        ref={actionsRef}
         inert={conversationOpen}
+        /*
+         * 碰到它就重开「两秒没碰它」的倒计时 —— 这是自动收回不跟长按打架的
+         * 全部秘密。少了这两行，按住到一半按钮会被计时器卸载、长按凭空断掉。
+         *
+         * 三个都接：`pointerup` 管「按住又松开」（倒计时该从现在重算），
+         * `pointercancel` 管手势被系统收走（同一件事）。
+         */
+        onPointerDown={armRevertTimer}
+        onPointerUp={armRevertTimer}
+        onPointerCancel={armRevertTimer}
         className="pointer-events-auto text-micro absolute bottom-8 left-32 z-10 flex items-center gap-5"
       >
         {busy && (
