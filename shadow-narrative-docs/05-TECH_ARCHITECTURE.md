@@ -216,7 +216,7 @@ services/
 Next.js Route Handlers（TypeScript）
   ├─→ Prisma → SQLite              业务数据（08 §2）
   ├─→ 对象存储                     原图与派生图
-  ├─→ DeepSeek API                 图像理解 / 日志 / 对话
+  ├─→ DeepSeek API                 图像理解 / 随笔小记 / 对话
   └─→ Python 图像服务（FastAPI）    缩略图 / EXIF / HEIC / RAW / 向量
 ```
 

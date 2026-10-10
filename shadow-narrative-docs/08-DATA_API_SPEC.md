@@ -4,7 +4,7 @@
 
 **照片是主实体。**
 
-每一次上传生成一张独立的 Photo，它自带文件、AI 理解、对话与日志。
+每一次上传生成一张独立的 Photo，它自带文件、AI 理解、对话与随笔小记。
 Memory（分组）是可选的、像相册一样的存在，一张照片可以同时属于多个分组。
 
 所有数据存在**本地 SQLite**（自托管形态，见 `17-SELF_HOSTING.md`）。
@@ -165,7 +165,11 @@ model ConversationMessage {
 不做两套数据。这个标记只用来决定它在前端以什么形式呈现 —— 照片下方安静地浮现，
 而不是对话列表里的一条气泡。
 
-### Journal —— 挂在照片上
+### Journal —— 随笔小记，挂在照片上
+
+> ⚠️ **不叫「随笔小记」以外的名字。** 用户 2026-10-10 定的：**随笔小记**，
+> 而且它是**轻**的东西 —— 不是长文日志。文档里原先叫「日志」的地方
+> 2026-10-10 全部改过了（**运行日志**那几处除外，那是另一个东西）。
 
 ```prisma
 model Journal {
@@ -173,17 +177,23 @@ model Journal {
   photoId String @unique
   photo   Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
 
-  title   String?
   content String
-  // draft | published
-  status  String @default("draft")
-  // 每次 AI 重写 +1，用于并发检测（§7）
+  // 每次写入 +1。PATCH 带上它，不一致就 409 —— 防止 AI 润色盖掉用户手改
+  // （§8）。它记的是「改了几次」，不是「AI 改了几次」
   sourceVersion Int @default(1)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 ```
+
+⚠️ **没有 `title`、也没有 `status`**（2026-10-10 连同列一起删了，迁移
+`journal_drop_title_status`）。`07 §5` 定的版式是「日期 + 正文」—— 日期就是
+它的标识，一天才是记忆的单位；而「起草 / 定稿」那层仪式对一个轻的东西
+是负担。
+
+留着永不写入的列，下一个人会以为它坏了 —— 与删
+`UserSettings.autoAnalyze` 是同一条理由。
 
 ### Memory —— 可选分组
 
@@ -466,17 +476,68 @@ POST /api/photos/:id/conversation/messages
 }
 ```
 
-## 8. Journal API
+## 8. Journal（随笔小记）API
 
 ```text
-GET   /api/photos/:id/journal
-POST  /api/photos/:id/journal      用户主动触发生成
-PATCH /api/photos/:id/journal      用户定稿
+GET   /api/photos/:id/journal     读。data = { note, hasMaterial, noteIsStale }
+PATCH /api/photos/:id/journal     保存用户写的正文（upsert）
+POST  /api/photos/:id/journal     那颗笔按下去：起稿或润色
 ```
 
-生成必须由用户显式调用 —— 见 `01-PRODUCT_SPEC.md` §9。
+### GET
 
-`PATCH` 必须带 `sourceVersion`，不一致返回 `409`，防止 AI 重写覆盖用户手改。
+```json
+{ "data": { "note": null, "hasMaterial": false, "noteIsStale": false }, "meta": {} }
+```
+
+- `note` **可以是 `null`** —— 那张照片还没有随笔小记。这不是错误，就像
+  `subtitle` 也可以是 null 一样
+- 另外两个字段是**事实**，不是「哪颗笔出现」：
+
+  | 字段 | 含义 | 谁用它 |
+  |---|---|---|
+  | `hasMaterial` | 用户说过至少一句话吗 | 起稿那颗笔的前提 |
+  | `noteIsStale` | 笔记比最后一轮对话旧吗（笔记不存在时为 false） | 润色那颗笔的前提 |
+
+  ⚠️ **必须服务端算。** `noteIsStale` 要同时知道笔记的 `updatedAt` 和最后一轮
+  对话的时间，而这两样在两个地方取。
+
+  ⚠️ **但「哪颗笔出现」由界面拼**（`07 §4` §5）：界面手上就有 `note`，
+  于是 `!note && hasMaterial` = 起稿那颗、`note && noteIsStale` = 润色那颗。
+  把 `!note` 那一半也算进服务端，会在「正文被清空 = 笔记没了」那条路上
+  留一段对不上的窗口期。
+
+- `hasMaterial` 与 `POST` 开头那道 400 是**同一个条件**：判据一致，
+  那颗笔就不会点出一句报错
+
+### PATCH
+
+```json
+{ "content": "……", "sourceVersion": 2 }
+```
+
+- **`sourceVersion` 可选。** 带上就做并发检测，与库里不一致返回 `409`
+  （§5），防止 AI 润色覆盖用户手改。不带就直接写 —— 那条路是
+  「我知道我在覆盖什么」（编辑器自动存盘的兜底那一趟就是这么走的）
+- **正文传空白 = 删掉这条随笔小记**，`data` 返回 `null`。
+  ⚠️ 不是可有可无的约定：左下角那个入口**只在有内容时出现**，
+  所以「有这一行」必须等价于「有内容」—— 否则会留下一条点开是空白页的
+  记录，那正是 `TopNavigation` 开头那条要挡的「点不动的东西」。
+- 用 `upsert`：第一次写要能建行
+
+### POST
+
+**客户端不用说是起稿还是润色** —— 服务端看有没有现存那一行就知道
+（没有 = 起稿，有 = 润色，把现稿也当素材喂进去，见 `09 §12`）。
+少一个得由前端维护、还可能过期的参数。
+
+⚠️ **一次用户都没说过话时返回 400**，不是让模型硬写 —— `01 §9`：
+AI 不替用户定义这段记忆是什么。
+
+⚠️ **不进 `after()`。** 和对话一样，用户按了那颗笔就在等这篇东西。
+上传 / 重试那条路才走 `after()`（那边没人在等）。
+
+生成必须由用户显式调用 —— 见 `01-PRODUCT_SPEC.md` §9。
 
 ## 9. Memory（分组）API
 
@@ -624,7 +685,7 @@ PATCH  /api/timeline/:dayKey        写某一天的主题名（空字符串 = �
 拍摄时间是**事实**不是推测，所以它可以当占位；而名字得是用户自己的话。
 
 `source` 字段保留着（`09 §6` 的来源标记）。现在只可能是 `user`，
-但将来若做「让 AI 起一个」这种**用户主动触发**的入口（像日志那样，`01 §9`），就地可用。
+但将来若做「让 AI 起一个」这种**用户主动触发**的入口（像随笔小记那样，`01 §9`），就地可用。
 
 ### 待补
 

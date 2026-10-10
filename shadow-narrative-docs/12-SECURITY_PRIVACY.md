@@ -92,7 +92,7 @@ API 所有资源必须检查 ownership，且一律**合成在查询条件里**
 
 ## 7. XSS
 
-日志和 AI 输出必须进行安全渲染。
+随笔小记和 AI 输出必须进行安全渲染。
 
 默认将内容视为 plain text/Markdown-safe subset。
 
@@ -120,7 +120,7 @@ API 所有资源必须检查 ownership，且一律**合成在查询条件里**
 不要在**运行日志**里记录：
 
 - 原图内容
-- 用户写的日志的完整正文
+- 用户写的随笔小记的完整正文
 - 敏感 AI prompt
 - GPS
 - token
@@ -128,7 +128,7 @@ API 所有资源必须检查 ownership，且一律**合成在查询条件里**
 只记录必要的诊断数据。
 
 > 注意区分两个「日志」：这里是**运行日志**（诊断用），
-> 不是用户写的那个**日志**（`08-DATA_API_SPEC.md` 的 Journal）。
+> 不是用户写的那篇**随笔小记**（`08-DATA_API_SPEC.md` 的 Journal）。
 
 ## 11. Data Deletion
 

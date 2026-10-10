@@ -10,7 +10,7 @@
 
 - 把本地数据**增量**备份到用户自己的后端
 - 照片天然去重：同一张照片传一次
-- 恢复时能完整重建：照片、文字、对话、日志一个不少
+- 恢复时能完整重建：照片、文字、对话、随笔小记一个不少
 
 ### 非目标（明确不做）
 
@@ -117,6 +117,10 @@ value  加密后的文件字节     （随机 IV，见 §11）
 
 字段与 `08-DATA_API_SPEC.md` §3 的 schema 一一对应，**键名一致**，
 恢复时不需要映射表。
+
+> ⚠️ **`journals` 只有 `content` 与 `sourceVersion`**（外加 id / photoId /
+> 两个时间戳）。`title` 与 `status` 2026-10-10 已经删了（迁移
+> `journal_drop_title_status`）—— 按 `08 §3` 那份 schema 写，不要照抄旧快照。
 
 > ⚠️ **待定：分组键名**。上面示例里的 `analyses` / `messages` 与 Prisma 模型名
 > （`PhotoAnalysis` / `ConversationMessage`）不一致。「键名一致」这条要求的是
