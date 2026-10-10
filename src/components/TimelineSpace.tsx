@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useStage } from "@/components/ExperienceShell";
+import { PhotoPicker } from "@/components/PhotoPicker";
+import { uploadPhoto } from "@/lib/photoUpload";
 import { revealStyle, useReveal } from "@/lib/useReveal";
 import { useExperience } from "@/store/experience";
 import type { Photo, TimelineDay } from "@/types";
@@ -82,6 +91,9 @@ interface TimelineSpaceProps {
 
 export function TimelineSpace({ days }: TimelineSpaceProps) {
   const setStage = useExperience((s) => s.setStage);
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   /**
    * 声明这是时间线空间。
@@ -95,12 +107,56 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
     setStage({ space: "timeline", photoId: null });
   }, [setStage]);
 
+  /**
+   * 空态里直接收一张。
+   *
+   * ⚠️ 这里原本写的是「把照片拖进来」，而**这一页根本不是拖放目标** ——
+   * `usePhotoDrop` 只挂在相册与照片页上。一句话把人指向一个不存在的功能，
+   * 比不说话更糟（用户 2026-10-10 的方向是「点击打开文件选择的那种」）。
+   *
+   * 上传复用 `lib/photoUpload`；成功之后 `router.refresh()` 让服务端重新
+   * 按天分组 —— 这一页的数据是服务端分好的。
+   */
+  const acceptFile = useCallback(
+    async (file: File) => {
+      setBusy(true);
+      setNotice(null);
+      try {
+        await uploadPhoto(file);
+        router.refresh();
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : "上传失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [router],
+  );
+
   if (days.length === 0) {
     return (
-      <main className="flex min-h-dvh items-center justify-center px-12">
-        <p className="text-meta text-text-primary/35">
-          还没有照片。把照片拖进来，这里会长出一条时间线。
-        </p>
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-4 px-12">
+        {busy ? (
+          <p className="text-meta text-text-primary/35">上传中…</p>
+        ) : (
+          <PhotoPicker
+            onFile={(file) => void acceptFile(file)}
+            className="text-meta cursor-pointer text-text-primary opacity-35 transition-opacity duration-[350ms] hover:opacity-85"
+            style={{ transitionTimingFunction: "var(--ease-enter)" }}
+          >
+            还没有照片。选一张，这里会长出一条时间线。
+          </PhotoPicker>
+        )}
+
+        {notice && (
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            className="text-micro text-text-primary/60 underline-offset-4 hover:underline"
+          >
+            {notice}
+          </button>
+        )}
       </main>
     );
   }

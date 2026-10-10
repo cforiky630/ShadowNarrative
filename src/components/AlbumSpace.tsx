@@ -14,6 +14,7 @@ import AccordionGallery, {
   type AccordionGalleryItem,
 } from "@/components/AccordionGallery";
 import { useStage } from "@/components/ExperienceShell";
+import { PhotoPicker } from "@/components/PhotoPicker";
 import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
 import { usePhotoDrop } from "@/lib/usePhotoDrop";
@@ -196,8 +197,21 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
     return (
       <main className="flex min-h-dvh items-center justify-center px-12">
         <div className="flex flex-col items-center gap-4">
-          {/* §4 空态：不显示空网格、不显示「暂无内容」，安静一行 */}
-          <p className="text-meta text-text-primary/35">把照片拖进来</p>
+          {/*
+            §4 空态：不显示空网格、不显示「暂无内容」，安静一行。
+
+            ⚠️ 这一行**必须是可点的**。原先只有「把照片拖进来」—— 而拖放
+            对第一次用的人不是显然的，库里又一张都没有、点哪儿都没反应，
+            那是个死胡同。用户 2026-10-10 的方向是「点击打开文件选择的那种」，
+            所以两条路在这里都给出来。
+          */}
+          <PhotoPicker
+            onFile={(file) => void acceptFile(file)}
+            className="text-meta cursor-pointer text-text-primary opacity-35 transition-opacity duration-[350ms] hover:opacity-85"
+            style={{ transitionTimingFunction: "var(--ease-enter)" }}
+          >
+            把照片拖进来，或点这里选一张
+          </PhotoPicker>
           {notice && (
             <button
               type="button"
@@ -298,20 +312,18 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
           )}
 
           {!busy && !notice && (
-            <label className="text-micro cursor-pointer text-text-primary/25 transition-opacity duration-[350ms] hover:opacity-85">
-              拖入照片 · 或点这里
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  // 必须清空，否则同一张选第二次不会触发 change
-                  e.target.value = "";
-                  if (file) void acceptFile(file);
-                }}
-              />
-            </label>
+            /*
+              操作行上这一条只在**有照片**时出现，所以按用户 2026-10-10 的
+              判断「既然有照片说明知道可以拖入了是吧」—— 不再写「拖入照片」，
+              只说这次要做的事。拖放本身仍然有效（`usePhotoDrop`）。
+            */
+            <PhotoPicker
+              onFile={(file) => void acceptFile(file)}
+              className="text-micro cursor-pointer text-text-primary opacity-25 transition-opacity duration-[350ms] hover:opacity-85"
+              style={{ transitionTimingFunction: "var(--ease-enter)" }}
+            >
+              选一张照片
+            </PhotoPicker>
           )}
         </div>
 

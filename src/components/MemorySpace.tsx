@@ -7,6 +7,7 @@ import { Star } from "lucide-react";
 import { useStage } from "@/components/ExperienceShell";
 import { ConversationPanel } from "@/components/ConversationPanel";
 import HoldButton from "@/components/HoldButton";
+import { PhotoPicker } from "@/components/PhotoPicker";
 import { Subtitle } from "@/components/Subtitle";
 import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
@@ -854,7 +855,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
 
         {!busy && !notice && (
           <>
-            {rotated ? (
+            {rotated && (
               <button
                 type="button"
                 onClick={() => canvasRef.current?.resetView()}
@@ -863,11 +864,25 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
               >
                 复位视角
               </button>
-            ) : (
-              <span className="pointer-events-none text-text-primary/25">
-                拖入照片 · 拖拽旋转
-              </span>
             )}
+
+            {/*
+              「拖入照片 · 拖拽旋转」那句提示**删了**。用户 2026-10-10：
+              「既然有照片说明知道可以拖入了是吧」—— 这一页能出现，
+              就说明库里已经有照片了。整页仍然是拖放目标（`usePhotoDrop`
+              挂在 window 上），只是不再用一句话去提醒。
+
+              腾出来的位子给**点一下打开文件选择** —— 拖放与点击本来就是
+              这个动作的两条路，而这里原本只有前者。文案跟着从「提示」
+              变成「动作」，所以不再是「拖入照片 ·」而是「选一张照片」。
+            */}
+            <PhotoPicker
+              onFile={(file) => void acceptFile(file)}
+              className="cursor-pointer text-text-primary opacity-30 transition-opacity duration-[350ms] hover:opacity-85"
+              style={{ transitionTimingFunction: "var(--ease-enter)" }}
+            >
+              选一张照片
+            </PhotoPicker>
 
             {/*
               删除的确认（`16 §7.3`：两步确认，放在左下角，不紧挨主操作）。
