@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStage } from "@/components/ExperienceShell";
 import { PhotoPicker } from "@/components/PhotoPicker";
+import { isImeKey } from "@/lib/keyboard";
 import { uploadPhoto } from "@/lib/photoUpload";
 import { revealStyle, useReveal } from "@/lib/useReveal";
 import { useExperience } from "@/store/experience";
@@ -373,6 +374,14 @@ function ThemeName({ day, align }: { day: TimelineDay; align: "left" | "right" }
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => void commit()}
         onKeyDown={(e) => {
+          /*
+           * ⚠️ **组字中的 Enter / Esc 是输入法的，不是你的。**
+           *
+           * 中文输入法里 Enter 是「选这个候选」、Esc 是「取消候选」——
+           * 不管它们的话，给某一天起名起一半就会被提交或丢弃
+           * （`lib/keyboard.ts` 有完整说明）。
+           */
+          if (isImeKey(e)) return;
           if (e.key === "Enter") void commit();
           if (e.key === "Escape") {
             setDraft(title ?? "");
@@ -664,7 +673,8 @@ function PhotoGrid({ photos, onClose }: { photos: Photo[]; onClose: () => void }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // 组字中的 Esc 是输入法在取消候选，不该把这一天的照片收掉（`lib/keyboard.ts`）
+      if (e.key === "Escape" && !isImeKey(e)) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

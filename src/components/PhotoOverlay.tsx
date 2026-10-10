@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { MessageCircle, NotebookText, PenLine } from "lucide-react";
 import { ConversationPanel } from "@/components/ConversationPanel";
 import { NotePanel } from "@/components/NotePanel";
+import { isImeKey } from "@/lib/keyboard";
 import type { JournalNote } from "@/types";
 
 /**
@@ -26,10 +27,11 @@ import type { JournalNote } from "@/types";
  * **只有没有笔记的时候**才会在对话界面出现按钮，**AI 润色按钮应该在笔记页面**」）：
  *
  * ```text
- * 对话那一面   还没有笔记 → 笔（起稿）
- *              有笔记了   → 本子（进随笔小记去读、去改）
+ * 对话那一面     还没有笔记 → 笔（起稿）
+ *                有笔记了   → 本子（进随笔小记去读、去改）
  * 随笔小记那一面  回到对话（粒子态才给，16 硬约束 #10）
- *              笔记比最后一轮对话旧 → 笔（润色），加在「回到对话」上面
+ *                笔记比最后一轮对话旧 → 笔（润色），加在「回到对话」上面
+ * 两颗笔共同      这一轮回答还没落地 → 都先不出现（用户 2026-10-10）
  * ```
  *
  * 一句话：**笔是 AI 动笔（起稿 / 润色），本子是读和写（不参与）。**
@@ -103,6 +105,18 @@ export function PhotoOverlay({
    * 生成成功后清回 false（新写的那一版比所有消息都新）。
    */
   const [spoke, setSpoke] = useState(false);
+  /**
+   * 这一轮 AI 正在回答。**两颗笔都要等它落地**（用户 2026-10-10：
+   * 「ai 本轮回答完之前不能润色」）。
+   *
+   * 为什么连**起稿**那颗也等：素材是「这段对话」，回答还在路上就动笔，
+   * 这一轮 AI 说的话织不进去 —— 而它两秒后就要到了。同一条理由，
+   * 一个条件，不必分两套。
+   *
+   * ⚠️ 这条只在客户端守得住：服务端没有「正在回答」这个状态可查
+   * （见 `ConversationPanel` 那个 prop 的说明）。
+   */
+  const [replying, setReplying] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,7 +156,17 @@ export function PhotoOverlay({
   // 叠两层的话同一个按键会触发两个监听
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      /*
+       * ⚠️ **组字中的 Esc 不是给你的。**
+       *
+       * 用中文输入法打字时 Esc 是「取消这次候选」，而它照样冒到 `window` ——
+       * 少了这一句，取消一次候选就把整层浮层关掉，聊到一半的东西没了
+       * （用户 2026-10-10：「对话也总是会被打断」）。「总是」是对的：
+       * 用中文打字的人一天要取消几十次候选。
+       *
+       * 判据两条都要，见 `lib/keyboard.ts`。
+       */
+      if (e.key === "Escape" && !isImeKey(e)) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -190,10 +214,13 @@ export function PhotoOverlay({
     [onNoteChange],
   );
 
-  /** 起稿那颗笔：还没有笔记，且有话可说（`01 §9`：没有他的话就只能编） */
-  const showDraft = !note && (hasMaterial || spoke);
-  /** 润色那颗笔：有笔记，而且那篇比最后一轮对话旧 */
-  const showPolish = note !== null && (noteIsStale || spoke);
+  /**
+   * 起稿那颗笔：还没有笔记，有内容可整理（`01 §9`：没有他的话就只能编），
+   * 而且**这一轮回答已经落地**。
+   */
+  const showDraft = !note && (hasMaterial || spoke) && !replying;
+  /** 润色那颗笔：有笔记，那篇比最后一轮对话旧，而且这一轮回答已经落地 */
+  const showPolish = note !== null && (noteIsStale || spoke) && !replying;
 
   return (
     <div
@@ -215,11 +242,23 @@ export function PhotoOverlay({
         backdropFilter: "blur(14px) saturate(115%)",
         WebkitBackdropFilter: "blur(14px) saturate(115%)",
       }}
-      onClick={(e) => {
-        // 点列之外的空白收起。列是子元素，点里面的东西不会冒到这里
+      /*
+       * ⚠️ **`onPointerDown`，不是 `onClick`。**
+       *
+       * 用 `click` 有个会「打断对话」的洞：**按下在列里、松开在列外**时，
+       * 浏览器把 `click` 派发给两者**最近的共同祖先** —— 也就是这一层
+       * 根节点，于是 `target === currentTarget` 成立、整层关掉。
+       * 用鼠标选一段字、手一抖拖出去就中招（实测过）。
+       *
+       * `pointerdown` 没有这个问题：「按下时指针在哪」是明确的，
+       * 从列里按下去的那一下根本不会到这里。
+       *
+       * 这也和其余两处收起（`DockCard`、删除的待确认）同一条 ——
+       * 它们的注释里写着「按下就该有反应，等到抬起已经慢了一拍」。
+       */
+      onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
-      }}
-    >
+      }}    >
       {/* 外层 580 = 窄栏 520 + 间距 20 + 右边那一格 ~28，窄屏靠 min-w-0 把栏让出来 */}
       <div className="flex w-full max-w-[580px] flex-col gap-6">
         <div className="flex items-end gap-5">
@@ -233,6 +272,13 @@ export function PhotoOverlay({
                  * 本该是紧接着的两下。
                  */
                 onUserMessaged={() => setSpoke(true)}
+                /*
+                 * ⚠️ **直接传 `setReplying`，不要包一层箭头。**
+                 * 它会被 `send` 的闭包一直握到请求结束 —— 那时候这一面
+                 * 可能已经卸载了（用户翻去随笔小记），而这一句仍然要能
+                 * 把「回答落地了」报回来。`setState` 本身是稳定的。
+                 */
+                onReplyingChange={setReplying}
               />
             ) : (
               <NotePanel

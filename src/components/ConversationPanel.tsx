@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
 import { motion } from "motion/react";
+import { isImeKey } from "@/lib/keyboard";
 import type { ConversationMessage } from "@/types";
 
 /**
@@ -53,6 +54,19 @@ interface ConversationPanelProps {
    * `PhotoOverlay` 那边算，这里只负责把「刚说过一句」报上去。
    */
   onUserMessaged?: () => void;
+  /**
+   * 这一轮 AI 正在回答。
+   *
+   * ⚠️ 给**那颗润色的笔**用的（用户 2026-10-10）：「再加一个对话时，ai 本轮
+   * 回答完之前不能润色」。理由是他自己说的那句 —— **润色是按新增的对话**加上
+   * 现稿来的；回答还在路上就按下去，这一轮 AI 说的话就织不进去，而它马上
+   * 就要到了。
+   *
+   * ⚠️ **是实现里唯一一条只能靠客户端守的规矩。** 服务端没有「正在回答」这个
+   * 状态可查：回答就是那次 POST 自己算出来的，请求飞在路上的时候，库里没有
+   * 任何痕迹说它存在。
+   */
+  onReplyingChange?: (replying: boolean) => void;
 }
 
 /**
@@ -67,6 +81,7 @@ const MAX_CHARS = 2000;
 export function ConversationPanel({
   photoId,
   onUserMessaged,
+  onReplyingChange,
 }: ConversationPanelProps) {
   const [messages, setMessages] = useState<ConversationMessage[] | null>(null);
   /**
@@ -121,6 +136,17 @@ export function ConversationPanel({
     setFailed(null);
     setDraft("");
 
+    /*
+     * ⚠️ **这两句（还有 `finally` 里那句）不在 effect 里，是故意的。**
+     *
+     * 「正在回答」这个状态在**这个组件卸载之后仍然要能报出去**：用户说完一句
+     * 就翻到随笔小记那一面去读，这一面就没了 —— 而那颗润色的笔这时必须还锁着，
+     * 一直锁到这一轮回答落地。写在 `send` 的闭包里，`finally` 照跑不误
+     * （卸载不会取消已经发出的 fetch）；挂成 effect 的话，卸载那一刻就断了线，
+     * 那个「正在回答」永远没人负责关掉。
+     */
+    onReplyingChange?.(true);
+
     // 乐观：先把这句挂上去。服务端也存了一份，id 用临时的
     setMessages((prev) => [
       ...(prev ?? []),
@@ -171,8 +197,9 @@ export function ConversationPanel({
       });
     } finally {
       setSending(false);
+      onReplyingChange?.(false);
     }
-  }, [draft, sending, photoId, load, onUserMessaged]);
+  }, [draft, sending, photoId, load, onUserMessaged, onReplyingChange]);
 
   const list = messages ?? [];
 
@@ -254,6 +281,16 @@ export function ConversationPanel({
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              /*
+               * ⚠️ **组字时的 Enter 是「选这个候选」，不是「发送」。**
+               *
+               * 有的输入法在这时会顺手提交一次表单 —— 那等于把半截拼音发出去
+               * （用户 2026-10-10 报的「对话总是会被打断」，和 Esc 那条同一个
+               * 病根：`keydown` 不区分「这一下是输入法的」）。见 `lib/keyboard.ts`。
+               */
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && isImeKey(e)) e.preventDefault();
+              }}
               autoFocus
               placeholder="说点什么"
               maxLength={MAX_CHARS}

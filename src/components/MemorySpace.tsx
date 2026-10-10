@@ -9,6 +9,7 @@ import { PhotoOverlay } from "@/components/PhotoOverlay";
 import HoldButton from "@/components/HoldButton";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { Subtitle } from "@/components/Subtitle";
+import { isImeKey } from "@/lib/keyboard";
 import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
 import { usePhotoDrop } from "@/lib/usePhotoDrop";
@@ -425,7 +426,8 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     const disarm = () => setConfirmDelete(false);
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") disarm();
+      // 组字中的 Esc 是输入法在取消候选，不该把待确认的删除收回去
+      if (e.key === "Escape" && !isImeKey(e)) disarm();
     };
 
     /*

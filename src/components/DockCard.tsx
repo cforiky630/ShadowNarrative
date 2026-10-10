@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { isImeKey } from "@/lib/keyboard";
 
 /**
  * 从左下那颗胶囊长出来的浮卡。
@@ -41,7 +42,8 @@ export function DockCard({ label, open, onClose, children }: DockCardProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // 组字中的 Esc 是输入法在取消候选，不是「收起这张卡」（`lib/keyboard.ts`）
+      if (e.key === "Escape" && !isImeKey(e)) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
