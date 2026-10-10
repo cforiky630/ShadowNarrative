@@ -400,6 +400,7 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
 | **React 合成事件上没有 `isComposing`** | `isImeKey`（`lib/keyboard.ts`）原先只看 `e.isComposing`，而 React 的 `SyntheticEvent` **只搬一部分字段过来，`isComposing` 不在名单里** —— 于是写 `onKeyDown` 的地方（对话输入框、两个起名框）拿到的是 `undefined`，组字中的 Esc 照旧把编辑态退了。真值在 `e.nativeEvent` 上，那个函数现在替调用方去那儿取。**实测出来的**（影册的改名框）；`keyCode === 229` 这一条顺带成了兜底 —— React 会搬 `keyCode` |
 | **SQLite 不支持 `createMany({ skipDuplicates })`** | Prisma 只在 Postgres / MySQL / SQLServer 上支持它，硬写会撞主键约束。影册加照片时是**先求差集再建**（两条查询，没有异常处理），顺手还能给出「这次真加进去几张」。同一条也提醒：**任何「批量塞进去，重复的跳过」都要先问一句驱动支不支持** |
 | **第一条动态段路由会报 `CLIENT_HOOK_DYNAMIC`** | `/memories/<id>` 是这个项目的第一个 `[id]` 页面。一出现它，Next 的 instant-navigation 校验就报「`usePathname()` 在 Client Component 里、在 `<Suspense>` 之外，挡住了预渲染」—— 而那个 hook 在 **layout** 里（`TopNavigation` / `ExperienceShell`），不在页面的 Suspense 里。两种修法：把 layout 包进 Suspense（顶栏会流式补进来，`fixed` 的一行字闪一下更难看），或者 `export const instant = false`（声明「进这条路由是允许阻塞的」）。取后者。⚠️ **这是开发期 warning 级校验，构建不受影响**（`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/02-route-segment-config/instant.md`） |
+| **把「上一级」的出口挂在左上角** | 这个产品的出口是**跟着内容走**的，不挂角上。用户 2026-10-10 就否过一次左上角（「放左上角交互不顺畅」），2026-10-11 又一次（「这里的 back 在上面，感觉很割裂」）。放哪要按**那一页的版式**定：舞台页（照片，一张占满画面）在画面中下；会滚动的列表页在**左下那条 46px 的带上**（`fixed`，与设置那颗球同一条水平线）。判据是「它跟不跟着内容」，不是「有没有出口」 |
 
 ---
 
@@ -505,6 +506,15 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
       「Memories」—— 而那正是**你已经在的那个空间**，读起来是「你在这儿」
       而不是「上一级」。照片页有 `Back` 就是这个道理；多一层页面就配一个，
       **文案与样式逐字沿用同一个 `Back`**（不按去向改名，硬约束 #11）
+    - ⚠️ **那个出口放在左下，不放在页头左边。** 第一版放页头，用户当天驳了：
+      「粒子切换那里的 back 在**中下**，这里在上面，感觉很**割裂**」——
+      而他为这件事**更早就纠正过一次**（2026-10-10 否掉左上角：
+      「放左上角交互不顺畅」）。**这个产品的出口跟着内容走，不挂在角上。**
+      影册这一页是条会滚动的列表，所以取的是中间那条路：
+      **固定在左下那条 46px 的带上**（与设置那颗球同一条水平线，也就是
+      照片页放「复位视角 / 捉影 / 随笔 / 删除」那一组的位置）。
+      ⚠️ `fixed` 不是 `absolute` —— 这一页的 `<main>` 比视口高，
+      `absolute` 会被留在文档底部
     - ⚠️ **全屏的那一层要自带一个看得见的出口**。整理面板盖住了顶栏，
       所以它那两颗出口（右上角 ✕、底下 `Done`）不能按 0.4 那档的亮度画 ——
       在宽窗口里它们离内容栏有一大截空，是真的会看不见

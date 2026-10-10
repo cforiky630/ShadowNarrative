@@ -167,65 +167,38 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
     <main className="min-h-dvh px-12 pt-32 pb-32">
       <div className="mx-auto w-full max-w-[880px]">
         <header className="mb-10 flex items-center justify-between gap-8">
-          <div className="flex min-w-0 items-baseline gap-6">
-            {/*
-              ⚠️ **这一层必须有自己的出口**（用户 2026-10-11：「进入影册以后
-              出不来了」）。
-
-              架子上那一格是**进得来的一道门**，可进来之后原先只剩顶栏那个
-              「Memories」—— 而那正是**你已经在的那个空间**，40% 的亮度读起来
-              是「你在这儿」，不是「上一级」。整理面板一开，它更是整个被盖住。
-
-              这与照片页为什么要有 `Back` 是同一条（硬约束 #11、
-              `16 §8.6`）：**进得去的门就是出得来的门。**
-
-              文案与照片页那个**逐字相同、样式也相同**（`Back`、不带箭头、
-              不带下划线、0.45 底 hover 提亮）—— 同一条规矩：它是一项
-              **导航的字**，不是控件，而且**不按去向改名**。
-              位置不同（那里在底下那一行，这里在标题左）只因为这一页是
-              一条会滚动的列表，出口压在滚动区之下就等于没有。
-            */}
-            <Link
-              href="/memories"
-              className="text-meta shrink-0 text-text-primary opacity-45 transition-opacity duration-[350ms] hover:opacity-90 focus-visible:opacity-90"
-              style={{ transitionTimingFunction: "var(--ease-enter)" }}
-            >
-              Back
-            </Link>
-
-            {editing ? (
-              <input
-                autoFocus
-                value={draft}
-                disabled={saving}
-                maxLength={60}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => void commitTitle()}
-                onKeyDown={(e) => {
-                  // 组字中的 Enter / Esc 是输入法的，不是你的（`lib/keyboard.ts`）
-                  if (isImeKey(e)) return;
-                  if (e.key === "Enter") void commitTitle();
-                  if (e.key === "Escape") {
-                    setDraft(title);
-                    setEditing(false);
-                  }
-                }}
-                className="text-body min-w-0 flex-1 border-0 border-b border-border-subtle bg-transparent pb-1 text-text-primary/95 outline-none focus:border-text-primary/40"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
+          {editing ? (
+            <input
+              autoFocus
+              value={draft}
+              disabled={saving}
+              maxLength={60}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => void commitTitle()}
+              onKeyDown={(e) => {
+                // 组字中的 Enter / Esc 是输入法的，不是你的（`lib/keyboard.ts`）
+                if (isImeKey(e)) return;
+                if (e.key === "Enter") void commitTitle();
+                if (e.key === "Escape") {
                   setDraft(title);
-                  setEditing(true);
-                }}
-                title="点一下改"
-                className="text-body min-w-0 truncate text-left underline-offset-4 hover:underline"
-              >
-                {title}
-              </button>
-            )}
-          </div>
+                  setEditing(false);
+                }
+              }}
+              className="text-body min-w-0 flex-1 border-0 border-b border-border-subtle bg-transparent pb-1 text-text-primary/95 outline-none focus:border-text-primary/40"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(title);
+                setEditing(true);
+              }}
+              title="点一下改"
+              className="text-body min-w-0 truncate text-left underline-offset-4 hover:underline"
+            >
+              {title}
+            </button>
+          )}
 
           <div className="flex shrink-0 items-center gap-5">
             <button
@@ -297,6 +270,47 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
           {album.photos.length} 张
         </p>
       </div>
+
+      {/*
+        ⚠️ **这一层必须有自己的出口**（用户 2026-10-11：「进入影册以后出不来
+        了」）。架子上那一格是**进得来的一道门**，可进来之后原先只剩顶栏那个
+        「Memories」—— 而那正是**你已经在的那个空间**，读起来是「你在这儿」，
+        不是「上一级」。整理面板一开，它更是整个被盖住。
+
+        这与照片页为什么要有 `Back` 是同一条（硬约束 #11、`16 §8.6`）：
+        **进得去的门就是出得来的门。**
+
+        ── 为什么落在**左下角**，而不是标题左边 ────────────────────────
+
+        第一版放在页头左边，用户当天就指出来：「粒子切换那里的 back 在中下，
+        这里在上面，感觉很割裂」。
+
+        ⚠️ 而他其实**更早就为这件事纠正过我一次**：2026-10-10 他要求
+        「返回放到和 into 一样的位置」，并明确否掉了左上角 ——
+        「**放左上角交互不顺畅**」。这个产品的出口是**跟着内容走**的，
+        不挂在角上；照片页那个因此在画面中下。于是左上角对影册这一层同样不行。
+
+        那为什么不是「中下」？因为照片页是一块**舞台**（一张照片占满画面，
+        没有页头），而这一页是**一条会滚动的列表** —— 出口压在滚动区之下
+        就等于没有。所以取的是两者中间的那条路：**固定在左下那条 46px 的
+        带上**，也就是照片页放「复位视角 / 捉影 / 随笔 / 删除」那一组的位置。
+        它**始终可见**（不受滚动影响），而且和左下那颗设置球同一条水平线
+        （`bottom-6` + `h-[46px]`，`16 §7.3` 有这两个数的由来）。
+
+        ⚠️ 是 `fixed` 不是 `absolute`：这一页的 `<main>` 比视口高，absolute
+        会被留在**文档**底部。
+
+        文案与照片页那个**逐字相同、样式也相同**（`Back`、不带箭头、
+        不带下划线、0.45 底 hover 提亮）—— 同一条规矩：它是一项**导航的字**，
+        不是控件，而且**不按去向改名**（硬约束 #11）。
+      */}
+      <Link
+        href="/memories"
+        className="text-micro text-text-primary fixed bottom-6 left-32 z-10 flex h-[46px] items-center opacity-45 transition-opacity duration-[350ms] hover:opacity-90 focus-visible:opacity-90"
+        style={{ transitionTimingFunction: "var(--ease-enter)" }}
+      >
+        Back
+      </Link>
 
       {organizing && (
         <OrganizePanel
