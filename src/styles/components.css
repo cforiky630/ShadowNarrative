@@ -61,33 +61,103 @@
     opacity: 1;
   }
 
-  /* 字幕在粒子态是**可以点开对话的**，靠一圈极淡的呼吸边框暗示。
-     用户 2026-10-10：「粒子界面的主题可以有一个非常淡的若隐若现的边框效果
-     暗示点击」。
+  /* 字幕在粒子态是**可以点开对话的**，靠下面一条线暗示。
 
-     ⚠️ 用 `outline` 不用 `border`：border 会让文字块重新排版（字号不变但
-     行宽变了），而这一圈必须在出现和消失之间**不推动任何东西**。
-     outline-offset 把它撑到文字外面，像是给这句话留了一圈空气。
+     用户 2026-10-10：「粒子页下面标题的那个呼吸框做成下面一条线带有
+     从左到右的动态高亮怎么样，但整体哑光或呼吸」。
+
+     ⚠️ **从「一圈 outline」改成「一条线」不只是换样式。** 那圈框住的是整个
+     文字块，而字幕长短不一，框会显得比内容大一圈；下面一条线的长度
+     **永远等于这一行字** —— 文字块在 `items-center` 的 flex 列里是
+     shrink-to-fit 的。于是它读起来是「这句话被标出来了」，而不是
+     「这里有个框」。
+
+     ⚠️ **两个伪元素分工**：`::before` 是哑光的那条底（呼吸），
+     `::after` 是从左扫到右的高亮。一个元素做不出「底 + 移动的高亮」，
+     硬做要把两个位置塞进同一段渐变里，改起来更容易错。
+
+     ⚠️ 两个都不吃指针 —— 它们盖在按钮上，不该把点击挡掉。
 
      ⚠️ 这与 `16 §7.1`「没有边框、没有投影、没有背景块」不冲突：
-     那条禁的是**卡片**（传统 hero 卡那种把内容装进一个盒子），
-     而这是一圈提示可点性的空气，只在粒子态出现，平时完全不存在。 */
+     那条禁的是**卡片**（把内容装进一个盒子），而这是一条提示可点性的线，
+     只在粒子态出现，平时完全不存在。 */
+  .sn-hint {
+    position: relative;
+    cursor: pointer;
+  }
+
+  .sn-hint::before,
+  .sn-hint::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    /* 与文字留一点空气。贴着字会读成下划线（链接），
+       而这里是一条「可以点」的暗号。
+
+       ⚠️ 这个值是量出来的，不是拍的：文字块高 31px（18px 字 + 1.7 行高），
+       字形底边约在块底上方 6px 处。所以 `-12px` 意味着线离字**有 18px**——
+       用户当天就说「线离字稍微有点远了」（`-7px` ≈ 13px）。 */
+    bottom: -7px;
+    height: 1px;
+    pointer-events: none;
+  }
+
+  /* 哑光的那条底。幅度很小 —— 要的是「安静地在那儿」，不是闪烁 */
+  .sn-hint::before {
+    background: var(--text-primary);
+    animation: sn-hint-breathe 5.5s var(--ease-morph) infinite alternate;
+  }
+
   @keyframes sn-hint-breathe {
     from {
-      outline-color: color-mix(in oklab, var(--text-primary) 5%, transparent);
+      opacity: 0.06;
     }
     to {
-      outline-color: color-mix(in oklab, var(--text-primary) 17%, transparent);
+      opacity: 0.16;
     }
   }
 
-  .sn-hint {
-    outline: 1px solid transparent;
-    outline-offset: 14px;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    /* alternate + infinite：像呼吸，不像闪烁 */
-    animation: sn-hint-breathe 5.5s var(--ease-morph) infinite alternate;
+  /*
+   * 从左到右扫过去的那道高亮。
+   *
+   * ⚠️ **用 `--ease-morph` 不用 `linear`**（`02 §10` 明令不许线性）——
+   * 两端慢、中间快，读起来是「一道光扫过」，不是进度条在跑。
+   *
+   * 首尾那 12% 停在屏幕外，所以它是**扫一下、歇一下**，不是一刻不停；
+   * 周期 6.5s 与底线的 5.5s 不同步，两条动画不会锁成机器节奏。
+   */
+  .sn-hint::after {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--text-primary) 50%,
+      transparent 100%
+    );
+    /* 高亮占整条的 34%，其余是透明空档 */
+    background-size: 34% 100%;
+    background-repeat: no-repeat;
+    opacity: 0;
+    animation: sn-hint-sweep 6.5s var(--ease-morph) infinite;
+  }
+
+  @keyframes sn-hint-sweep {
+    from {
+      background-position: -100% 0;
+      opacity: 0;
+    }
+    12% {
+      background-position: -100% 0;
+      opacity: 0.55;
+    }
+    88% {
+      background-position: 150% 0;
+      opacity: 0.55;
+    }
+    to {
+      background-position: 150% 0;
+      opacity: 0;
+    }
   }
 
   /* 隐藏滚动条但保留滚动。
@@ -142,6 +212,18 @@
 
     .sn-content[data-leaving] {
       transition: none !important;
+    }
+
+    /* 字幕的提示线：**留住那条哑光的底，只把扫描停掉**。
+       `04 §15` 要的是「降低动效，信息仍然完整」—— 线在，说明还看得见。 */
+    .sn-hint::before {
+      animation: none;
+      opacity: 0.14;
+    }
+
+    .sn-hint::after {
+      animation: none;
+      opacity: 0;
     }
   }
 }
