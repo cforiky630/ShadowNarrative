@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useExperience } from "@/store/experience";
 
 /**
  * 顶部导航。
@@ -12,48 +11,38 @@ import { useExperience } from "@/store/experience";
  *   - text-micro，字距 +0.08em
  *   - 顶部 32px，左右边距 48px
  *
- * 2026-10-09 删掉了 `/journal` 与 `/create` —— **两个路由都不存在**，点进去是 404。
- * 它们是上一版设计留下的：`Journal` 在 `01-PRODUCT_SPEC.md` §5 里是体验状态
- * （从照片主动触发进入），不是顶层导航目的地；`Create` 在任何文档里都没有定义。
+ * ── 右上角只剩一个空间入口 ──────────────────────────────────────────
  *
- * 2026-10-10 加了「时间线」—— 用户定的新空间，**取代** `16-ALBUM_SPACE.md` §6
- * 的 Library 抽屉（不并存）。
+ * 2026-10-09 删掉了 `/journal` 与 `/create` —— **两个路由都不存在**，
+ * 点进去是 404；2026-10-10 又删掉「Memories」—— 它指向 `/`，和左上角的
+ * 项目名是同一条去路，而用户说它「暂时还没做，后续做图库的效果」。
+ * 图库做出来时再加回来，那时它指的应该是 `01 §5` 的 Memory Theater 那一族，
+ * 不是相册。
  *
- * 有意的：**入口宁可少，也不要留点不动的**。Album（第一屏）还是 Round 5 的事。
+ * 守的是同一条：**入口宁可少，也不要留点不动的。**
  *
- * ── 2026-10-10：左上角的「返回」搬走了 ────────────────────────────────
+ * ⚠️ **2026-10-10：`参数` 从这里搬走了。** 用户要求「参数调整和设置做法
+ * 一样放在左下」，它现在是左下角那颗胶囊上的第一格（`BottomDock`）。
+ * 判据没变 —— 有粒子的地方才有参数可调 —— 只是换了地方，而且现在由胶囊
+ * 自己按 `stage.space` 决定那一格在不在。
  *
- * 原先粒子模式的出口和 `MEMORY` 叠在同一格交叉淡化（`16 §8.6`）。
- * 用户的原话是「放左上角交互不顺畅」—— 点进去的按钮在画面正下方，
- * 要出来却得跑到屏幕对角去找。
+ * ⚠️ 同一天 `时间线` 改成了 `Timeline`。这一列是**空间的名字**，而空间名
+ * 一直是英文（`02 §12` 的 `MEMORY` / `Memories`），`Into this moment`、
+ * `Back`、四个预设也都是英文 —— 只夹着一个中文项，反倒是它不协调。
  *
- * 现在出口在 `MemorySpace` 里，和「Into this moment」同一格。
- * `16 §8.6` 里真正要紧的部分（不加箭头图标、不换文字样式、用溶解同一条缓动）
- * 仍然成立，只是换了格子。
- */
-/*
- * 顶栏的空间入口。
+ * ── 左上角是项目名，也是唯一的「回第一屏」 ──────────────────────────
  *
- * 2026-10-09 删掉了 `/journal` 与 `/create` —— **两个路由都不存在**，点进去是 404。
- *
- * 2026-10-10 加了「时间线」—— 用户定的新空间，**取代** `16-ALBUM_SPACE.md` §6
- * 的 Library 抽屉（不并存）。
- *
- * 2026-10-10 又删掉了「Memories」。两个原因：它指向 `/`，而 `/` 现在是相册
- * —— 和左上角的项目名**同一条去路**，两个入口摆在一起是重复的；
- * 而且用户说它「暂时还没做，后续做图库的效果」。按本文件一直守的那条
- * **入口宁可少，也不要留点不动的**，先撤下来。图库做出来时再加回来，
- * 那时它指的应该是 `01 §5` 的 Memory Theater 那一族，不是相册。
+ * 用户 2026-10-10：「最左边那个 memory 改成项目名，点击跳转到画廊界面」。
+ * 在那之前它还兼过粒子模式的出口（和 `MEMORY` 叠在同一格交叉淡化），
+ * 后来那个出口搬进了 `MemorySpace`，与「Into this moment」同一格
+ * （`16 §8.6`）—— 点进去的门在画面正下方，出口不该跑到屏幕对角去找。
  */
 const NAV_ITEMS = [
-  { href: "/timeline", label: "时间线" },
+  { href: "/timeline", label: "Timeline" },
 ] as const;
 
 export function TopNavigation() {
   const pathname = usePathname();
-  const setControlsOpen = useExperience((s) => s.setControlsOpen);
-  /** 有粒子的地方才有参数可调 —— 见下面那个入口的说明 */
-  const inPhoto = useExperience((s) => s.stage.space === "photo");
 
   return (
     <header className="pointer-events-none fixed inset-x-0 top-0 z-20 flex items-center justify-between px-12 pt-8">
@@ -94,35 +83,12 @@ export function TopNavigation() {
         })}
 
         {/*
-          粒子控制面板入口。**只在照片空间出现。**
+          粒子参数**从这里搬走了**（2026-10-10）。用户要求「参数调整和设置
+          做法一样放在左下」—— 它现在是左下角那颗胶囊上的第一格
+          （`BottomDock`），卡片是 `ParticleControls`。
 
-          它是粒子参数的入口，而相册与时间线上根本没有粒子 —— 在那里点开
-          只会得到一个控制不了任何东西的面板。按这个文件一直守的那条
-          「入口宁可少，也不要留点不动的」，没粒子的时候它就不该在。
-
-          `space` 由各空间组件声明（`stage.space` 的注释里有完整理由）；
-          从时间线推入照片时 `enter()` 会**先**把它置成 `photo`，
-          所以飞行途中这个入口已经在淡入了。
-        */}
-        {inPhoto && (
-          <button
-            type="button"
-            onClick={() => setControlsOpen(true)}
-            aria-label="粒子参数"
-            className="text-micro text-text-primary/40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"
-            style={{ transitionTimingFunction: "var(--ease-enter)" }}
-          >
-            参数
-          </button>
-        )}
-
-        {/*
-          设置**从这里搬走了**（2026-10-10）。用户要求「设置做成组件，
-          不用单页，用一个齿轮图标放到右下角悬浮」—— 现在是
-          `SettingsPanel`，挂在根布局上，入口只有那颗齿轮。
-
-          规格没变的部分：它仍然不进 `NAV_ITEMS`（那个数组是「空间」），
-          也仍然**不混进照片旁边**（`07 §11.1`）。变的是形态。
+          判据没变，只是换了地方：**有粒子的地方才有参数可调**。胶囊自己
+          按 `stage.space === "photo"` 决定那一格在不在。
         */}
       </nav>
     </header>

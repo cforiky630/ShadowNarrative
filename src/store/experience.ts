@@ -25,6 +25,14 @@ import {
 interface UiState {
   /** 粒子控制面板是否展开。默认隐藏（07-UI_PAGE_SPECS.md §3）。 */
   controlsOpen: boolean;
+  /**
+   * 设置浮卡是否展开（`07 §11`）。
+   *
+   * 2026-10-10 从 `SettingsPanel` 的局部 state 提到这里：那一颗球现在和
+   * 「参数」共用左下角的一颗胶囊（`BottomDock`），入口和卡片不在同一棵
+   * 子树里了 —— 和 `controlsOpen` 当初被提上来的理由是同一条。
+   */
+  settingsOpen: boolean;
   /** 调试 overlay。生产环境强制关闭（06 §19）。 */
   debugOpen: boolean;
 }
@@ -166,6 +174,7 @@ interface ExperienceState {
   // --- UI ---
   ui: UiState;
   setControlsOpen: (v: boolean) => void;
+  setSettingsOpen: (v: boolean) => void;
   setDebugOpen: (v: boolean) => void;
 }
 
@@ -224,11 +233,55 @@ export const useExperience = create<ExperienceState>((set, get) => ({
     unsupported: false,
     rotated: false,
   },
-  setStage: (patch) => set((s) => ({ stage: { ...s.stage, ...patch } })),
+  setStage: (patch) =>
+    set((s) => {
+      const stage = { ...s.stage, ...patch };
 
-  ui: { controlsOpen: false, debugOpen: false },
+      /*
+       * 离开有粒子的空间时把粒子参数卡收起来。
+       *
+       * 它的入口是左下胶囊上的「参数」那一格，而那一格只在
+       * `space === "photo"` 时存在（`BottomDock`）。不收的话，切到相册
+       * 或时间线之后会留下一张**没有入口、也关不掉**的浮卡。
+       *
+       * 放在这里而不是某个 effect 里：`setStage` 是**唯一**改 `space` 的
+       * 地方，而 effect 里同步 setState 会触发级联渲染
+       * （`react-hooks/set-state-in-effect` 会拦，那个拦是对的）。
+       *
+       * 只在真的要改的时候才带上 `ui` —— zustand 是浅合并，每次都新建一个
+       * `ui` 对象会让每次 `setStage`（包括 `rotated`、`photoId` 那些）
+       * 都触发一轮重渲染。
+       */
+      if (stage.space !== "photo" && s.ui.controlsOpen) {
+        return { stage, ui: { ...s.ui, controlsOpen: false } };
+      }
+      return { stage };
+    }),
+
+  ui: { controlsOpen: false, settingsOpen: false, debugOpen: false },
+  /*
+   * 两张浮卡**互斥**：它们都从左下那颗胶囊往上长、占的是同一块地方，
+   * 同时开着就是两张卡叠在一起。
+   *
+   * 互斥写在这里而不是各自的点击处理里 —— 那样得写两遍，而且将来
+   * 多一个入口（快捷键、顶栏）就会漏一处。
+   */
   setControlsOpen: (controlsOpen) =>
-    set((s) => ({ ui: { ...s.ui, controlsOpen } })),
+    set((s) => ({
+      ui: {
+        ...s.ui,
+        controlsOpen,
+        settingsOpen: controlsOpen ? false : s.ui.settingsOpen,
+      },
+    })),
+  setSettingsOpen: (settingsOpen) =>
+    set((s) => ({
+      ui: {
+        ...s.ui,
+        settingsOpen,
+        controlsOpen: settingsOpen ? false : s.ui.controlsOpen,
+      },
+    })),
   setDebugOpen: (debugOpen) => set((s) => ({ ui: { ...s.ui, debugOpen } })),
 }));
 

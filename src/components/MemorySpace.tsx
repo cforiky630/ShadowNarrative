@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Star } from "lucide-react";
-import { ParticleControls } from "@/components/ParticleControls";
+import { useStage } from "@/components/ExperienceShell";
 import { ConversationPanel } from "@/components/ConversationPanel";
 import { Subtitle } from "@/components/Subtitle";
-import { useStage } from "@/components/ExperienceShell";
+import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
 import { usePhotoDrop } from "@/lib/usePhotoDrop";
 import type { AiState, PhotoDetail } from "@/types";
@@ -51,6 +51,23 @@ const POLL_TIMEOUT_MS = 30_000;
  * 而这里发生的是「空间在变化」。
  */
 const CROSSFADE = "opacity var(--duration-morph) var(--ease-morph)";
+
+/**
+ * `Back` 在粒子态的收放。
+ *
+ * 与那一格的两段文字**同一条缓动和时长**（`CROSSFADE`）—— 整行是一次
+ * 「交叉淡化 + 重新居中」，不是「按钮换了个字」加「旁边少了个东西」。
+ *
+ * ⚠️ **间距必须和宽度一起收。** 这一行的间隔原本是父级的 `gap-7`，
+ * 而 `gap` 留在行上的话，`Back` 收完仍然剩 28px 空白 —— `返回` 就还是
+ * 偏左（用户 2026-10-10 报的正是「现在按钮不居中了」）。
+ * 所以改成 `marginLeft`，挂在要收的那一个元素上。
+ */
+const BACK_HIDE = [
+  "opacity var(--duration-morph) var(--ease-morph)",
+  "max-width var(--duration-morph) var(--ease-morph)",
+  "margin-left var(--duration-morph) var(--ease-morph)",
+].join(", ");
 
 interface MemorySpaceProps {
   /**
@@ -277,7 +294,16 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
         const bitmap = await createImageBitmap(file);
         await canvasRef.current?.morphTo(bitmap);
 
-        const photo = await uploadPhoto(file);
+        /*
+         * 缩略图**复用上面那张 bitmap**（`08 §6`）。
+         *
+         * 这里已经为了「立刻成型」付过一次解码了 —— 再 `createImageBitmap`
+         * 一遍同一张 12MP 的图纯属浪费。`makeThumbnail` 传 `ImageBitmap`
+         * 时**不负责关闭**它，所有权仍在引擎那边（见上一行的注释）。
+         */
+        const thumbnail = await makeThumbnail(bitmap);
+
+        const photo = await uploadPhoto(file, thumbnail);
 
         // 画布上已经是这张图了（上面 morphTo 过）—— 告诉外壳别再取一次，
         // 否则它会 setImage 一遍，把用户刚调好的视角重置掉
@@ -569,7 +595,7 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
           而他只要知道「这一步能退回去」。
           左边那一格在粒子态的「返回」是另一回事（回到原图，不是回上一屏）。
         */}
-        <div className="pointer-events-auto mt-6 flex items-baseline gap-7">
+        <div className="pointer-events-auto mt-6 flex items-center">
           <button
             type="button"
             onClick={toggleParticle}
@@ -614,13 +640,76 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
             相册和照片页的 pathname 都是 `/`，事后从路由上推不出来。
 
             不是走进来的（直接打开链接、或者刷新过）就回落到第一屏（相册）。
+
+            ⚠️ **粒子态下它收起来。** 用户 2026-10-10：「粒子页有两个返回，
+            只留一个，粒子页的返回是回到原图页」—— 左边那一格已经是「返回」
+            （回原图）了，再并排一个 `Back`（回相册 / 时间线），屏幕上就是
+            两个都读作「回去」、去向却不同的东西。
+
+            ── 为什么包一层 span 而不是直接给出参 ──────────────────────
+
+            收的**不只是透明度，还有宽度和它左边那段间距**：
+            只淡出的话这一行仍然是原来那么宽，居中的结果就是「返回」偏左
+            ——用户当天接着报的就是这个（「现在按钮不居中了」）。
+
+            而这一行**必须重新居中**：`16 §8.6` 说出口要落在
+            `Into this moment` 那个格子里，那一格是画面正中。
+            收宽度 + 间距一起做，行宽从 (按钮+28+31) 平滑变成 (按钮)，
+            按钮在 1200ms 里滑回正中 —— 和溶解同一条缓动，读起来是
+            「空间在变化」，不是「界面跳了一下」。
+
+            ⚠️ 间距原本是父级的 `gap-7`，靠 `gap` 收不掉（收完还剩 28px
+            空白），所以挪到这里当 `marginLeft`。
+
+            ⚠️ 两段都要 `aria-hidden` 且**条件相反**（见上面那个 span 的说明）；
+            这里的 `inert` 一并把里面的链接移出 Tab 顺序 —— 一个看不见的链接
+            不该还能被键盘选中。
           */}
-          <Link
-            href={backHref}
-            className="text-meta text-text-primary/30 underline-offset-4 hover:text-text-primary/70 hover:underline"
+          <span
+            aria-hidden={inParticle}
+            inert={inParticle}
+            /*
+             * ⚠️ **`text-meta` 必须挂在这一层，不能只挂在里面的 `<a>` 上。**
+             *
+             * 这一层是收放动画的载体，所以它在父级 flex 里是一个 flex item
+             * （`inline-block` 会被 blockify 成 `block`，写不写都一样）。
+             * 不继承字号的话它按**默认的 16px / 24px** 撑行盒，而按钮那边是
+             * 13px / 18.2px —— 两者 `items-center` 一居中，里面的字反而错开了
+             * 1px 多（用户 2026-10-10 报的「into 和 back 水平错位了」）。
+             *
+             * 挂上 `text-meta` 之后两边行盒都是 18.2px，居中即对齐。
+             */
+            className="text-meta overflow-hidden"
+            style={{
+              marginLeft: inParticle ? 0 : "1.75rem", // = gap-7
+              // 比 `Back` 的实测宽度（31px）宽出一截，静止时永远不会被裁
+              maxWidth: inParticle ? 0 : "4rem",
+              opacity: inParticle ? 0 : 1,
+              transition: BACK_HIDE,
+            }}
           >
-            Back
-          </Link>
+            <Link
+              href={backHref}
+              /*
+               * ⚠️ **与「Into this moment」完全同一套文字样式**（用户
+               * 2026-10-10：「原图页的那个 Back 样式改成和 into 一样」）。
+               *
+               * 这一行里现在有三个动作：`Into this moment` / `返回` / `Back`
+               * —— 它们**都不是控件**，是同一处出现的三行字。所以
+               * `16 §8.6` 那条纪律（复用 Into 的文字样式而不是控件的样式）
+               * 在这里是对**三处**一起成立的：同样的字号字距、同样 0.45 的
+               * 底色亮度、同样是 hover 提亮而不是下划线。
+               *
+               * 下划线是这里最容易滑回去的一处：它把「一句话」读成「一个链接」，
+               * 而这一整行的用意恰恰是「出口是一段文字，不是一个控件」。
+               *
+               * `whitespace-nowrap` 是为了上面那个收放：盒子变窄时不许折行。
+               */
+              className="whitespace-nowrap text-text-primary/45 hover:opacity-90 focus-visible:opacity-90"
+            >
+              Back
+            </Link>
+          </span>
         </div>
       </div>
 
@@ -629,11 +718,14 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
           `pointer-events-auto` 是给 `main` 的 `pointer-events-none` 补的：
           这几个按钮要能点，而它们所在的那一小块挡住画布无所谓。
 
-          `left-20` 而不是 `left-12`：最角上是设置那颗球（`SettingsPanel`），
-          球占 24–68px，这一组从 80px 起，各占各的。 */}
+          `left-32` 而不是 `left-12`：最角上是左下那颗胶囊（`BottomDock`）——
+          照片空间里它是两格（参数 | 设置）约 89px 宽，加上 `left-6` 的 24px
+          到 113px 为止。这一组从 128px 起，各占各的。
+          （胶囊只有一格时它 44px 宽，这一组会显得空一截 —— 可接受：
+          位置换来换去更糟。） */}
       <div
         inert={conversationOpen}
-        className="pointer-events-auto text-micro absolute bottom-8 left-20 z-10 flex items-center gap-5"
+        className="pointer-events-auto text-micro absolute bottom-8 left-32 z-10 flex items-center gap-5"
       >
         {busy && (
           <span className="pointer-events-none text-text-primary/40">
@@ -692,7 +784,12 @@ export function MemorySpace({ photo, autoAnalyze }: MemorySpaceProps) {
         <div className="pointer-events-none fixed inset-0 z-20 border border-border-subtle" />
       )}
 
-      <ParticleControls />
+      {/*
+        粒子参数不在这里。2026-10-10 起它归左下角那颗胶囊
+        （`BottomDock`），卡片挂根布局 —— 它是一张全局浮层，不属于
+        任何一条路由，也就不该长在照片页的 `<main>` 里
+        （那层是 `pointer-events: none`，浮层进来要自己开回来）。
+      */}
 
       {/*
         对话浮层。全屏遮罩 + 实时模糊（底下就是还在跑的画布），

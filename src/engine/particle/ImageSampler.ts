@@ -25,13 +25,33 @@ const GAMMA = 1.2;
 const Z_LAYER = 0.02;
 
 /**
- * 粒子层的厚度（±）。
+ * 粒子层的基础厚度（±），转起来时的体积感。
  *
  * 画布支持像建模软件一样 3D 旋转，而零厚度的平面转侧就会变成一条线。
- * 给每个粒子一个随机 z 偏移，转起来才有体积，像一块沙做的浮雕。
- * 厚度只影响侧视，正视时 z 不参与投影，所以不会影响照片的可识别度。
+ * 厚度只影响侧视，正视时 z 不参与投影，所以**不影响照片的可识别度**
+ * （06 §4）—— 也就是说这一组参数可以放得比较开，不必像密度那样保守。
+ *
+ * ⚠️ 2026-10-10 起它只是一个**基数**，实际厚度还会被下面三件事调制，
+ * 见 `particleZ`。用户那天要的是「厚度加一点随机、主体部分厚一点」。
  */
-const Z_THICKNESS = 0.07;
+const Z_THICKNESS = 0.085;
+
+/**
+ * 最薄的地方也保留这么多基础厚度。
+ *
+ * 不设成 0 是有意的：调制的三项（亮度、起伏、贴边）叠加起来如果没有下限，
+ * 画面某个角落会整块塌成零厚度的纸片，转过去就是一个洞。
+ */
+const Z_BULK_MIN = 0.45;
+
+/** 低频起伏的空间频率（按归一化坐标，长边 -1..1，所以约 9 个格子） */
+const Z_RELIEF_FREQ = 4.5;
+
+/** 贴边收薄：边界处厚度收到基础值的这个比例 */
+const Z_EDGE_FLOOR = 0.28;
+
+/** 从边界往内多宽的范围内完成收薄（占半宽的比例） */
+const Z_EDGE_BAND = 0.3;
 
 /**
  * sRGB → 线性。
@@ -174,9 +194,7 @@ export function sampleImage(
 
     positions[i * 3] = x;
     positions[i * 3 + 1] = y;
-    // 亮度决定在层内的前后，随机分量提供旋转时的体积感
-    positions[i * 3 + 2] =
-      (Math.random() * 2 - 1) * Z_THICKNESS + (l - 0.5) * Z_LAYER;
+    positions[i * 3 + 2] = particleZ(x, y, l, halfW, halfH);
 
     colors[i * 3] = r;
     colors[i * 3 + 1] = g;
@@ -185,6 +203,96 @@ export function sampleImage(
   }
 
   return { positions, colors, luma, count, aspect };
+}
+
+/**
+ * 单个粒子的 z。
+ *
+ * 规格：`06-PARTICLE_ENGINE.md` §4 的 z 一段（2026-10-10 重写）。
+ *
+ * 用户那天的原话是「厚度也可以加一点点随机或者主体部分厚」——
+ * 原先的 `random(±1) * Z_THICKNESS + luma * Z_LAYER` 意味着：
+ *
+ *   · 整块是**均匀厚度**的一条板，转起来像一块切好的豆腐
+ *   · 亮的暗的只差 0.02 的前后，主体根本立不出来
+ *   · 画面四边是刀切的一样齐
+ *
+ * 现在厚度是**三个因子的乘积**：
+ *
+ * ```text
+ * spread = 基础厚度 × 体量 × 贴边收薄
+ *           体量   = Z_BULK_MIN + (1-Z_BULK_MIN) × (0.65×亮度 + 0.35×起伏)
+ *             ├─ 亮度：主体（亮的、有细节的地方）厚，暗部压薄 ← 「主体部分厚」
+ *             └─ 起伏：低频值噪声，让整块面有厚有薄、看不出规律 ← 「加一点随机」
+ *           贴边收薄：越靠近画面边缘越薄                ← 「边缘别这么规则」
+ * ```
+ *
+ * z 仍然对每个粒子再加一个**随机的正负偏移**（下面那个 `Math.random()`），
+ * 否则同一处的粒子会全部躺在同一个平面上，那还是板。
+ *
+ * 放大 z 是**安全**的：`06 §4` 已论证厚度只影响侧视，正视角下 z 不参与
+ * 投影 —— 所以这一组参数怎么调都不会伤到「照片可识别」这条底线。
+ */
+function particleZ(
+  x: number,
+  y: number,
+  l: number,
+  halfW: number,
+  halfH: number,
+): number {
+  // 低频起伏：0..1，空间上连续
+  const relief = reliefNoise(x, y, Z_RELIEF_FREQ);
+
+  // 体量：主体厚、暗部薄，再叠一点无规律的厚薄
+  const bulk = Z_BULK_MIN + (1 - Z_BULK_MIN) * (0.65 * l + 0.35 * relief);
+
+  // 贴边收薄。用「到最近的边」的归一化距离：0 = 贴着边框，1 = 正中
+  const edge = Math.min(1 - Math.abs(x) / halfW, 1 - Math.abs(y) / halfH);
+  const edgeFade =
+    Z_EDGE_FLOOR +
+    (1 - Z_EDGE_FLOOR) * smooth01(Math.max(0, edge) / Z_EDGE_BAND);
+
+  const spread = Z_THICKNESS * bulk * edgeFade;
+
+  return (Math.random() * 2 - 1) * spread + (l - 0.5) * Z_LAYER;
+}
+
+/** 0..1 的 smoothstep，两端导数为 0（06 §10 要的就是这种「柔和落定」） */
+function smooth01(t: number): number {
+  const c = t < 0 ? 0 : t > 1 ? 1 : t;
+  return c * c * (3 - 2 * c);
+}
+
+/** 整数坐标 → 0..1 的稳定哈希（值噪声的角点） */
+function hash2(ix: number, iy: number): number {
+  let h = Math.imul(ix, 374761393) ^ Math.imul(iy, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+/**
+ * 低频值噪声。空间上平滑，所以读起来是「整块面有厚薄」而不是「粒子乱跳」。
+ *
+ * ⚠️ **刻意不用「把整张图模糊一遍」**：那要多 O(像素) 一趟，而这个在
+ * 归一化坐标上做的值噪声每个粒子只查四次哈希。而且模糊出来的是**照片的**
+ * 大块面，会和亮度那一项重复 —— 这里要的是照片**没有**的那层起伏。
+ */
+function reliefNoise(x: number, y: number, freq: number): number {
+  const fx = x * freq;
+  const fy = y * freq;
+  const ix = Math.floor(fx);
+  const iy = Math.floor(fy);
+  const tx = smooth01(fx - ix);
+  const ty = smooth01(fy - iy);
+
+  const n00 = hash2(ix, iy);
+  const n10 = hash2(ix + 1, iy);
+  const n01 = hash2(ix, iy + 1);
+  const n11 = hash2(ix + 1, iy + 1);
+
+  const top = n00 + (n10 - n00) * tx;
+  const bottom = n01 + (n11 - n01) * tx;
+  return top + (bottom - top) * ty;
 }
 
 /** 二分查找第一个 >= target 的 cdf 下标 */

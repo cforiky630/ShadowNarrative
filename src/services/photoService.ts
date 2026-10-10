@@ -2,7 +2,11 @@ import type { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
 import type { AiState, Photo, PhotoDetail, SourceRef } from "@/types";
-import { removeStoredFiles, savePhotoFile } from "./mediaService";
+import {
+  removeStoredFiles,
+  savePhotoFile,
+  saveThumbnailFile,
+} from "./mediaService";
 
 /**
  * 照片领域服务 —— 主实体（08 §3）。
@@ -66,6 +70,11 @@ export interface PhotoListPage {
 export interface CreatePhotoInput {
   userId: string;
   file: File;
+  /**
+   * 客户端生成的缩略图（`08 §6`）。**可选** —— 非浏览器上传没有它，
+   * 或者它不合格时，`thumbnailKey` 落成 null，界面回落原图。
+   */
+  thumbnail?: File | null;
   takenAt?: Date | null;
   caption?: string | null;
 }
@@ -76,8 +85,12 @@ export interface CreatePhotoInput {
  * 顺序按 08 §6，**不可交换**：校验 → 真实格式 → dimensions → contentHash →
  * 落盘 → 建记录。前四步与落盘在 `savePhotoFile` 里。
  *
- * 这里补的是第 8 步前的收尾：记录建失败时把已落盘的文件删掉 ——
- * 否则留下一个谁也查不到的孤儿文件（08 §1 硬约束 #2）。
+ * 缩略图紧跟在原图之后落盘、在建记录之前 —— 记录里要带 `thumbnailKey`。
+ * 它是**派生资源**：校验不过或落盘失败都只当作「这张没有缩略图」，
+ * 绝不影响上传（`05 §7` 的降级姿态）。
+ *
+ * 这里补的是第 8 步前的收尾：记录建失败时把已落盘的**两个**文件都删掉 ——
+ * 否则留下谁也查不到的孤儿文件（08 §1 硬约束 #2）。
  *
  * ⚠️ **不在这里触发 AI**（第 8 步）。AI 的触发写在路由层，因为那需要
  * `after()` —— 框架 API 不得进入 service（见计划的「可抽取约束」）。
@@ -86,11 +99,16 @@ export interface CreatePhotoInput {
 export async function createPhoto(input: CreatePhotoInput): Promise<Photo> {
   const stored = await savePhotoFile(input.file);
 
+  const thumbnail = input.thumbnail
+    ? await saveThumbnailFile(input.thumbnail, stored.storageKey)
+    : null;
+
   try {
     const row = await prisma.photo.create({
       data: {
         userId: input.userId,
         storageKey: stored.storageKey,
+        thumbnailKey: thumbnail?.storageKey ?? null,
         contentHash: stored.contentHash,
         mimeType: stored.mimeType,
         width: stored.width,
@@ -114,8 +132,12 @@ export async function createPhoto(input: CreatePhotoInput): Promise<Photo> {
 
     return toPhoto(row);
   } catch (error) {
-    // 记录没建成，文件不能留 —— 两阶段删除的同一条道理（08 §16）
-    await removeStoredFiles([stored.storageKey]);
+    // 记录没建成，落盘的东西不能留 —— 两阶段删除的同一条道理（08 §16）。
+    // 缩略图也要删：它不会进备份（18 §2），没人知道该删它
+    await removeStoredFiles([
+      stored.storageKey,
+      ...(thumbnail ? [thumbnail.storageKey] : []),
+    ]);
     throw error;
   }
 }

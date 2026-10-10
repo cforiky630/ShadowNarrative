@@ -863,7 +863,17 @@ export class ParticleSystem {
     this.controlsTargetPrev.copy(newTarget);
 
     if (this.controls) {
-      this.controls.minDistance = nextFit * 0.30;
+      /*
+       * 能推到多近 / 拉多远，都以 fitDistance（装下整朵云的距离）为基准。
+       *
+       * ⚠️ minDistance 2026-10-10 由 0.30 收到 0.20 —— 用户要「滚轮放大的
+       * 极限再大一点，但不要太夸张」。0.20 相当于把画面放大到 5 倍，
+       * 推到最近时看的是云的一小块，而不至于一头扎进粒子之间。
+       *
+       * ⚠️ 它和 FOCUS_ZOOM (0.88) 是两回事：那个是「Into this moment」
+       * 那一下的自动推近，这里是人手滚轮能到多远。别把两者合并。
+       */
+      this.controls.minDistance = nextFit * 0.20;
       this.controls.maxDistance = nextFit * 2.60;
       this.controls.update();
     }
@@ -1325,7 +1335,7 @@ function buildMaterial(): ShaderMaterial {
       uPointer: { value: new Vector2(999, 999) },
       uMouseRadius: { value: 0.22 },
       uMouseForce: { value: 0.35 },
-      uSize: { value: 1.6 },
+      uSize: { value: 1.8 },
       uMotion: { value: 0.35 },
       uTurbulence: { value: 0.12 },
       uNoiseSpeed: { value: 1.0 },

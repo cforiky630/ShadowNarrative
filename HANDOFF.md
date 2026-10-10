@@ -2,7 +2,8 @@
 
 > 写于 2026-10-09。**2026-10-10 大幅更新**：时间线、体验外壳（画布不随路由卸载）、
 > 第一屏改成相册（React Bits 手风琴）、设置改成悬浮球、收藏入口、EXIF 拍摄时间、
-> 对话（Round 8 前半）。
+> 对话（Round 8 前半）、缩略图、粒子手感（数量 / 尺寸 / 厚度 / 贴边 / 放大极限）、
+> 左下角那颗胶囊（参数 | 设置）。
 > 面向**新开窗口的 Claude**，目标是让新会话不必重新发现任何东西。
 >
 > 先读这份，再读 `shadow-narrative-docs/`。
@@ -155,6 +156,7 @@ migrate 写进一个库、应用读另一个库，而且不会报错。
 | **体验外壳** | `components/ExperienceShell.tsx`、`app/(experience)/` | 画布的唯一所有者，路由切换时不卸载（`05 §6.1`） |
 | **收藏** | `MemorySpace` 日期那一行的星 | lucide 的 `Star`，填充表示已收藏（`16 §7.1`） |
 | **对话** | `components/ConversationPanel.tsx`、`api/photos/[id]/conversation/**` | Round 8 **前半**。入口只在粒子界面；全屏遮罩 + 实时模糊 |
+| **缩略图** | `lib/makeThumbnail.ts`、`services/mediaService.ts`、`api/photos/[id]/thumbnail` | 2026-10-10。**浏览器生成、服务端校验落盘**（`08 §6`）。相册 / 时间线 / 飞行图走它；**画布与 AI 仍用原图** |
 
 实测：150k 粒子 / fps 240 / frame 4.2ms / draw calls 1–2（RTX 3060）。
 AI 单次调用实测 330–600ms（`effort: low`）。
@@ -164,7 +166,6 @@ AI 单次调用实测 330–600ms（`effort: low`）。
 - **随笔小记**（Round 8 **后半**；`16 §10` 还叫它「日志」，名字要改）
 - **分组**（Round 9）
 - 备份客户端与端到端加密（Round 11；`18` 只有协议）
-- 缩略图（`08 §6`）—— 首屏与时间线加载的都是原图。照片库变大前必须补
 - Memory Theater、移动端、`SN_HOST` 的局域网形态
 
 ---
@@ -208,10 +209,11 @@ Round 5（第一屏）、7、10 都完成了，时间线也落地了。剩下的
 
 1. **「看全部」暂时指向 `/timeline`** —— 等用户说的「memorys 板块
    （全部照片库）」做出来，这里改指它
-2. **缩略图**：`thumbnailKey` 至今没生成过（`08 §6`），首屏与时间线加载的都是原图。
-   ⚠️ `08 §6` 说它依赖「未建的 Python 图像服务」—— **那个理由要重新审**：
-   现在只接受 jpeg/png/webp/gif 四种（`mediaService` 的 `ALLOWED`），
-   这四种 Node 都解得了。Python 服务的理由是 HEIC/RAW 的解码，与缩略图无关
+2. ~~**缩略图**~~ —— **2026-10-10 已补**（见 §3）。做法是
+   **客户端生成、服务端校验落盘**，没有引 `sharp`（`10` Round 13 的
+   封装友好约束里点名禁的就是这种原生模块），也没等 Python 图像服务
+   —— 那个服务的真正理由是 HEIC/RAW 解码，与缩略图无关。
+   ⚠️ **已有照片不回填**，`thumbnailKey` 为 null 时 `/thumbnail` 回落原图
 3. `albumService` 的 `SCAN_LIMIT = 400`，照片库变大前要改成游标分页
 4. **对话的形态要补进 `16 §9`**：那里只说「展开后出现在照片下方，不跳转」，
    而实现是**全屏遮罩 + 实时模糊**、**入口只在粒子界面**
@@ -366,6 +368,11 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
 | 手风琴只有 2 张照片时「展开」的那张反而更窄 | `expandRatio` 是「展开那张占整行的比例」，公式 `grow = r(n-1)/(1-r)`。`r < 0.5` 且 `n = 2` 时会反（展开的占 42%、收起的占 58%）。**用上游默认的 0.52，别调低** |
 | `exifr` 不 pick 字段就会把 **GPS** 一起解出来 | 解析器默认解整块 EXIF。`12 §3`/`08 §13` 要求 GPS 默认不落库 —— 必须 `pick: ["DateTimeOriginal", "CreateDate", "ModifyDate"]`，只 pick 日期则 GPS 连解析都不会发生（顺带也快得多） |
 | **EXIF 的时间没有时区** | `DateTimeOriginal` 就是一串「相机本地时间」。`exifr` 按运行机器的本地时区解释 —— 与 `timelineService.toDayKey` 的「服务器本地时区」是同一套约定，两者不打架。**将来要支持多时区，这两处必须一起改** |
+| `convertToBlob` 要不到格式会**静默给 png** | 请求 `image/webp` 而浏览器不支持编码它时，规范要求回落到 `image/png`，**不抛错**。而 png 有可能比原图还大。必须比对返回的 `blob.type` 是不是你要的那个 |
+| **拿 dev 模式的首个请求当性能读数** | Turbopack 按需编译路由：同一个 `/file` 请求，**冷态 741ms、热态 30ms**。缩略图那一轮我差点据此判定「原图没进缓存导致镜头空档」。**量之前先跑一遍热态**，或者看请求日志里 `next.js / application-code` 的拆分 |
+| **粒子数是绝对值，不随视口变** | 220k 在 1400px 宽的窗口里是一层疏朗的沙，在 Claude 那种 532px 宽的面板里是 2 个粒子/px、几乎糊成一张照片。**在预览面板里调粒子参数会调过头** —— 那个面板比真实窗口窄得多。判据是「粒子数 ÷ 照片在屏幕上的像素数」，不是「看起来够不够密」 |
+| **包一层的 `span` 会丢掉字号** | 给 `Back` 套了个收放用的 `span`（要动画 `max-width`），忘了把 `text-meta` 也挂上去 —— 它按默认的 16px / 24px 撑行盒，而按钮那边是 13px / 18.2px，`items-center` 一居中，里面的字反而**错开 1px 多**（用户报的「into 和 back 水平错位了」）。判据不是「看着差不多」，是**两边的行盒高度必须相等** |
+| **flex 子项写 `inline-block` 没用** | 上面那个 `span` 写了 `inline-block`，`getComputedStyle` 回来的是 `block` —— flex 容器会把子项 blockify。不影响功能，但排查时容易看懵 |
 
 ---
 
@@ -396,10 +403,27 @@ N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
     原图态不出现 —— 等于「先把这一天翻开，才谈得上跟它说话」
 11. **`Back` 不按去向改名**（用户：「不区分显示的名字都用 Back」）。
     去哪由 `stage.entryFrom` 决定，但**文案恒为 `Back`** ——
-    写「回相册 / 回时间线」是在替用户记路线
-12. **画布那一层、以及任何在 `main` 的 `pointer-events: none` 子树里的浮层，
+    写「回相册 / 回时间线」是在替用户记路线。
+    ⚠️ **粒子态下它整个收起来**（用户 2026-10-10：「粒子页有两个返回，只留一个，
+    粒子页的返回是回到原图页」）—— 那一格已经是「返回」了。
+    ⚠️ 收的时候**宽度和左边那段间距要一起收**，否则这一行还是原来那么宽，
+    居中的结果是「返回」偏左 —— 用户当天紧跟着报的「现在按钮不居中了」
+    就是这个。间距原本挂在父级的 `gap-7` 上，靠 `gap` 收不掉。见 `16 §7.2`
+12. **照片页那一行是「三行字」，不是三个控件**（用户 2026-10-10）。
+    `Into this moment` / `返回` / `Back` **共用完全同一套文字样式** ——
+    同字号、同字距、同 0.45 底色亮度、hover 提亮。
+    ⚠️ `Back` 上**不要加下划线**：它把「一句话」读成「一个链接」，
+    而这一整行的用意就是「出口是一段文字，不是一个控件」（`16 §7.2`、§8.6）
+13. **画布那一层、以及任何在 `main` 的 `pointer-events: none` 子树里的浮层，
     都要自己开回 `pointer-events`**（见 §6 的两行）。判据是「它在不在那个
     子树里」，不是「谁看着像要能点」
+14. **参数与设置是工具，不是空间**（用户 2026-10-10）。它们只有一处入口 ——
+    左下角那颗胶囊（`BottomDock`），两格各开各的卡。
+    **只共外壳（`DockCard`），不共内容** —— 用户明确说组合的是
+    「按钮，不是卡片、内容、功能组合」。
+    ⚠️ 收起的那一格要 `inert`，不只是宽度 0（否则键盘仍 Tab 得到它）；
+    ⚠️ 离开有粒子的空间时参数卡要自动收起（写在 `setStage` 里，不在 effect 里）
+    —— 否则留下一张没有入口、也关不掉的浮卡
 
 ### 关于「要不要拆独立后端服务」
 
@@ -416,17 +440,60 @@ Prisma / DeepSeek / Python」，Route Handlers 就是后端；`18 §1` 还明确
 ## 8. 当前仓库状态
 
 ```
-src/                     57 个源文件（ts/tsx/css）
+src/                     61 个源文件（ts/tsx/css）
 shadow-narrative-docs/   19 份规格 + recon/
 prisma/                  schema + 两份迁移（init、day_theme）
 scripts/                 setup.mjs + 环境脚本 + Hilbert 自检 + try-subtitles.mjs
 .data/                   shadow-narrative.db + photos/（已 gitignore）
 ```
 
-**HEAD**：`a481ba0`（对话 + 从哪来回哪去）。工作区干净，`main` 与 `origin/main` 齐平。
+**上一个提交**：`7fbd415`（交接文档）。**缩略图那一轮还没提交** —— 改动在工作区里，
+见下面的清单。
 
-⚠️ **推送**：这个 session 里 `git push` **被权限规则挡了三次**，每次都是用户自己推的。
-想让我以后能推，需要在设置里给 Bash 加一条允许 `git push` 的规则。
+**工作区里有两轮改动还没提交**：
+
+```text
+── 一、缩略图 ──────────────────────────────────────────────
+新增  src/lib/makeThumbnail.ts
+新增  src/app/api/photos/[id]/thumbnail/route.ts
+改    src/services/mediaService.ts        saveThumbnailFile
+改    src/services/photoService.ts        createPhoto 接缩略图、回滚连它一起删
+改    src/app/api/photos/route.ts         POST 读 thumbnail 字段
+改    src/lib/photoUpload.ts              uploadPhoto(file, thumbnail?)
+改    src/components/AlbumSpace.tsx       图换 /thumbnail、上传时生成
+改    src/components/MemorySpace.tsx      复用已解码的 bitmap 生成
+改    src/components/TimelineSpace.tsx    叠放与网格两处 <img>
+改    src/components/ExperienceShell.tsx  飞行图换 /thumbnail
+改    08 / 10 / 16 / 17 / 18 五份规格
+
+── 二、粒子手感（用户当天提的五条）─────────────────────────
+改    src/types/index.ts                  档位数 150k→220k 等、size 1.6→1.8
+改    src/engine/particle/ImageSampler.ts  z 改成「主体厚 + 低频起伏 + 贴边收薄」
+改    src/engine/particle/ParticleSystem.ts  minDistance 0.30→0.20
+改    06 / 15 两份规格
+
+── 三、照片页那一行三个动作 ───────────────────────────────
+改    src/components/MemorySpace.tsx
+        · 粒子态下 Back 收起（宽度 + 间距一起收，整行平滑重新居中）
+        · Back 的样式改成与 Into this moment 完全一致（去掉下划线、0.45 亮度）
+        · 包了一层的 span 要挂 text-meta，否则行盒不等、字会错开
+        · 参数面板的挂载点搬走、左下角那组文字挪到 left-32
+改    16 两份小节（§7.2 新增一节、§8.6 补一段）
+
+── 四、左下角那颗胶囊 ─────────────────────────────────
+新增  src/components/BottomDock.tsx       一颗胶囊两格（参数 | 设置）
+新增  src/components/DockCard.tsx         两张卡共用的外壳
+改    src/components/SettingsPanel.tsx    只剩浮卡，球交出去了
+改    src/components/ParticleControls.tsx 右侧抽屉 → 左下浮卡
+改    src/components/TopNavigation.tsx    删「参数」、「时间线」→「Timeline」
+改    src/app/layout.tsx                  挂 BottomDock + 两张卡
+改    src/store/experience.ts             ui.settingsOpen、两卡互斥、切空间自动收
+改    02 / 05 / 07 三份规格
+```
+
+⚠️ **推送**：2026-10-10 那个 session 里 `git push` **被权限规则挡了三次**，
+每次都是用户自己推的。想让我以后能推，需要在设置里给 Bash 加一条允许
+`git push` 的规则。
 
 **自检脚本**：
 

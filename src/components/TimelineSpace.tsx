@@ -518,11 +518,12 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
               更远的连 DOM 都不进 —— 这是真正的懒加载。
             */}
             {Math.abs(fraction) <= SHOW_COUNT && (
-              // 缩略图服务未建（08 §6），这里取的是原图；换 next/image
-              // 等于引入一条还没决定要走的像素管线（05 §7）
+              // 缩略图（08 §6）。卡片宽 160 CSS px，原图在这里是几十倍的浪费。
+              // 不走 next/image：那要 sharp，等于把刚避开的原生模块换个地方
+              // 引进来（05 §7、10 的 Round 13）
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={`/api/photos/${photo.id}/file`}
+                src={`/api/photos/${photo.id}/thumbnail`}
                 alt=""
                 loading="lazy"
                 decoding="async"
@@ -612,9 +613,11 @@ function PhotoGrid({ photos, onClose }: { photos: Photo[]; onClose: () => void }
             }}
             className="block overflow-hidden rounded-sm transition-opacity hover:opacity-80"
           >
+            {/* 缩略图（08 §6）。网格里一张约 285 CSS px 宽 —— 原图在这个
+                尺寸下同样只是浪费内存 */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={`/api/photos/${photo.id}/file`}
+              src={`/api/photos/${photo.id}/thumbnail`}
               alt=""
               loading="lazy"
               decoding="async"

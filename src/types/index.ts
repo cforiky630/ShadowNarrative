@@ -63,37 +63,47 @@ export interface TierSpec {
   readonly frameBudgetMs: number;
 }
 
+/*
+ * ⚠️ 粒子数 2026-10-10 整体上调（Ultra 150k → 220k）。
+ *
+ * 依据是实测的余量，不是估计：150k 在 RTX 3060 上是 **4.2ms / 240fps**，
+ * 而 Ultra 的预算是 16.7ms —— 有四倍空间躺在那里没用上。
+ * 上调后 220k 约 6.7ms，仍在预算内，而画面细密得多。
+ *
+ * ⚠️ 粒子数是**绝对值**，不随视口大小变。所以窄窗口下同样多的粒子会显得
+ * 更密。要按屏幕密度调，那是另一件事（`15 §4` 的档位是设备能力，不是视口）。
+ */
 export const TIER_SPECS: Readonly<Record<PerformanceTier, TierSpec>> = {
   ultra: {
-    particleCount: 150_000,
+    particleCount: 220_000,
     maxDpr: 2.0,
     postProcessing: true,
     sampleLongEdge: 2048,
     frameBudgetMs: 16.7,
   },
   high: {
-    particleCount: 100_000,
+    particleCount: 150_000,
     maxDpr: 2.0,
     postProcessing: true,
     sampleLongEdge: 1600,
     frameBudgetMs: 16.7,
   },
   medium: {
-    particleCount: 50_000,
+    particleCount: 75_000,
     maxDpr: 1.5,
     postProcessing: false,
     sampleLongEdge: 1024,
     frameBudgetMs: 22,
   },
   low: {
-    particleCount: 20_000,
+    particleCount: 30_000,
     maxDpr: 1.0,
     postProcessing: false,
     sampleLongEdge: 768,
     frameBudgetMs: 33,
   },
   minimal: {
-    particleCount: 8_000,
+    particleCount: 12_000,
     maxDpr: 1.0,
     postProcessing: false,
     sampleLongEdge: 512,
@@ -133,10 +143,22 @@ export interface ParticleParams {
   colorVariation: number;
 }
 
-/** 默认值同时定义在 04-UX_INTERACTION_SPEC.md §5 与 06-PARTICLE_ENGINE.md §8 */
+/**
+ * 默认值同时定义在 04-UX_INTERACTION_SPEC.md §5 与 06-PARTICLE_ENGINE.md §8。
+ *
+ * ⚠️ `size` 2026-10-10 由 1.6 提到 **1.8** —— 与粒子数一起调的，但幅度
+ * **故意比数量小**。两者在画面上的作用相反：
+ *
+ *   · 数量上去 → 细节被解出来更多，照片读得更清，**颗粒感还在**
+ *   · 尺寸上去 → 把空隙填掉，画面变滑 —— 到某个点沙粒就没了
+ *
+ * 实测：220k @ 1.95 已经读成「一张略软的照片」而不是「沙做的照片」；
+ * 1.8 保住了颗粒。所以数量是主杠杆，尺寸只是跟着挪一点（用户的原话
+ * 也是「大小**稍微**也大一些」）。
+ */
 export const DEFAULT_PARTICLE_PARAMS: ParticleParams = {
   density: 1.0,
-  size: 1.6,
+  size: 1.8,
   motion: 0.35,
   turbulence: 0.12,
   mouseRadius: 0.22,
@@ -169,7 +191,7 @@ export const PARTICLE_PRESETS: Readonly<
 > = {
   calm: {
     density: 1.0,
-    size: 1.6,
+    size: 1.8,
     motion: 0.35,
     turbulence: 0.12,
     mouseRadius: 0.22,
@@ -178,7 +200,7 @@ export const PARTICLE_PRESETS: Readonly<
   },
   breeze: {
     density: 1.0,
-    size: 1.6,
+    size: 1.8,
     motion: 0.6,
     turbulence: 0.2,
     mouseRadius: 0.28,
@@ -187,7 +209,7 @@ export const PARTICLE_PRESETS: Readonly<
   },
   focus: {
     density: 1.0,
-    size: 1.5,
+    size: 1.8,
     motion: 0.18,
     turbulence: 0.06,
     mouseRadius: 0.16,
@@ -196,7 +218,7 @@ export const PARTICLE_PRESETS: Readonly<
   },
   drift: {
     density: 0.85,
-    size: 1.8,
+    size: 2.0,
     motion: 0.75,
     turbulence: 0.3,
     mouseRadius: 0.32,

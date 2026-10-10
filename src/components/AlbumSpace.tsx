@@ -14,6 +14,7 @@ import AccordionGallery, {
   type AccordionGalleryItem,
 } from "@/components/AccordionGallery";
 import { useStage } from "@/components/ExperienceShell";
+import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
 import { usePhotoDrop } from "@/lib/usePhotoDrop";
 import { revealStyle, useReveal } from "@/lib/useReveal";
@@ -130,13 +131,17 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
   /**
    * 每一格的图与标题。
    *
+   * 图走**缩略图**（`08 §6`）：一列并排摆着 8 张，原图在这个尺寸下
+   * 每一个像素的细节都用不上，却要付十几倍的解码内存 ——
+   * 那正是 `16 §2.4` 说的「几十张就是几百 MB」。
+   *
    * 标题用**日期**：一天里可能有好几张，日期会重复，但它是我们手上
    * 唯一确定的事实（时间轴的主题名是按天存的，挪到单张上没有依据）。
    */
   const items: AccordionGalleryItem[] = useMemo(
     () =>
       all.map((photo) => ({
-        image: `/api/photos/${photo.id}/file`,
+        image: `/api/photos/${photo.id}/thumbnail`,
         label: formatDate(photo.takenAt ?? photo.createdAt),
       })),
     [all],
@@ -167,7 +172,11 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
       setBusy(true);
       setNotice(null);
       try {
-        const photo = await uploadPhoto(file);
+        // 缩略图在这里现生成（`08 §6`）。相册这一条**没有**可以复用的
+        // 解码结果 —— 它显示照片靠的是 `<img>`，不是 createImageBitmap。
+        // 失败返回 null，上传照旧（服务端会回落成原图直出）
+        const thumbnail = await makeThumbnail(file);
+        const photo = await uploadPhoto(file, thumbnail);
         setExtra((prev) => [...prev, photo]);
         router.refresh();
       } catch (err) {

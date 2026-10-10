@@ -10,8 +10,8 @@ import { readImageInfo, type ImageInfo } from "@/lib/imageDimensions";
  * 媒体存储：文件读写与校验。
  *
  * 职责边界（05 §7）：**不处理像素**，只做「字节进、字节出」。
- * 缩略图 / HEIC / RAW 属于 Python 图像服务（尚未建），所以 08 §6 里的
- * `thumbnailKey` 目前一律为 null，由浏览器缩放原图顶上。
+ * 缩略图由**浏览器**生成（`08 §6`），这里只负责校验它、落盘、以及后来读回来。
+ * HEIC / RAW 的解码仍然归 Python 图像服务（尚未建）—— 那才是它存在的理由。
  *
  * 这个模块**不碰数据库** —— 建记录是 photoService 的事。分开是为了让
  * 08 §6 那八步顺序里「先落盘、后建记录」的回滚责任落在一处。
@@ -27,6 +27,38 @@ const ALLOWED: Record<string, { ext: string; format: ImageInfo["format"] }> = {
   "image/webp": { ext: "webp", format: "webp" },
   "image/gif": { ext: "gif", format: "gif" },
 };
+
+/**
+ * 缩略图允许的格式。**比原图少一个 gif** —— 我们只会生成静态的
+ * webp / jpeg，一张动图当缩略图没有意义（而且它不会比原图省内存）。
+ */
+const THUMBNAIL_ALLOWED: Record<
+  string,
+  { ext: string; format: ImageInfo["format"] }
+> = {
+  "image/webp": { ext: "webp", format: "webp" },
+  "image/jpeg": { ext: "jpg", format: "jpeg" },
+  "image/png": { ext: "png", format: "png" },
+};
+
+/**
+ * 缩略图的字节上限。长边 1024、质量 0.82 的 webp 通常不到 200KB，
+ * 2MB 是一个宽松的护栏 —— 它挡的是「客户端传了一张原图来冒充缩略图」。
+ */
+const THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 缩略图的长边上限。`makeThumbnail` 只产 1024，4096 同样是护栏：
+ * 一个人为构造的请求不该能把一张 8000px 的图塞进「缩略图」那个字段。
+ */
+const THUMBNAIL_MAX_EDGE = 4096;
+
+/** 短边下限，与原图那条一致（太小说明不是给人看的图）。 */
+const MIN_EDGE = 32;
+
+/** 缩略图文件名的中缀，见 `saveThumbnailFile`。 */
+const THUMBNAIL_INFIX = "thumb";
+
 
 export interface StoredPhotoFile {
   storageKey: string;
@@ -90,8 +122,8 @@ export async function savePhotoFile(file: File): Promise<StoredPhotoFile> {
   }
 
   // --- 3. 尺寸合理性 ---
-  if (info.width < 32 || info.height < 32) {
-    throw new ApiError("INVALID_INPUT", "图片太小，短边至少 32px");
+  if (info.width < MIN_EDGE || info.height < MIN_EDGE) {
+    throw new ApiError("INVALID_INPUT", `图片太小，短边至少 ${MIN_EDGE}px`);
   }
   if (info.width > 20000 || info.height > 20000) {
     throw new ApiError("INVALID_INPUT", "图片尺寸超出上限");
@@ -183,6 +215,86 @@ async function readExifTakenAt(bytes: Uint8Array): Promise<Date | null> {
   } catch {
     return null;
   }
+}
+
+/** 缩略图落盘的结果。 */
+export interface StoredThumbnailFile {
+  storageKey: string;
+}
+
+/**
+ * 校验并落盘客户端送上来的缩略图（`08 §6`）。
+ *
+ * ⚠️ **缩略图是本机生成的，但仍然一道校验都不能少。** 它走的是同一条
+ * 「不信客户端」的路子（`08 §12`、`12 §2`）—— 请求可以来自任何地方，
+ * 不是只有我们那个 `makeThumbnail`。挡的是「拿原图冒充缩略图」和
+ * 「塞一张 8000px 的图进来」这两类。
+ *
+ * **任何一项不过都返回 null，不抛错。** 缩略图是派生资源，缺了它
+ * 界面回落到原图（`/api/photos/:id/thumbnail` 的回落分支），
+ * 上传本身必须照旧成功 —— 这正是 `05 §7` 给 Python 服务定的姿态。
+ *
+ * 落盘位置与原图**同目录**，名字取原图的 stem 加 `.thumb.`：
+ * `ls` 时一眼看得出归属。这不是契约，只是可读性 ——
+ * `08 §16` 的删除本来就是按 key 逐个删的。
+ *
+ * 这里不建目录：能拿到 `originalStorageKey` 就说明原图刚写进去过，
+ * 目录一定在（`08 §6` 的顺序）。
+ */
+export async function saveThumbnailFile(
+  file: File,
+  originalStorageKey: string,
+): Promise<StoredThumbnailFile | null> {
+  const allowed = THUMBNAIL_ALLOWED[file.type];
+  if (!allowed) return skipThumbnail(`格式不在允许范围：${file.type || "未知"}`);
+  if (file.size <= 0) return skipThumbnail("文件为空");
+  if (file.size > THUMBNAIL_MAX_BYTES) {
+    return skipThumbnail(`超过 ${Math.round(THUMBNAIL_MAX_BYTES / 1024 / 1024)}MB`);
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  // 同原图：读文件头判断真实格式，不信浏览器给的 MIME（08 §12）
+  const info = readImageInfo(bytes);
+  if (!info) return skipThumbnail("内容不是可识别的图片");
+  if (info.format !== allowed.format) {
+    return skipThumbnail(`声明为 ${allowed.format} 但内容是 ${info.format}`);
+  }
+  if (Math.max(info.width, info.height) > THUMBNAIL_MAX_EDGE) {
+    return skipThumbnail("尺寸超出上限");
+  }
+  if (Math.min(info.width, info.height) < MIN_EDGE) {
+    return skipThumbnail(`短边小于 ${MIN_EDGE}px`);
+  }
+
+  const stem = path.parse(originalStorageKey).name;
+  const storageKey = `${stem}.${THUMBNAIL_INFIX}.${allowed.ext}`;
+  const dir = resolvePhotosDir();
+
+  try {
+    // turbopackIgnore：见 dataDir.ts 的同名说明 —— 数据目录在项目之外
+    await writeFile(path.join(/*turbopackIgnore: true*/ dir, storageKey), bytes);
+  } catch (error) {
+    // 落盘失败（磁盘满、权限）：同样只记原因码，不记内容（12 §10）
+    console.warn(
+      "[mediaService] 缩略图跳过：落盘失败",
+      (error as NodeJS.ErrnoException).code ?? "",
+    );
+    return null;
+  }
+
+  return { storageKey };
+}
+
+/**
+ * 缩略图不合格时的统一出口。
+ *
+ * 记的是**原因**，不是内容 —— `12 §10` 要求运行日志里不出现图片内容。
+ * 用 `warn` 而不是 `error`：这是预期内的降级，不是故障。
+ */
+function skipThumbnail(reason: string): null {
+  console.warn(`[mediaService] 缩略图跳过：${reason}`);
+  return null;
 }
 
 /** 把存储键解析为磁盘上的绝对路径。 */

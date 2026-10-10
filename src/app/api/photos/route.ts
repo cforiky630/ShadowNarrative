@@ -65,9 +65,17 @@ export async function POST(request: Request) {
       throw new ApiError("INVALID_INPUT", "缺少 file 字段");
     }
 
+    /*
+     * 缩略图由**客户端**生成（`08 §6`）。它是可选的：非浏览器上传没有它，
+     * 或者带了但不合格时，`createPhoto` 会把它落成 null，界面回落原图。
+     * 无论哪种，上传都必须成功 —— 派生资源不该拦住主流程。
+     */
+    const thumbnail = form.get("thumbnail");
+
     const photo = await createPhoto({
       userId,
       file,
+      thumbnail: thumbnail instanceof File ? thumbnail : null,
       takenAt: asOptionalDate(form.get("takenAt")),
       caption: asOptionalString(form.get("caption")),
     });

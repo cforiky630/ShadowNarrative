@@ -391,8 +391,23 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
       {/*
         飞行中的那张照片。
 
-        它和缩略图、和画布里的那张是**同一张图**（同一个 src，走 HTTP 缓存），
-        所以首尾两端都能和邻居对上，中间那段只是位置与大小在变。
+        ⚠️ **它取缩略图，不取原图**（`08 §6`）。这与 `16 §11.5` 原先写的
+        「飞行的那张图与画布里的那张是同一张」**不一样**，而那条纪律
+        在加了缩略图之后**无论怎么选都保不住** —— 画布必须用原图
+        （粒子要按像素采样，`16 §8.1` 要「清晰可辨认的原图」）。
+
+        所以只能选交接点落在哪，而两个选法差别很大：
+
+          · 用原图 → 点击那一瞬，网格里的缩略图要换成原图，**t=0 有一次
+            硬跳**；而且原图此刻还没下载过，得先下再解码，正好卡在镜头
+            开头 —— 那正是这个改动要消灭的东西
+          · 用缩略图 → t=0 与网格**同一个 src、同一份 HTTP 缓存**，
+            零延迟零跳变；清晰度的变化落在结尾那段本来就存在的交叉淡化上
+            （`HANDOFF_S`），而「模糊 → 清晰」正是这个产品一贯的语言
+            （见 `useReveal` 的说明）
+
+        选后者。顺带它也更便宜：飞行期间只需要一张 1024 的图。
+
         圆角在飞行中收掉 —— 缩略图有圆角，画布里的照片没有。
 
         `z-50` 压过一切，包括它出发的那块网格（`z-40`）和顶栏（`z-20`）。
@@ -419,7 +434,7 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/photos/${stage.photoId}/file`}
+            src={`/api/photos/${stage.photoId}/thumbnail`}
             alt=""
             draggable={false}
             className="h-full w-full object-cover"

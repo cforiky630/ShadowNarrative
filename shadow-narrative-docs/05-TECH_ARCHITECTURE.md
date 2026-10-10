@@ -113,7 +113,10 @@ engine/particle/
 components/
   ExperienceShell        ★ 画布的所有者，(experience) 路由组的 layout 挂它
   ParticleCanvas
-  ParticleControls
+  ParticleControls       粒子参数浮卡（左下，07 §3）
+  BottomDock             ★ 左下那颗胶囊：参数 | 设置 两格（07 §11.2）
+  DockCard               上面两张卡共用的外壳
+  SettingsPanel          设置浮卡（07 §11）
   TopNavigation
   MemorySpace            Photo View 的**文字层**，不含画布
   TimelineSpace          时间线（取代 Library 抽屉，16 §6）

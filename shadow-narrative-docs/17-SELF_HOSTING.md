@@ -52,11 +52,18 @@
 ```text
 <数据目录>/
 ├── shadow-narrative.db       SQLite 主库
-├── photos/                   原图
-│   └── <uuid>.<ext>
+├── photos/                   原图与缩略图
+│   ├── <uuid>.<ext>
+│   └── <uuid>.thumb.<ext>    缩略图（08 §6），与它那张原图同 stem
 ├── backup-state.json         备份游标与远程映射（见 18 §6）
 └── secrets.json              AI key / 备份令牌 / 端到端加密密钥（0600 权限）
 ```
+
+缩略图和原图**放同一个目录**，不另开子目录：`08 §16` 的删除本来就是按
+storage key 逐个删的，同目录不改变任何逻辑。`.thumb.` 只是让 `ls` 时
+一眼看得出归属。
+
+**缩略图不进备份**（`18 §2`）—— 它是可从原图重新生成的派生资源。
 
 ### 位置
 
