@@ -1,0 +1,272 @@
+// Shadow Narrative — 数据库 schema
+//
+// 字段、索引、级联规则全部对应 shadow-narrative-docs/08-DATA_API_SPEC.md §3。
+// 改这里之前先改文档。
+//
+// ⚠️ 字段名不得随意改动。18-BACKUP_PROTOCOL.md §3 要求快照清单
+// 「字段与 08 §3 的 schema 一一对应，键名一致，恢复时不需要映射表」——
+// 这里随手改名，Round 11 就要多维护一层映射。
+//
+// 引擎是 SQLite（08 §2）。三处写法差异：
+//   1. 不支持 enum        → 用 String，取值集合由 TS 联合类型约束（src/types）
+//   2. Json 支持有限      → 统一用 String 存，应用层 JSON.parse / stringify
+//   3. 不区分大小写 LIKE  → 用 COLLATE NOCASE，mode: 'insensitive' 无效
+//
+// 多租户：所有实体从第一天就带 userId。自托管阶段只有一个默认用户，
+// 但多用户结构先留着，将来接登录时不用改数据模型（08 §1 硬约束 #1）。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 起 datasource 不再接受 url —— 连接串由 prisma.config.ts 提供，
+// 运行时则通过 driver adapter 传给 PrismaClient。见 prisma.config.ts 与 src/lib/dataDir.ts。
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  photos    Photo[]
+  memories  Memory[]
+  dayThemes DayTheme[]
+  settings  UserSettings?
+
+  @@map("users")
+}
+
+/// 主实体。每一次上传生成一张独立的 Photo，自带文件、AI 理解、对话与日志。
+model Photo {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // --- 文件 ---
+  storageKey   String  @unique // 原图
+  thumbnailKey String? // 斜轴与列表用。像素处理属 Python 图像服务，尚未建（08 §6）
+  // 明文文件字节的 SHA-256。本地身份与完整性校验用。
+  // ⚠️ 绝不能直接当备份上行的 blob id —— 那会白送一个确认预言机。
+  //    上行 id 须为 HMAC-SHA256(用户密钥, contentHash)，见 18 §2 与 Round 11。
+  contentHash String
+
+  mimeType String
+  width    Int
+  height   Int
+  byteSize Int
+  // EXIF 拍摄时间。没有就为 null，用 createdAt 兜底
+  takenAt DateTime?
+
+  // --- 用户提供 ---
+  caption  String?
+  favorite Boolean @default(false) // 收藏 → 出现在斜轴相册
+
+  // --- AI 处理状态 ---
+  aiState String  @default("pending") // pending | done | failed
+  aiError String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  analysis     PhotoAnalysis?
+  conversation Conversation?
+  journal      Journal?
+  groups       MemoryPhoto[]
+
+  @@index([userId, favorite, takenAt])
+  @@index([userId, createdAt])
+  @@index([contentHash])
+  @@map("photos")
+}
+
+/// AI 看图结果。结构见 09-AI_SPEC.md §8。
+model PhotoAnalysis {
+  id      String @id @default(cuid())
+  photoId String @unique
+  photo   Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  payload String // 09 §8 的 JSON 字符串
+  model   String
+  // 发送给模型的内容摘要，用于「这张照片被发出去了什么」（12 §5）
+  sentSummary String?
+
+  createdAt DateTime @default(now())
+
+  @@map("photo_analyses")
+}
+
+/// 挂在照片上。一个 Photo 一段对话。
+model Conversation {
+  id      String @id @default(cuid())
+  photoId String @unique
+  photo   Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages ConversationMessage[]
+
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  role    String // user | assistant
+  content String
+  // 证据来源 JSON（09 §6）
+  sourceRefs String?
+  // 这条是不是「字幕」—— 即 AI 在看到照片后主动说的第一句。
+  // 字幕就是对话的第一条，不做两套数据（09 §21.1）；
+  // 这个标记只决定它在前端以什么形式呈现（照片下安静浮现，而不是气泡）。
+  isSubtitle Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+  @@map("conversation_messages")
+}
+
+/// 随笔小记。挂在照片上，只能由用户主动触发生成（01 §9）——AI 不自动写。
+///
+/// ⚠️ **不叫「日志」。** 用户 2026-10-10 定的名字是**随笔小记**，而且它是
+/// **轻**的东西 —— 不是长文日志。`07 §5` 定的版式是「日期 + 正文」，
+/// 日期就是它的标识（一天才是记忆的单位）。
+///
+/// 这也解释了为什么这里**没有 `title`、也没有 `status`**（2026-10-10 删掉）：
+/// 原来那两列是照着「一篇长文 + 起草/定稿」设想的，而一个轻的东西不需要标题，
+/// 也不需要定稿仪式。**留一个永不写入的列，下一个人会以为它坏了** ——
+/// 与删 `UserSettings.autoAnalyze` 是同一条理由。
+model Journal {
+  id      String @id @default(cuid())
+  photoId String @unique
+  photo   Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  content String
+  /// 每次写入 +1。PATCH 带上它，不一致就 409 —— 防止「AI 润色」把用户
+  /// 手改过的字盖掉（08 §8）。
+  sourceVersion Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("journals")
+}
+
+/// 影册 —— 用户自己分的那些集合（`01 §4` 叫它 Memory，界面上一律叫**影册**）。
+///
+/// 三个空间各切一刀：Album 是「我挑出来的」（收藏，第一屏）、
+/// 时间线是「我拍过的全部」（按天）、**影册是「我自己归的」**。
+///
+/// ⚠️ **用户 2026-10-11 定的名字是「影册」。** 代码里仍叫 `Memory` ——
+/// `01 §4` 的产品词汇就是它，`08 §9` 那六条 API 也已经写死在规格里，
+/// 而首屏那个组件已经占了 `AlbumSpace` 这个名字。乱的是把两个都叫 Album。
+///
+/// ⚠️ **2026-10-11 砍到只剩 `title`。** `summary` 与 `memoryDate` 删了
+/// （迁移 `memory_slim_to_album`）：Theater 待定、没有写入者，而
+/// `memoryDate` 是「Memory = 一次事件」那个已废弃模型的遗物 ——
+/// 一册「猫」没有某一天。与 `autoAnalyze`、`Journal.title` / `status`
+/// 同一条理由：**恒不写入的列会让下一个人以为它坏了**。
+model Memory {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// ⚠️ 必填。名字就是这一册的标识（架子上一格读的就是它），
+  /// 与 `DayTheme.title`、`Journal.content` 同一条
+  title String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  photos MemoryPhoto[]
+
+  /// 架子的排序：最近动过的在前（刚往里加过照片的那一册就在第一眼）
+  @@index([userId, updatedAt])
+  @@map("memories")
+}
+
+/// 多对多：删除影册不删照片，只断开关系（08 §4）。
+///
+/// ⚠️ **2026-10-11 删掉 `order` 与 `addedAt`。** 用户定了组内**按拍摄时间**
+/// 排，没有手动排序，两列都没有读取者。同 `Memory` 那两列。
+model MemoryPhoto {
+  memoryId String
+  photoId  String
+  memory   Memory @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  photo    Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  @@id([memoryId, photoId])
+  @@index([photoId])
+  @@map("memory_photos")
+}
+
+/// 某一天的主题名。
+///
+/// 用户 2026-10-10 决定：「主题名落在天」。
+///
+/// ⚠️ **由用户自己写，不做 AI 自动提炼**（同日下午推翻了上午的「默认提炼」）。
+/// 两个理由：`01 §9` 不允许 AI 替用户定义这段记忆是什么，而给一天起名正是这件事；
+/// 而且个人相册里大多数天只有一两张照片，AI 在那个信息量下只能把某一张的描述
+/// 压成一个词 —— 实测产出「仰头的布偶猫」，那是照片里的东西，不是这一天。
+///
+/// 没写的时候前端显示一个**淡淡的占位**：那一天的拍摄时段（"夜里"、"午后到傍晚"）。
+/// 时间是事实不是推测，所以它可以当占位 —— 名字得是用户自己的话。
+///
+/// 刻意**不做成 Memory**：`01-PRODUCT_SPEC.md` §4 说分组是**可选**的，
+/// 而「每天自动有一个节点」如果复用分组，就等于自动给每一天建一个分组 ——
+/// 和「可选」直接冲突。天是时间轴上的刻度，不是用户建的分组。
+model DayTheme {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// "YYYY-MM-DD"，**本地日历日**，不是 UTC 日期。
+  ///
+  /// 用字符串而不是 DateTime 是刻意的：这是一个「日历日」，不是一个时刻。
+  /// 存成 DateTime 就会在时区上漂 —— 23:30 拍的照片属于哪一天，
+  /// 会取决于你在哪个时区读它。存成 "2026-10-09" 则永远是那一天。
+  dayKey String
+
+  title String
+  /// ai | user。09 §6 的证据模型要求标出来源。
+  ///
+  /// 默认是 `user` —— 现在**只有用户会写**（见本模型的说明）。
+  /// 默认值写成 `ai` 会是个陷阱：将来谁 create 时忘了带 source，
+  /// 那天的名字就会被标成 AI 说的。
+  source String @default("user")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, dayKey])
+  @@map("day_themes")
+}
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 粒子偏好（06 §17）。作为观看偏好存在用户级 —— 那是观看习惯，不是照片属性
+  particlePreset String  @default("drift")
+  particleParams String? // JSON
+
+  // ⚠️ 这里原本有一个 `autoAnalyze`（上传后是否自动把照片发给模型），
+  // 2026-10-10 用户定「自动分析只能开」时删掉了 —— 见 `09 §21.2` 的说明。
+  // 它不是「先留着以后可能用」的那种字段：留着一个恒为 true 的开关，
+  // 下一个人会以为它真的能关。
+
+  // 备份（18-BACKUP_PROTOCOL.md）。令牌不进这里 —— 令牌存 secrets.json（17 §4、18 §7）
+  backupAuto     Boolean @default(false)
+  backupEndpoint String?
+
+  updatedAt DateTime @updatedAt
+
+  @@map("user_settings")
+}

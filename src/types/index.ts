@@ -1,0 +1,493 @@
+/**
+ * Shadow Narrative — 核心类型
+ *
+ * 来源：shadow-narrative-docs/
+ *   - 体验状态机      04-UX_INTERACTION_SPEC.md §2
+ *   - 性能档位        15-DEVICE_ADAPTATION.md §4
+ *   - 粒子参数        06-PARTICLE_ENGINE.md §17
+ *   - 粒子预设        06-PARTICLE_ENGINE.md §18
+ *   - 领域模型        08-DATA_API_SPEC.md §2
+ */
+
+// ---------------------------------------------------------------------------
+// 体验状态机（04 §2）
+// ---------------------------------------------------------------------------
+
+/**
+ * 体验状态机。
+ *
+ * 定义在 04-UX_INTERACTION_SPEC.md §2 与 05-TECH_ARCHITECTURE.md §9，三处必须一致。
+ * 原设计里的 SCATTER / ASSEMBLE 两个阶段已随「原地滑动」的转场决定取消。
+ */
+export type ExperienceMode =
+  | "rest"
+  | "explore"
+  | "focus"
+  | "interact"
+  | "orbit"
+  | "morphing"
+  | "story"
+  | "journal"
+  | "conversation";
+
+// ---------------------------------------------------------------------------
+// 显示模式（16-ALBUM_SPACE.md §8）
+// ---------------------------------------------------------------------------
+
+/**
+ * 原图 ⇄ 粒子。
+ *
+ * 放在全局状态而不是局部 state：写它的是照片页的文字层
+ * （那一格里的「Into this moment / 返回」，`16 §8.6`），而读它的是
+ * `ExperienceShell` 里的画布 —— 画布在 layout 里、不在页面里，两棵子树不相邻。
+ */
+export type DisplayMode = "photo" | "particle";
+
+// ---------------------------------------------------------------------------
+// 性能档位（15 §4）
+// ---------------------------------------------------------------------------
+
+export type PerformanceTier = "ultra" | "high" | "medium" | "low" | "minimal";
+
+/** 档位矩阵。改这里必须同步 15-DEVICE_ADAPTATION.md §4。 */
+export interface TierSpec {
+  /** 粒子数 */
+  readonly particleCount: number;
+  /** devicePixelRatio 上限 */
+  readonly maxDpr: number;
+  /** 是否启用后处理（bloom / grain / vignette） */
+  readonly postProcessing: boolean;
+  /** 采样纹理长边 */
+  readonly sampleLongEdge: number;
+  /** 目标帧时间（ms）。降级判定以此为准。 */
+  readonly frameBudgetMs: number;
+}
+
+/*
+ * ⚠️ 粒子数 2026-10-10 整体上调（Ultra 150k → 220k）。
+ *
+ * 依据是实测的余量，不是估计：150k 在 RTX 3060 上是 **4.2ms / 240fps**，
+ * 而 Ultra 的预算是 16.7ms —— 有四倍空间躺在那里没用上。
+ * 上调后 220k 约 6.7ms，仍在预算内，而画面细密得多。
+ *
+ * ⚠️ 粒子数是**绝对值**，不随视口大小变。所以窄窗口下同样多的粒子会显得
+ * 更密。要按屏幕密度调，那是另一件事（`15 §4` 的档位是设备能力，不是视口）。
+ */
+export const TIER_SPECS: Readonly<Record<PerformanceTier, TierSpec>> = {
+  ultra: {
+    particleCount: 220_000,
+    maxDpr: 2.0,
+    postProcessing: true,
+    sampleLongEdge: 2048,
+    frameBudgetMs: 16.7,
+  },
+  high: {
+    particleCount: 150_000,
+    maxDpr: 2.0,
+    postProcessing: true,
+    sampleLongEdge: 1600,
+    frameBudgetMs: 16.7,
+  },
+  medium: {
+    particleCount: 75_000,
+    maxDpr: 1.5,
+    postProcessing: false,
+    sampleLongEdge: 1024,
+    frameBudgetMs: 22,
+  },
+  low: {
+    particleCount: 30_000,
+    maxDpr: 1.0,
+    postProcessing: false,
+    sampleLongEdge: 768,
+    frameBudgetMs: 33,
+  },
+  minimal: {
+    particleCount: 12_000,
+    maxDpr: 1.0,
+    postProcessing: false,
+    sampleLongEdge: 512,
+    frameBudgetMs: 33,
+  },
+};
+
+/** 降档顺序，从高到低 */
+export const TIER_ORDER: readonly PerformanceTier[] = [
+  "ultra",
+  "high",
+  "medium",
+  "low",
+  "minimal",
+];
+
+// ---------------------------------------------------------------------------
+// 粒子参数（06 §17）
+// ---------------------------------------------------------------------------
+
+export interface ParticleParams {
+  /** 相对档位上限的粒子数比例，0–1。1 = 用满本档上限。 */
+  density: number;
+  /** 粒子基础尺寸（px，逻辑像素） */
+  size: number;
+  /** 常驻漂移强度 */
+  motion: number;
+  /** 湍流强度 */
+  turbulence: number;
+  /** 指针场半径，归一化坐标（04 §5） */
+  mouseRadius: number;
+  /** 指针场强度（04 §5） */
+  mouseForce: number;
+  /** 噪声时间缩放 */
+  noiseSpeed: number;
+  /** 颜色随机扰动幅度 0–1 */
+  colorVariation: number;
+}
+
+
+// ---------------------------------------------------------------------------
+// 粒子预设（06 §18）
+// ---------------------------------------------------------------------------
+
+export type ParticlePresetName = "calm" | "breeze" | "focus" | "drift";
+
+export const PARTICLE_PRESETS: Readonly<
+  Record<ParticlePresetName, Partial<ParticleParams>>
+> = {
+  /**
+   * 四个预设 2026-10-11 全部重调过一遍。
+   *
+   * 用户那天的话：「四个模式的粒子数量什么的你都调一下，**之前好像只调整了
+   * 一个**」。翻回去看是对的 —— 上一轮把档位上限 150k 提到 220k、尺寸
+   * 1.6 提到 1.8 时，只有 `drift` 顺手动了自己的 density / size，
+   * 另外三个的这两项**和默认值逐字相同**，等于没调。
+   *
+   * ── 怎么调的 ────────────────────────────────────────────────────
+   *
+   * **数量与尺寸是一对，一起看才不会走样**：屏幕上"有多少东西"大约正比于
+   * `density × size²`。所以四个预设是沿着一条曲线排的 —— 颗粒越粗，
+   * 数量越少，铺满画面的程度大致不变，变的是**质地**：
+   *
+   * ```text
+   * focus   最细最多   像一张很清楚的沙画
+   * calm    中等       那层沙
+   * breeze  偏粗偏少   软一点、活一点
+   * drift   最粗最少   像悬浮的尘（默认）
+   * ```
+   *
+   * 所以 `density` 是递减的 —— **不是因为"少"好看**，是因为尺寸上去了。
+   * 单看数量会以为 drift 最稀，看画面并不是。
+   *
+   * 其余四项按"活"的程度递增：`motion` / `turbulence` / `noiseSpeed` 一路
+   * 走高，`focus` 那一档几乎不动（它是「看清这张照片」用的）。
+   *
+   * ⚠️ `colorVariation` 四个都不给 —— 它是纯用户手里的旋钮，预设不该替他
+   * 决定（也没人这么用过）。
+   */
+  focus: {
+    density: 1.0,
+    size: 1.5,
+    motion: 0.15,
+    turbulence: 0.05,
+    mouseRadius: 0.16,
+    mouseForce: 0.22,
+    noiseSpeed: 0.6,
+  },
+  calm: {
+    density: 0.95,
+    size: 1.8,
+    motion: 0.35,
+    turbulence: 0.12,
+    mouseRadius: 0.22,
+    mouseForce: 0.35,
+    noiseSpeed: 1.0,
+  },
+  breeze: {
+    density: 0.88,
+    size: 1.95,
+    motion: 0.62,
+    turbulence: 0.22,
+    mouseRadius: 0.3,
+    mouseForce: 0.45,
+    noiseSpeed: 1.45,
+  },
+  drift: {
+    density: 0.8,
+    size: 2.1,
+    motion: 0.82,
+    turbulence: 0.32,
+    mouseRadius: 0.34,
+    mouseForce: 0.3,
+    noiseSpeed: 1.8,
+  },
+};
+
+/**
+ * 四个预设的**起手值** —— 预设没写到的字段就落在这里。
+ *
+ * ⚠️ 它自己不是任何一档「效果」，只是那张底；真正的默认是
+ * `DEFAULT_PRESET`（现在是 `drift`）。
+ */
+const NEUTRAL_PARAMS: ParticleParams = {
+  density: 1.0,
+  size: 1.8,
+  motion: 0.35,
+  turbulence: 0.12,
+  mouseRadius: 0.22,
+  mouseForce: 0.35,
+  noiseSpeed: 1.0,
+  colorVariation: 0.0,
+};
+
+/**
+ * 出厂是哪一档 —— **只有这一个地方说**。
+ *
+ * ⚠️ **2026-10-11：从 `calm` 换成了 `drift`**（用户：「粒子默认效果改成
+ * drift」）。
+ *
+ * ⚠️ 下面的 `DEFAULT_PARTICLE_PARAMS` 是**从它算出来的**，不是另抄一份数。
+ * 抄一份的话，改了预设忘了改默认，「面板上高亮的那一档」和「实际生效的值」
+ * 会当场对不上 —— 那是个一眼看不出来、只有对比才会发现的错。
+ */
+export const DEFAULT_PRESET: ParticlePresetName = "drift";
+
+/**
+ * 默认参数。**由 `DEFAULT_PRESET` 推出来**（起手值 + 那一档的覆盖）。
+ *
+ * 默认值同时写在 04-UX_INTERACTION_SPEC.md §5 与 06-PARTICLE_ENGINE.md §8 ——
+ * 那两处也要跟着改（它们记的是"出厂那一档是多少"，不是一个固定的数）。
+ *
+ * ⚠️ `size` 2026-10-10 由 1.6 提到 1.8（drift 那一档后来是 2.1）——
+ * 与粒子数一起调的，但幅度**故意比数量小**。两者在画面上的作用相反：
+ *
+ *   · 数量上去 → 细节被解出来更多，照片读得更清，**颗粒感还在**
+ *   · 尺寸上去 → 把空隙填掉，画面变滑 —— 到某个点沙粒就没了
+ *
+ * 实测：220k @ 1.95 已经读成「一张略软的照片」而不是「沙做的照片」；
+ * 所以数量是主杠杆，尺寸只是跟着挪一点（用户的原话也是「大小**稍微**也大一些」）。
+ */
+export const DEFAULT_PARTICLE_PARAMS: ParticleParams = {
+  ...NEUTRAL_PARAMS,
+  ...PARTICLE_PRESETS[DEFAULT_PRESET],
+};
+
+export const PARTICLE_PARAM_RANGES: Readonly<
+  Record<keyof ParticleParams, { min: number; max: number; step: number }>
+> = {
+  density: { min: 0.05, max: 1.0, step: 0.01 },
+  size: { min: 0.5, max: 4.0, step: 0.1 },
+  motion: { min: 0.0, max: 1.0, step: 0.01 },
+  turbulence: { min: 0.0, max: 0.6, step: 0.01 },
+  mouseRadius: { min: 0.05, max: 0.5, step: 0.01 },
+  mouseForce: { min: 0.0, max: 1.0, step: 0.01 },
+  noiseSpeed: { min: 0.0, max: 3.0, step: 0.05 },
+  colorVariation: { min: 0.0, max: 1.0, step: 0.01 },
+};
+
+// 领域模型（08 §3）
+// ---------------------------------------------------------------------------
+
+/**
+ * AI 处理状态（08 §3）。
+ *
+ * SQLite 不支持 enum，所以库里是 String；取值集合在这里约束，
+ * 应用层负责校验 —— 这是 08 §2 定下的三处写法差异之一。
+ */
+export type AiState = "pending" | "done" | "failed";
+
+/** 信息来源。情绪永远只能是 inferred（09 §6）。 */
+export type EvidenceSource = "observed" | "user" | "inferred";
+
+/**
+ * 带来源与置信度的取值（09 §6 §7）。
+ *
+ * 置信度低时不得当作事实使用。
+ */
+export interface Claim<T = string> {
+  value: T | null;
+  source: EvidenceSource;
+  confidence: number;
+}
+
+/** AI 看图结果（09 §8）。存在 `PhotoAnalysis.payload` 里，是 JSON 字符串。 */
+export interface PhotoAnalysisPayload {
+  description: string;
+  people: string[];
+  objects: string[];
+  location: Claim;
+  date: Claim;
+  events: string[];
+  /** 每一项都按 Emotion Inferred 处理 —— 情绪不写成事实 */
+  emotions: Claim[];
+  visualKeywords: string[];
+  uncertainties: string[];
+}
+
+/** 消息里标注的证据来源（09 §6）。 */
+export interface SourceRef {
+  field: string;
+  source: EvidenceSource;
+  confidence: number;
+}
+
+/**
+ * 照片 —— 主实体（08 §3）。
+ *
+ * 这是**客户端可见**的形状：不含 `userId`（由服务端解析，客户端不需要也不该拿）。
+ * 字段名与 08 §3 保持一致 —— 18 §3 的快照清单要求键名一一对应。
+ */
+export interface Photo {
+  id: string;
+  storageKey: string;
+  thumbnailKey: string | null;
+  contentHash: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  byteSize: number;
+  /** EXIF 拍摄时间。没有就为 null，排序时用 createdAt 兜底 */
+  takenAt: string | null;
+  caption: string | null;
+  favorite: boolean;
+  aiState: AiState;
+  aiError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sourceRefs: SourceRef[] | null;
+  /** 字幕就是对话的第一条（09 §21.1）—— 不做两套数据 */
+  isSubtitle: boolean;
+  createdAt: string;
+}
+
+/**
+ * 随笔小记（`08 §3` 的 `Journal`）。
+ *
+ * ⚠️ **不叫「日志」。** 用户 2026-10-10 定的名字是随笔小记，而且它是**轻**的
+ * 东西 —— 不是长文日志。`07 §5` 定的版式是「日期 + 正文」，日期就是它的标识。
+ *
+ * ⚠️ **没有 `title`、也没有 `status`**（2026-10-10 连同 schema 一起删了）：
+ * 那两列是照着「一篇长文 + 起草/定稿」设想的，一个轻的东西不需要。
+ */
+export interface JournalNote {
+  id: string;
+  content: string;
+  /** 每次写入 +1。PATCH 带上它，不一致 → 409（`08 §8`） */
+  sourceVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * 照片 + 它的字幕 + 有没有随笔小记。
+ *
+ * 轮询 `GET /api/photos/:id` 拿的就是这个：`aiState` 让客户端知道还要不要继续等，
+ * `subtitle` 直接就是要显示在照片下方的那句话。
+ */
+export interface PhotoDetail extends Photo {
+  subtitle: ConversationMessage | null;
+  /**
+   * 这张照片有没有随笔小记。
+   *
+   * ⚠️ **只回答「在不在」，不带正文** —— 照片页只需要据此决定左下角那个
+   * 本子图标出不出现，而正文可能很长。真要点开时再
+   * `GET /api/photos/:id/journal`，和对话一样。
+   */
+  hasNote: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// 影册（用户 2026-10-11 定名）
+// ---------------------------------------------------------------------------
+
+/**
+ * 架子上的一册。
+ *
+ * ⚠️ **界面上一律叫「影册」**，代码里叫 `Memory` —— 理由写在
+ * `prisma/schema.prisma` 的 `Memory` 上（`01 §4` 的产品词汇是 Memory、
+ * `08 §9` 那六条 API 已经写死在规格里、而首屏那个组件已经占了
+ * `AlbumSpace` 这个名字）。
+ *
+ * **它只带张数与封面，不带照片** —— 架子一屏可能有几十册，把每一册的照片
+ * 全拉回来是白费。真打开一册时再取 `MemoryDetail`。
+ */
+export interface MemorySummary {
+  id: string;
+  title: string;
+  /** 这一册里有几张。空册是 0 */
+  count: number;
+  /**
+   * 架子上那一格用哪几张 —— 组内**拍摄时间最新的那几张**（最多 4 张。
+   * `takenAt` 缺则回落导入时间）。
+   *
+   * ⚠️ **不是「一张封面」，是一组缩略图**（用户 2026-10-11：「每一册都是
+   * 一组缩略图作为一个入口」）。一张封面说不出「这一册里都有些什么」，
+   * 而四张能 —— 这与 iOS 相册的封面同一个道理。
+   *
+   * 空册是 `[]`，架子据此画一个空框，不装假封面。
+   */
+  coverIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * 打开一册时的那一份。
+ *
+ * 照片按**拍摄时间倒序**（新的在前）—— 与首屏相册同一个方向，理由在
+ * `albumService.byTimeDesc`：焦点在第 0 张，把最旧的放第一眼不对。
+ *
+ * ⚠️ 这里**没有 `count`**：张数就是 `photos.length`。两处都存一份，
+ * 迟早会有一个地方忘了同步。
+ */
+export interface MemoryDetail {
+  id: string;
+  title: string;
+  photos: Photo[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * 设置浮卡的数据（`07 §11`）。
+ *
+ * ⚠️ `aiKeyConfigured` 是布尔值而不是 key —— 服务端**从不回传** key 本身。
+ * 能回传就说明它出现在某个响应里过，那它就会进日志、进浏览器缓存、进抓包（12 §10）。
+ *
+ * ⚠️ 2026-10-10 删掉了三个字段：
+ *   - `autoAnalyze`（用户定「自动分析只能开」）
+ *   - `aiKeyFromEnv`（用户定「不提供默认的」—— key 只剩 `secrets.json` 一个来源）
+ *   - `secretsPath`（**绝对**路径是这台机器的实现细节，封装成 app 之后
+ *     那个前缀就不成立了；界面上只说「数据目录里的 secrets.json」）
+ */
+export interface SettingsView {
+  /** `secrets.json` 里配了 key —— 这是设置卡唯一能改的那份 */
+  aiKeyConfigured: boolean;
+  aiBaseUrl: string;
+  aiModel: string;
+}
+
+// ---------------------------------------------------------------------------
+// Timeline（用户 2026-10-10 定的空间）
+// ---------------------------------------------------------------------------
+
+/**
+ * 时间轴上的一天。
+ *
+ * `title` 与 `titleSource` **必须分开**：主题名默认由 AI 从当天照片提炼，
+ * 点击可改。改过之后它就不再是 AI 说的了 —— `09 §6` 的证据模型要求
+ * AI 产出的东西标出来源，不标就等于让 AI 的话冒充用户自己写的。
+ */
+export interface TimelineDay {
+  /** "YYYY-MM-DD"，**本地日历日**（见 DayTheme 的 schema 注释） */
+  dayKey: string;
+  title: string | null;
+  /** null 表示这天还没有主题名 */
+  titleSource: "ai" | "user" | null;
+  /** 这天最晚的拍摄时间，倒序排列用 */
+  photos: Photo[];
+}
