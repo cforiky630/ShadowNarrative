@@ -65,6 +65,12 @@ export async function getTimeline(
   const rows = await prisma.photo.findMany({
     where: { userId },
     select: PHOTO_SELECT,
+    /*
+     * ⚠️ **必须有 orderBy。** `take` 没有排序时，SQLite 返回哪 400 行是
+     * 不保证的（通常按 rowid，但那是实现细节）。照片超过上限后，
+     * 「时间线只显示前 400 张」至少要是**最近导入的** 400 张。
+     */
+    orderBy: { createdAt: "desc" },
     take: options.photoLimit ?? DEFAULT_PHOTO_LIMIT,
   });
 

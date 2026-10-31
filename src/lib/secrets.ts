@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { resolveDataDir, resolveSecretsPath } from "./dataDir";
 
 /**
@@ -8,7 +8,7 @@ import { resolveDataDir, resolveSecretsPath } from "./dataDir";
  *
  * AI 凭据与备份令牌持久化在 `<数据目录>/secrets.json`，严格不进入数据库与运行日志。
  *
- * ── 凭据管理原则 ──────────────────────────────────────────────────────
+ * 凭据管理原则：
  * 1. 单一凭据来源：
  *    所有运行时 AI 凭据（API Key / Base URL / Model）统一来源于 `secrets.json`，
  *    不设环境变量回退逻辑，确保 UI 状态与底层配置完全一致。
@@ -90,29 +90,58 @@ export async function getAiPublicInfo(): Promise<{
  * （17 §3、18 §7），整份覆盖会把它们抹掉。
  */
 export async function setAiApiKey(apiKey: string): Promise<void> {
-  const current = await readSecrets();
   const trimmed = apiKey.trim();
 
-  const next: Secrets = { ...current };
-  if (trimmed) {
-    next.aiApiKey = trimmed;
-  } else {
-    delete next.aiApiKey;
-  }
+  /*
+   * ⚠️ **读-改-写必须串行。** 设置卡与（将来的）备份配置都可能同时改这份
+   * 文件，两个并发请求各自读到旧版本、各自写回，后写的会把先写的那个字段
+   * 抹掉。队列在进程内保证一次只有一个「读 → 改 → 写」。
+   */
+  await updateSecrets((current) => {
+    const next: Secrets = { ...current };
+    if (trimmed) {
+      next.aiApiKey = trimmed;
+    } else {
+      delete next.aiApiKey;
+    }
+    return next;
+  });
+}
 
-  await writeSecrets(next);
+/**
+ * 写盘队列。一次只跑一个「读 → 改 → 写」。
+ *
+ * 队列本身不能因为某一次失败就断掉 —— 失败的那次把拒绝交给调用方，
+ * 队列继续接下一单。
+ */
+let writeQueue: Promise<void> = Promise.resolve();
+
+function updateSecrets(mutate: (current: Secrets) => Secrets): Promise<void> {
+  const run = writeQueue.then(async () => {
+    const current = await readSecrets();
+    await writeSecretsAtomic(mutate(current));
+  });
+  writeQueue = run.catch(() => {});
+  return run;
 }
 
 /**
  * 落盘 secrets.json（17 §3：0600，只有本用户可读）。
  *
+ * ⚠️ **原子写。** 直接 `writeFile` 到目标文件时，进程在写一半崩掉会留下
+ * 一份残缺 JSON；`readSecrets` 又会把坏文件吞成 `{}` —— 于是 AI key 与
+ * 备份令牌静默消失，而界面上只是「未配置」。先写同目录临时文件再 `rename`
+ * 覆盖：同目录内的 rename 是原子的（POSIX），Windows 的 MoveFileEx 也带
+ * REPLACE_EXISTING，读者要么看到旧版本、要么看到新版本。
+ *
  * 同时保证数据目录存在 —— 首次运行时设置页可能先于 `npm run setup` 被打开。
  */
-async function writeSecrets(secrets: Secrets): Promise<void> {
+async function writeSecretsAtomic(secrets: Secrets): Promise<void> {
   await mkdir(resolveDataDir(), { recursive: true });
-  await writeFile(
-    resolveSecretsPath(),
-    `${JSON.stringify(secrets, null, 2)}\n`,
-    { mode: 0o600 },
-  );
+  const target = resolveSecretsPath();
+  const tmp = `${target}.${process.pid}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(secrets, null, 2)}\n`, {
+    mode: 0o600,
+  });
+  await rename(tmp, target);
 }

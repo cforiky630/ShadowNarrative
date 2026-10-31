@@ -3,14 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Minus, X } from "lucide-react";
-import { isImeKey } from "@/lib/keyboard";
+import { useEscape } from "@/hooks/useEscape";
 import { PAGE_INNER, PAGE_PAD } from "@/lib/layout";
 import type { Photo } from "@/types";
 
 /**
  * 整理这一册的照片 —— **产品里第一个多选交互**（`07 §12`）。
  *
- * ── 为什么只有一个入口，而不是「加照片」+「移出照片」 ────────────────
+ * 统一整理入口设计：
  *
  * 那两个是**同一件事的两面**：这张照片属不属于这一册。分成两个入口，人会
  * 以为那是两件事，而它们共用同一个网格、同一套多选、同一个「完成」。
@@ -28,7 +28,7 @@ import type { Photo } from "@/types";
  * ⚠️ 待移出**要按「完成」才生效**，加上格子上明写着「已在册」，
  * 所以误触是可逆、也看得出来的。
  *
- * ── 用户 2026-10-11 定的一条口径 ─────────────────────────────────────
+ * 状态反馈文案口径：
  *
  * 「相册里的删除既然不是真删除那就叫**移出**」—— 照片本身一张不动
  * （文件、对话、随笔小记全在），只是不在这册里了。
@@ -154,19 +154,10 @@ export function OrganizePanel({
   }, [loadMore]);
 
   /*
-   * Esc 退出。
-   *
-   * ⚠️ **先过 `isImeKey`** —— 这个面板里当下没有输入框，但
-   * `DockCard` 那次的教训是「每个按键处理器都该先问这一句」：
-   * 界面上有没有输入框是会变的，而这一句的代价是零（`lib/keyboard.ts`）。
+   * Esc 退出。这个面板里当下没有输入框，但「每个按键处理器都先问输入法」
+   * 是全局约定 —— hook 里已经带上 `isImeKey`（`lib/keyboard.ts`）。
    */
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !isImeKey(e)) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(true, onClose);
 
   const toggle = useCallback(
     (id: string) => {

@@ -4,20 +4,12 @@ import { getAiPublicInfo, setAiApiKey } from "@/lib/secrets";
 import type { SettingsView } from "@/types";
 
 /**
- * 设置。
- *
- * 规格：07-UI_PAGE_SPECS.md §11、12 §5、17 §4 §6
- *
- * 两条边界：
- *   1. **凭据不进数据库**（17 §4）。AI key 只写 `secrets.json` ——
- *      它是这个 handler 现在**唯一**写的东西
- *   2. **key 永远不回传**。这里只有 `aiKeyConfigured` 布尔值。
- *      能回传就说明它出现在某个响应里过 —— 那它就会进日志、进浏览器缓存、进抓包。
- *
- * ⚠️ **2026-10-10：`autoAnalyze` 没了。** 用户定「自动分析只能开」，
- * 于是开关、`UserSettings.autoAnalyze` 那一列、这条路由的 PATCH 分支一起删掉。
- *
- * userId 照旧只由服务端解析（12 §4）。
+ * 系统设置接口（07-UI_PAGE_SPECS.md §11）。
+ * 
+ * 安全边界：
+ * 1. 凭据仅写入本地数据目录下的 secrets.json，绝不持久化至数据库。
+ * 2. 外部读取仅暴露配置状态布尔值，严禁回传 Key 明文。
+ * 3. 照片 AI 伴随分析默认恒常开启，仅提供 API Key 配置。
  */
 
 async function readView(): Promise<SettingsView> {

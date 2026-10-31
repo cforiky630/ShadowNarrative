@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { notFound } from "next/navigation";
 import {
   ParticleCanvas,
   type ParticleCanvasHandle,
@@ -20,6 +21,11 @@ import type { EngineStats } from "@/engine/particle/ParticleSystem";
  *   ?tier=ultra|high|medium|low|minimal
  */
 export default function ParticleDevPage() {
+  // 生产环境直接 404，不暴露内部调试路由
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
+
   const canvasRef = useRef<ParticleCanvasHandle>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -48,7 +54,11 @@ export default function ParticleDevPage() {
           await canvasRef.current?.setImage(bitmap);
           setHasImage(true);
         }
-        bitmap.close();
+        /*
+         * ⚠️ **不要 `bitmap.close()`。** 所有权已经转给引擎（`setImage` /
+         * `morphTo` 的约定，见 `ParticleSystem`）—— 贴图指着它，换季重采样
+         * 也要读回它。在这里关掉会让画布上那张图失效。
+         */
       } catch (err) {
         console.error("[dev/particle] 图片加载失败", err);
       } finally {
@@ -163,7 +173,7 @@ export default function ParticleDevPage() {
         与 `ExperienceShell` 里同一条判据（`06 §19`：生产隐藏）。
         这个页面是调参台，dev 里留着看引擎的数；打包成桌面 app 之后它不该露面。
       */}
-      {process.env.NODE_ENV !== "production" && showDebug && <DebugOverlay stats={stats} />}
+      {showDebug && <DebugOverlay stats={stats} />}
 
       <input
         ref={inputRef}

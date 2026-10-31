@@ -1,16 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { MessageCircle, NotebookText, PenLine } from "lucide-react";
 import { ConversationPanel } from "@/components/ConversationPanel";
 import { NotePanel } from "@/components/NotePanel";
-import { isImeKey } from "@/lib/keyboard";
+import { useEscape } from "@/hooks/useEscape";
 import type { JournalNote } from "@/types";
 
 /**
  * 照片页的浮层 —— **一层遮罩，两面**。
  *
- * ── 两面 ────────────────────────────────────────────────────────────
+ * 双面浮层架构：
  *
  * | 从哪进 | 落在哪一面 |
  * |---|---|
@@ -21,7 +21,7 @@ import type { JournalNote } from "@/types";
  * 长在同一块地方的两个东西是互斥的，不是叠着的。而且这一层底下就是还在跑的
  * 画布，叠两层实时模糊既重又糊，Esc 也会变成两处各关一次。
  *
- * ── 右边那一格：谁在什么时候出现 ────────────────────────────────────
+ * 操作格交互状态流转：
  *
  * 用户 2026-10-10 定的（含当天最后那次修正：「对话界面可以进入已有的笔记……
  * **只有没有笔记的时候**才会在对话界面出现按钮，**AI 润色按钮应该在笔记页面**」）：
@@ -120,6 +120,7 @@ export function PhotoOverlay({
   const [loaded, setLoaded] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,24 +154,62 @@ export function PhotoOverlay({
   }, [photoId]);
 
   // Esc 关掉整层（`04 §7` 的退出顺序第一层）。**两面共用一个** ——
-  // 叠两层的话同一个按键会触发两个监听
+  // 叠两层的话同一个按键会触发两个监听。输入法组字中的 Esc 由 hook 挡掉。
+  useEscape(true, onClose);
+
+  /*
+   * 焦点陷阱。
+   *
+   * 这一层声明了 `aria-modal`，但底下的页面仍然在 DOM 里、仍然可聚焦 ——
+   * 不拦住 Tab，键盘用户会从浮层里一路 Tab 到画布背后的顶栏和左下胶囊，
+   * 而视觉上那些东西被遮罩盖着。所以 Tab 在首尾之间循环。
+   *
+   * 关掉时把焦点还给打开它的那颗按钮（字幕 / 随笔）——「焦点从哪来、
+   * 回哪去」是模态浮层的标准行为，和 `DockCard` 收回焦点是同一条。
+   */
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      /*
-       * ⚠️ **组字中的 Esc 不是给你的。**
-       *
-       * 用中文输入法打字时 Esc 是「取消这次候选」，而它照样冒到 `window` ——
-       * 少了这一句，取消一次候选就把整层浮层关掉，聊到一半的东西没了
-       * （用户 2026-10-10：「对话也总是会被打断」）。「总是」是对的：
-       * 用中文打字的人一天要取消几十次候选。
-       *
-       * 判据两条都要，见 `lib/keyboard.ts`。
-       */
-      if (e.key === "Escape" && !isImeKey(e)) onClose();
+    const root = rootRef.current;
+    if (!root) return;
+    const previous = document.activeElement as HTMLElement | null;
+
+    const focusables = () =>
+      Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.getClientRects().length > 0);
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const els = focusables();
+      if (!els.length) return;
+      const first = els[0];
+      const last = els[els.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previous?.focus();
+    };
+  }, []);
+
+  /*
+   * 内容到齐 / 换面之后把焦点落进这一面：对话面是输入框、随笔面是正文。
+   * 放在 `loaded` 之后 —— 加载期间这一层里只有「读取中」，没有可聚焦的东西。
+   */
+  useEffect(() => {
+    if (!loaded) return;
+    const root = rootRef.current;
+    root?.querySelector<HTMLElement>("input, textarea")?.focus();
+  }, [loaded, face]);
 
   /**
    * 那颗笔按下去：**起稿或润色**。服务端看有没有现存那一行自己判断是哪种，
@@ -224,6 +263,7 @@ export function PhotoOverlay({
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-modal="true"
       aria-label={face === "conversation" ? "与这张照片对话" : "随笔小记"}

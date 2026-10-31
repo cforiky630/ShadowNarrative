@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { BottomDock } from "@/components/BottomDock";
+import { MotionProvider } from "@/components/MotionProvider";
+import { OverlayScrollbar } from "@/components/OverlayScrollbar";
 import { ParticleControls } from "@/components/ParticleControls";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { TopNavigation } from "@/components/TopNavigation";
@@ -25,21 +27,20 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="zh-CN" className={inter.variable}>
       <body className="bg-background text-text-primary antialiased">
-        <TopNavigation />
-        {children}
-        {/*
-          ── 左下角那一组（用户 2026-10-10）─────────────────────────────
-          设置与粒子参数都挂在根布局上，因为它们是**浮层**而不是路由
-          （用户原话：「设置做成组件，不用单页」）。放在这里它们在所有页面上
-          都在，入口只有左下角那一处 —— 不混进照片旁边（`07 §11.1`）。
-
-          入口是**一颗胶囊**（`BottomDock`）：有粒子时撑成两格、没有时缩回
-          一格。两张卡各自独立（`DockCard` 只是共用的外壳）—— 用户明确说过
-          组合的是「按钮，不是卡片、内容、功能组合」。
-        */}
-        <BottomDock />
-        <SettingsPanel />
-        <ParticleControls />
+        {/* Motion 的按需特性包（`LazyMotion + domAnimation`）。所有 `m.*` 都要在它里面 */}
+        <MotionProvider>
+          <TopNavigation />
+          {children}
+          {/* 时间线 / 影册右侧那根细滚动条。原生条已在 globals.css 里藏掉 */}
+          <OverlayScrollbar />
+          {/*
+            控制坞与全局浮层：
+            设置与粒子参数控制面板作为全局浮层挂载于根布局，由左下角胶囊控制坞（BottomDock）统一触发。
+          */}
+          <BottomDock />
+          <SettingsPanel />
+          <ParticleControls />
+        </MotionProvider>
       </body>
     </html>
   );

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { parseSourceRefs } from "@/lib/sourceRefs";
 import type { ConversationMessage, SourceRef } from "@/types";
 
 /**
@@ -27,18 +28,6 @@ function toMessage(row: {
     isSubtitle: row.isSubtitle,
     createdAt: row.createdAt.toISOString(),
   };
-}
-
-function parseSourceRefs(raw: string | null): SourceRef[] | null {
-  if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as SourceRef[]) : null;
-  } catch {
-    // 库里存的是应用层写进去的 JSON；解析不了说明数据坏了，
-    // 但不该让整个响应失败 —— 证据来源缺失比看不到字幕轻得多
-    return null;
-  }
 }
 
 export interface RecordSubtitleInput {

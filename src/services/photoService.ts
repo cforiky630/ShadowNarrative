@@ -1,11 +1,13 @@
 import type { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
-import type { AiState, Photo, PhotoDetail, SourceRef } from "@/types";
+import { parseSourceRefs } from "@/lib/sourceRefs";
+import type { AiState, Photo, PhotoDetail } from "@/types";
 import {
   removeStoredFiles,
   savePhotoFile,
   saveThumbnailFile,
+  type StoredThumbnailFile,
 } from "./mediaService";
 
 /**
@@ -138,12 +140,20 @@ export interface CreatePhotoInput {
  */
 export async function createPhoto(input: CreatePhotoInput): Promise<Photo> {
   const stored = await savePhotoFile(input.file);
-
-  const thumbnail = input.thumbnail
-    ? await saveThumbnailFile(input.thumbnail, stored.storageKey)
-    : null;
+  /*
+   * ⚠️ 缩略图落盘也要在 `try` **里面**。
+   *
+   * `saveThumbnailFile` 自己吞掉了大多数失败（校验、写盘），但它开头还有
+   * `file.arrayBuffer()` —— 上传被中断时那里会抛。放在 `try` 外的话，
+   * 原图已经落盘、记录还没建，那个文件就成了没人知道的孤儿（08 §1 硬约束 #2）。
+   */
+  let thumbnail: StoredThumbnailFile | null = null;
 
   try {
+    thumbnail = input.thumbnail
+      ? await saveThumbnailFile(input.thumbnail, stored.storageKey)
+      : null;
+
     const row = await prisma.photo.create({
       data: {
         userId: input.userId,
@@ -243,37 +253,27 @@ export async function getPhotoDetail(
   };
 }
 
-/** sourceRefs 在库里是 String（SQLite 的 Json 支持有限，08 §2）。 */
-function parseSourceRefs(raw: string | null): SourceRef[] | null {
-  if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as SourceRef[]) : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * 取最近上传的一张照片。首页用。
+ * 只取「怎么把这张照片的文件发出去」所需的三列。
  *
- * 排序用 `createdAt`（导入时间）而不是 `takenAt`：首页要的是「我刚放进去的那张」。
- * 斜轴相册按拍摄时间排、且要在 takenAt 缺失时回落到 createdAt —— 那是 Round 5 的事。
+ * 文件路由与缩略图路由用它而不是 `getPhotoDetail` —— 后者还要联查字幕消息与
+ * 随笔，而相册一次会并发请求几十张缩略图，每张都白白多做两次关联查询。
+ *
+ * ownership 的处理与 `getPhotoDetail` 完全一致：`userId` 合成在查询条件里，
+ * 不存在与不属于当前用户都返回 null（08 §1、§5）。
  */
-export async function getLatestPhoto(
+export async function getPhotoFileRef(
   userId: string,
-  options: { favorite?: boolean } = {},
-): Promise<Photo | null> {
-  const row = await prisma.photo.findFirst({
-    where: {
-      userId,
-      ...(options.favorite === undefined ? {} : { favorite: options.favorite }),
-    },
-    orderBy: { createdAt: "desc" },
-    select: PHOTO_SELECT,
+  photoId: string,
+): Promise<{
+  storageKey: string;
+  thumbnailKey: string | null;
+  mimeType: string;
+} | null> {
+  return prisma.photo.findFirst({
+    where: { id: photoId, userId },
+    select: { storageKey: true, thumbnailKey: true, mimeType: true },
   });
-
-  return row ? toPhoto(row) : null;
 }
 
 /**
@@ -286,7 +286,29 @@ export async function listPhotos(
   userId: string,
   options: { cursor?: string | null; limit?: number; favorite?: boolean } = {},
 ): Promise<PhotoListPage> {
-  const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
+  /*
+   * ⚠️ `?limit=abc` 会到这儿是 NaN。`Math.min(Math.max(NaN, 1), MAX)` 仍是
+   * NaN，而 Prisma 的 `take: NaN` 直接抛错 —— 一个手写的查询参数就能让
+   * 这个接口 500。非有限值一律回落到默认值。
+   */
+  const requested = options.limit ?? DEFAULT_LIMIT;
+  const limit = Number.isFinite(requested)
+    ? Math.min(Math.max(Math.trunc(requested), 1), MAX_LIMIT)
+    : DEFAULT_LIMIT;
+
+  /*
+   * ⚠️ **游标必须先认一遍是不是这个人的。** Prisma 的 `cursor` 是按 id
+   * 在**全表**里定位的，`where: { userId }` 只过滤结果、不限制游标那一行。
+   * 传一个别人的照片 id 进来看似不泄数据（结果仍是空的），但分页起点会
+   * 落到别人那条记录的位置上 —— 一个手写参数就能把顺序搅乱。
+   * 不认这个游标就明确拒，而不是静默从奇怪的位置开始。
+   */
+  if (options.cursor) {
+    const owned = await prisma.photo.count({
+      where: { id: options.cursor, userId },
+    });
+    if (!owned) throw new ApiError("INVALID_INPUT", "游标无效");
+  }
 
   const rows = await prisma.photo.findMany({
     where: {
@@ -371,7 +393,7 @@ export async function deletePhoto(
   // 不存在或不属于当前用户，一律当作没找到（08 §5）
   if (!photo) throw new ApiError("NOT_FOUND", "照片不存在");
 
-  // --- 阶段一：删文件 ---
+  // 阶段一：删文件
   const keys = [photo.storageKey, photo.thumbnailKey].filter(
     (k): k is string => Boolean(k),
   );
@@ -386,13 +408,11 @@ export async function deletePhoto(
     );
   }
 
-  // --- 阶段二：删记录（级联带走附属） ---
+  // 阶段二：删记录（级联删除附属实体）
   await prisma.photo.delete({ where: { id: photoId } });
 }
 
-// ---------------------------------------------------------------------------
-// AI 状态（08 §3、08 §10）
-// ---------------------------------------------------------------------------
+/** AI 状态（08 §3, 08 §10） */
 
 /** 轮询超时后由服务端兜底标记失败。客户端无权写 aiState。 */
 export async function markAnalysisFailed(

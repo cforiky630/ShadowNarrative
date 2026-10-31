@@ -14,13 +14,10 @@ import {
   DEFAULT_PRESET,
   PARTICLE_PRESETS,
   TIER_ORDER,
-  TIER_SPECS,
   type DisplayMode,
-  type ExperienceMode,
   type ParticleParams,
   type ParticlePresetName,
   type PerformanceTier,
-  type Photo,
 } from "@/types";
 
 interface UiState {
@@ -38,9 +35,7 @@ interface UiState {
   debugOpen: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// 舞台（ExperienceShell）
-// ---------------------------------------------------------------------------
+/** 舞台状态（ExperienceShell） */
 
 /** 视口坐标的矩形。进入动画的起点，FLIP 用。 */
 export interface StageRect {
@@ -53,7 +48,7 @@ export interface StageRect {
 /**
  * 画布与跨空间舞台状态。
  *
- * ── 架构设计约束（01-PRODUCT_SPEC.md §5、16-ALBUM_SPACE.md §8.6）─────
+ * 架构设计约束（01 §5、16 §8.6）：
  * 画布（ParticleCanvas）提升至 `(experience)` 路由组的 layout（ExperienceShell），
  * 不随具体路由页面的卸载而重建，从而保证「时间线/相册 ⇄ 照片」平滑过渡、零空白帧。
  */
@@ -102,15 +97,7 @@ export interface StageState {
 }
 
 interface ExperienceState {
-  // --- 状态机 ---
-  mode: ExperienceMode;
-  setMode: (mode: ExperienceMode) => void;
-
-  // --- 当前照片 ---
-  currentPhoto: Photo | null;
-  setCurrentPhoto: (photo: Photo | null) => void;
-
-  // --- 粒子参数 ---
+  // 粒子参数
   params: ParticleParams;
   setParam: <K extends keyof ParticleParams>(
     key: K,
@@ -121,19 +108,16 @@ interface ExperienceState {
   /** 当前匹配的预设；用户手动改过参数后为 null */
   activePreset: ParticlePresetName | null;
 
-  // --- 性能档位 ---
+  // 性能档位
   /** L1+L2 探测得到的初始档 */
   tier: PerformanceTier;
-  /** 强制档位（?tier= 查询参数），非空时覆盖自动档位 */
-  tierOverride: PerformanceTier | null;
   /** L3 运行时降档。只降不升，见 15-DEVICE_ADAPTATION.md §3 */
   degradeTier: () => void;
   /** 用户是否手动选过档位。选过后关闭自动降档。 */
   tierPinnedByUser: boolean;
   setTier: (tier: PerformanceTier, byUser?: boolean) => void;
-  setTierOverride: (tier: PerformanceTier | null) => void;
 
-  // --- 显示模式 ---
+  // 显示模式
   /**
    * 原图 ⇄ 粒子（`16-ALBUM_SPACE.md` §8）。
    *
@@ -146,15 +130,15 @@ interface ExperienceState {
   displayMode: DisplayMode;
   setDisplayMode: (mode: DisplayMode) => void;
 
-  // --- 无障碍 ---
+  // 无障碍
   reducedMotion: boolean;
   setReducedMotion: (v: boolean) => void;
 
-  // --- 舞台 ---
+  // 舞台
   stage: StageState;
   setStage: (patch: Partial<StageState>) => void;
 
-  // --- UI ---
+  // UI
   ui: UiState;
   setControlsOpen: (v: boolean) => void;
   setSettingsOpen: (v: boolean) => void;
@@ -162,18 +146,9 @@ interface ExperienceState {
 }
 
 export const useExperience = create<ExperienceState>((set, get) => ({
-  mode: "rest",
-  setMode: (mode) => set({ mode }),
-
-  currentPhoto: null,
-  setCurrentPhoto: (currentPhoto) => set({ currentPhoto }),
-
   params: { ...DEFAULT_PARTICLE_PARAMS },
   /*
-   * 出厂那一档。**从 `types` 里取，不在这里写死** —— 默认参数是由
-   * `DEFAULT_PRESET` 推出来的（用户 2026-10-11：「粒子默认效果改成 drift」），
-   * 面板上高亮的那一格读的就是这个字段：写死一个别的名字，就会出现
-   * 「值是按 A 档来的、面板却高亮 B 档」。
+   * 默认高亮预设与 DEFAULT_PRESET 保持一致，确保初始参数与面板状态同步。
    */
   activePreset: DEFAULT_PRESET,
   setParam: (key, value) =>
@@ -195,11 +170,9 @@ export const useExperience = create<ExperienceState>((set, get) => ({
     }),
 
   tier: "medium",
-  tierOverride: null,
   tierPinnedByUser: false,
   setTier: (tier, byUser = false) =>
     set((s) => ({ tier, tierPinnedByUser: byUser || s.tierPinnedByUser })),
-  setTierOverride: (tierOverride) => set({ tierOverride }),
   degradeTier: () => {
     const { tier, tierPinnedByUser } = get();
     if (tierPinnedByUser) return; // 用户手动选过后不再自动降档
@@ -274,23 +247,3 @@ export const useExperience = create<ExperienceState>((set, get) => ({
     })),
   setDebugOpen: (debugOpen) => set((s) => ({ ui: { ...s.ui, debugOpen } })),
 }));
-
-// ---------------------------------------------------------------------------
-// 派生选择器
-//
-// 用 useExperience(selectEffectiveTier) 这种形式调用。
-// 不要把「计算属性方法」放进 store —— 函数引用不变，档位变化时不会触发重渲染。
-// ---------------------------------------------------------------------------
-
-export type ExperienceStore = ReturnType<typeof useExperience.getState>;
-
-/** 实际生效的档位：强制档位优先于自动档位 */
-export const selectEffectiveTier = (
-  s: ExperienceStore,
-): PerformanceTier => s.tierOverride ?? s.tier;
-
-/** 实际粒子数 = 档位上限 × density */
-export const selectParticleCount = (s: ExperienceStore): number =>
-  Math.round(
-    TIER_SPECS[selectEffectiveTier(s)].particleCount * s.params.density,
-  );

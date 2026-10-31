@@ -12,10 +12,12 @@ import { useRouter } from "next/navigation";
 import { useStage } from "@/components/ExperienceShell";
 import { PhotoCell } from "@/components/PhotoCell";
 import { PhotoPicker } from "@/components/PhotoPicker";
+import { useEscape } from "@/hooks/useEscape";
 import { isImeKey } from "@/lib/keyboard";
 import { PAGE_INNER, PAGE_SHELL } from "@/lib/layout";
+import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
-import { revealStyle, useReveal } from "@/lib/useReveal";
+import { revealStyle, useReveal } from "@/hooks/useReveal";
 import { useExperience } from "@/store/experience";
 import type { Photo, TimelineDay } from "@/types";
 
@@ -32,19 +34,13 @@ import type { Photo, TimelineDay } from "@/types";
  *   - 叠放本身**只负责左右滑动**，点它什么都不做（与源码一致）
  *   - 主题名**由用户自己写，不做 AI 提炼**（理由见 `ThemeName` 上方）
  *
- * ── 三档模型来自 iMessage ────────────────────────────────────────────
+ * 卡片堆叠交互模型：
  *   1 张       单张
  *   2–3 张     松散叠放（Apple 叫 "collage"）
  *   4 张以上   堆叠 + 「X 张」标签
  */
 
-// ---------------------------------------------------------------------------
-// 几何常量
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// 几何 —— 逐行照搬 images_swiper 的源码
-// ---------------------------------------------------------------------------
+/** 堆叠卡片几何常量与交互算法 */
 //
 // 来源：https://github.com/imWalsh/images_swiper/blob/main/lib/src/swiper.dart
 // （2026-10-10 读完整份源码 + 逐帧看过它附带的演示动画）
@@ -84,9 +80,7 @@ const SCALE_LERP_FROM = 0.7;
 /** 源码里的 `_calcXxx` 都用这个（Dart 的 lerpDouble） */
 const lerp = (from: number, to: number, t: number) => from + (to - from) * t;
 
-// ---------------------------------------------------------------------------
-// 页面
-// ---------------------------------------------------------------------------
+/** 时间线主体页面 */
 
 interface TimelineSpaceProps {
   days: TimelineDay[];
@@ -125,7 +119,14 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
       setBusy(true);
       setNotice(null);
       try {
-        await uploadPhoto(file);
+        /*
+         * ⚠️ 上传要带缩略图（`08 §6`）。相册与照片页两条路都生成了，
+         * 只有这里漏了 —— 于是从时间线上传的照片永远是「原图直出」：
+         * 时间线的卡片、相册、影册封面全都在下载原图。
+         * 失败返回 null，上传照旧（`makeThumbnail` 自己吞掉错误）。
+         */
+        const thumbnail = await makeThumbnail(file);
+        await uploadPhoto(file, thumbnail);
         router.refresh();
       } catch (err) {
         setNotice(err instanceof Error ? err.message : "上传失败");
@@ -195,9 +196,7 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// 一天
-// ---------------------------------------------------------------------------
+/** 单日节点组件 */
 
 function DayNode({ day, side }: { day: TimelineDay; side: "left" | "right" }) {
   const { ref, revealed } = useReveal<HTMLElement>();
@@ -228,7 +227,17 @@ function NodeBody({ day, align }: { day: TimelineDay; align: "left" | "right" })
       <div className={`flex flex-col gap-5 ${onRight ? "items-end" : "items-start"}`}>
         <div className={onRight ? "text-right" : "text-left"}>
           <p className="text-meta text-text-primary/45">{formatDay(day.dayKey)}</p>
-          <ThemeName day={day} align={align} />
+          {/*
+            ⚠️ `key` 里带上服务端的标题：刷新带回新名字时重挂一次，
+            本地那张 `title/draft` 就跟着换新。用重挂而不是 props → state 的
+            effect —— 后者在 effect 里同步 setState，项目 lint 明令禁止
+            （`react-hooks/set-state-in-effect`），也确实会级联渲染。
+          */}
+          <ThemeName
+            key={`${day.dayKey}:${day.title ?? ""}:${day.titleSource ?? ""}`}
+            day={day}
+            align={align}
+          />
         </div>
 
         {/*
@@ -286,9 +295,7 @@ function CountLabel({
   );
 }
 
-// ---------------------------------------------------------------------------
-// 主题名
-// ---------------------------------------------------------------------------
+/** 日期时段与自定义主题 */
 
 /**
  * 这一天大致落在什么时段。
@@ -443,9 +450,7 @@ function ThemeName({ day, align }: { day: TimelineDay; align: "left" | "right" }
   );
 }
 
-// ---------------------------------------------------------------------------
-// 照片组 —— 逐行照搬 images_swiper 的算法
-// ---------------------------------------------------------------------------
+/** 堆叠照片组交互算法 */
 
 /** 源码 `_calcRotation`。当前卡片在拖拽中被转得更多（fraction=0.5 时约 19°）。 */
 function calcRotation(fraction: number, isCurrent: boolean): number {
@@ -676,9 +681,7 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// 网格画廊
-// ---------------------------------------------------------------------------
+/** 展开网格画廊 */
 
 /**
  * 「N张图片」标签点开的就是这个。
@@ -690,18 +693,12 @@ function PhotoGrid({ photos, onClose }: { photos: Photo[]; onClose: () => void }
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // 打开就把焦点交给面板：Esc 才收得到，键盘也才滚得动
+    // 打开就把焦点交给面板：键盘滚动要落在它身上
     panelRef.current?.focus();
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // 组字中的 Esc 是输入法在取消候选，不该把这一天的照片收掉（`lib/keyboard.ts`）
-      if (e.key === "Escape" && !isImeKey(e)) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // 组字中的 Esc 由 hook 里的 `isImeKey` 挡掉（`lib/keyboard.ts`）
+  useEscape(true, onClose);
 
   return (
     <div

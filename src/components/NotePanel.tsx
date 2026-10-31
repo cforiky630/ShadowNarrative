@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion } from "motion/react";
+import { m } from "motion/react";
 import type { JournalNote } from "@/types";
 
 /**
@@ -10,7 +10,7 @@ import type { JournalNote } from "@/types";
  * 没有遮罩、没有居中、没有 Esc，那些都归外壳（与 `ConversationPanel` 同一条）。
  * 这里只管「日期 + 可编辑的正文」。
  *
- * ── 版式 ────────────────────────────────────────────────────────────
+ * 版式规范：
  *
  * ```text
  * 2025 · 09 · 28
@@ -21,7 +21,7 @@ import type { JournalNote } from "@/types";
  * **日期就是它的标识。** `07 §5` 定的版式是「日期 + 正文」—— 没有标题。
  * 这也和它的定性一致：用户说它是**轻**的东西，不是长文日志。
  *
- * ── 为什么没有「保存」按钮 ──────────────────────────────────────────
+ * 自动保存机制：
  *
  * 打字停下 ~0.7 秒自动存，卸载时把没存完的那一版再送一次。
  *
@@ -127,7 +127,7 @@ export function NotePanel({ photoId, date, note, onSaved }: NotePanelProps) {
   );
 
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ type: "spring", stiffness: 180, damping: 26 }}
@@ -174,7 +174,7 @@ export function NotePanel({ photoId, date, note, onSaved }: NotePanelProps) {
           )
         )}
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 

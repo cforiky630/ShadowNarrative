@@ -1,7 +1,7 @@
-/* ==========================================================================
-   Shadow Narrative — 组件样式
-   只放无法用 Tailwind 工具类干净表达的东西（原生控件、伪元素等）。
-   ========================================================================== */
+/**
+ * Shadow Narrative — 组件样式
+ * 用于无法用 Tailwind 工具类表达的原生控件与伪元素。
+ */
 
 @layer components {
   /* 极简滑块。用原生 <input type="range">：零依赖、键盘可达、
@@ -195,7 +195,7 @@
     transition: opacity var(--duration-ui) var(--ease-enter);
   }
 
-  /* 揭示效果（src/lib/useReveal.ts）在 reduced-motion 下整个失效。
+  /* 揭示效果（src/hooks/useReveal.ts）在 reduced-motion 下整个失效。
      放在 CSS 而不是 JS 是有意的：这是「表现」，不是「状态」——
      在 effect 体里同步 setState 会触发级联渲染，eslint 的
      react-hooks/set-state-in-effect 会直接报错，而且那个报错是对的。

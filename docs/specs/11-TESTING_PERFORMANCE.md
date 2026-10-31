@@ -37,7 +37,7 @@
 ## 2. Golden User Journey
 
 ```text
-打开（Album 斜轴）
+打开（Album 相册手风琴画廊）
 → 拖入一张照片
 → 原图立刻出现
 → 字幕浮现
@@ -58,7 +58,7 @@
 
 建议保留关键截图：
 
-- Album idle（斜轴）
+- Album idle（相册手风琴画廊）
 - Album 焦点切换
 - Album → Photo View 的中间态
 - Photo View 原图

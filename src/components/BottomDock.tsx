@@ -1,13 +1,13 @@
 "use client";
 
-import { motion } from "motion/react";
+import { m } from "motion/react";
 import { Settings, SlidersHorizontal } from "lucide-react";
 import { useExperience } from "@/store/experience";
 
 /**
  * 左下角底部导航胶囊（07-UI_PAGE_SPECS.md §11.2）。
  *
- * ── 交互形态与按需展现 ────────────────────────────────────────────────
+ * 交互形态与展现：
  * - 动态胶囊两格布局：
  *   在单张照片粒子态（`stage.space === "photo"`）呈现「参数 | 设置」双格；
  *   在相册与时间线（无粒子交互）时收缩为单格（仅保留「设置」悬浮球）。
@@ -15,7 +15,7 @@ import { useExperience } from "@/store/experience";
  *   胶囊仅作为紧凑入口组合，所呼出的 `ParticleControls` 与 `SettingsPanel`
  *   为各自独立的互斥浮卡，不合并内容与内部状态。
  *
- * ── 弹簧微动效规范（02-DESIGN_SYSTEM.md §10）──────────────────────────
+ * 动效规范 (02 §10)：
  * 参数格的收放采用 motion spring 缓动：
  * 阻尼比严格控制在 ~0.80（stiffness: 500, damping: 34），产生微弱收束惯性，
  * 严格禁止过大的 bounce 或夸张回弹，符合沉浸克制的设计基调。
@@ -58,7 +58,7 @@ export function BottomDock() {
           按钮（它在 DOM 里、也 focusable），于是相册上会出现一个看不见的
           焦点落点。`inert` 一并把它移出 Tab 顺序和辅助技术的树。
         */}
-        <motion.div
+        <m.div
           initial={false}
           animate={{ width: inPhoto ? SEGMENT + 1 : 0, opacity: inPhoto ? 1 : 0 }}
           transition={SPRING}
@@ -89,7 +89,7 @@ export function BottomDock() {
             className="h-5 w-px shrink-0"
             style={{ background: "var(--border-subtle)" }}
           />
-        </motion.div>
+        </m.div>
 
         <button
           type="button"

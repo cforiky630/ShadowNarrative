@@ -6,3 +6,27 @@
 @import "tailwindcss";
 @import "../styles/tokens.css";
 @import "../styles/components.css";
+
+/*
+ * 原生滚动条整个藏掉，换成根布局里的 `OverlayScrollbar`。
+ *
+ * 用户 2026-10-31：「把那两个页面右侧的原生丑滚动条去掉、换成贴合主题的
+ * 嵌入式滚动条」。系统那根常驻、带槽、带箭头，和这套黑色界面不是一类东西。
+ *
+ * 顺带解决了另一个问题：没有原生滚动条就没有 15px 的占位，视口宽度在
+ * 「可滚动的页面」和「不可滚动的页面」之间恒定 —— 画布不会因为换页
+ * resize，飞行终点也就不会在途中变。`scrollbar-gutter: stable` 那条
+ * 因此可以撤掉（它本来就是为了补这个差）。
+ *
+ * 滚轮 / 键盘 / 触控板都照旧；可见的那根细条由 `OverlayScrollbar` 画，
+ * 并且可以拖。
+ */
+html,
+body {
+  scrollbar-width: none; /* Firefox */
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none; /* Chrome / Edge / Safari */
+}

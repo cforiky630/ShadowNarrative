@@ -4,13 +4,9 @@ import { getTimeline } from "@/services/timelineService";
 import { getLocalUserId } from "@/services/userService";
 
 /**
- * 时间轴。
- *
- * 规格：08-DATA_API_SPEC.md §17。用户 2026-10-10 定的新空间，
- * 取代 `16-ALBUM_SPACE.md` §6 的 Library。
- * ⚠️ 规格尚未更新，落地前要改 `16 §6`、`01 §5`、`07`。
- *
- * userId 照旧只由服务端解析（`12 §4`），不从请求里读。
+ * 时间线数据检索接口（08-DATA_API_SPEC.md §17）。
+ * 按日历日聚合全量照片流，取代原侧边抽屉设计。
+ * userId 由服务端统一解析，杜绝越权访问。
  */
 export async function GET() {
   /**

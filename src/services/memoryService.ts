@@ -12,7 +12,7 @@ import {
  *
  * 规格：01-PRODUCT_SPEC.md §4、08-DATA_API_SPEC.md §9、07-UI_PAGE_SPECS.md §12
  *
- * ── 空间划分 ──────────────────────────────────────────────────────────
+ * 空间划分：
  * - Album（第一屏）：精选与收藏照片展示
  * - 时间线（Timeline）：按日历日组织的全量照片流
  * - 影册（Memories）：用户自主命名归类的照片主题合辑
@@ -22,9 +22,7 @@ import {
  * 架构边界：不引入 Next.js 框架 API，各接口显式接收 `userId` 满足租户隔离要求。
  */
 
-// ---------------------------------------------------------------------------
-// 架子
-// ---------------------------------------------------------------------------
+/** 影册列表检索 */
 
 /**
  * 架子上那几十册。
@@ -93,9 +91,7 @@ export async function getMemory(
   };
 }
 
-// ---------------------------------------------------------------------------
-// 改这一册本身
-// ---------------------------------------------------------------------------
+/** 影册元数据修改 */
 
 /** 名字的长度上限。够写「2024 年在厦门的那几天」，又不至于把架子撑破 */
 const TITLE_MAX_CHARS = 60;
@@ -167,9 +163,7 @@ export async function deleteMemory(
   return count > 0;
 }
 
-// ---------------------------------------------------------------------------
-// 册里的照片
-// ---------------------------------------------------------------------------
+/** 影册照片管理 */
 
 /** 一次最多加多少张。多选面板分页每页 60，跨几页选也够用了 */
 const ADD_LIMIT = 500;
@@ -184,7 +178,7 @@ export interface AddPhotosResult {
 /**
  * 往这一册里加照片。**返回这次真加进去几张** —— 已经在册里的会被跳过。
  *
- * ── 两个必须自己做的事 ───────────────────────────────────────────────
+ * 关联写入校验与约束：
  *
  * **① 排重。** SQLite **不支持 `createMany({ skipDuplicates: true })`**
  * （Prisma 只在 Postgres / MySQL / SQLServer 上支持它），硬写会撞
@@ -228,14 +222,33 @@ export async function addPhotos(
   const skip = new Set(already.map((row) => row.photoId));
   const toAdd = owned.filter((p) => !skip.has(p.id)).map((p) => p.id);
 
+  let added = toAdd.length;
+
   if (toAdd.length) {
-    await prisma.memoryPhoto.createMany({
-      data: toAdd.map((photoId) => ({ memoryId, photoId })),
-    });
+    try {
+      await prisma.memoryPhoto.createMany({
+        data: toAdd.map((photoId) => ({ memoryId, photoId })),
+      });
+    } catch (error) {
+      /*
+       * ⚠️ **并发双击的窗口。** 两个请求可能查出同一份差集，后到的那个撞
+       * `memory_photos` 的主键（P2002）。SQLite 的批量 INSERT 是原子的，
+       * 所以撞上就说明这一批已经被另一个请求写进去了 —— 那正是这次操作
+       * 想要的结果。按幂等处理，只把 `added` 归零，不往上抛。
+       */
+      if ((error as { code?: string }).code !== "P2002") throw error;
+      added = 0;
+    }
+    /*
+     * ⚠️ **关系表的写入不会碰 `Memory` 那一行**，而架子是按
+     * `Memory.updatedAt` 倒序排的（「最近动过的在前」）。不显式碰一下，
+     * 刚加过照片的那一册还停在旧位置 —— 与 schema 的注释相反。
+     */
+    await touchMemory(memoryId);
   }
 
   const count = await prisma.memoryPhoto.count({ where: { memoryId } });
-  return { added: toAdd.length, count };
+  return { added, count };
 }
 
 /** 把一张照片从这一册里移出。**照片本身一张不动** */
@@ -254,12 +267,25 @@ export async function removePhoto(
   const { count } = await prisma.memoryPhoto.deleteMany({
     where: { memoryId, photoId },
   });
+  // 移出同样是「动过这一册」—— 与 `addPhotos` 同一条（架子按 updatedAt 排）
+  if (count > 0) await touchMemory(memoryId);
   return count > 0;
 }
 
-// ---------------------------------------------------------------------------
-// 内部
-// ---------------------------------------------------------------------------
+/** 内部辅助函数 */
+
+/**
+ * 把「这一册刚被动过」写回 `Memory.updatedAt`。
+ *
+ * `@@updatedAt` 只在 `Memory` 自己那一行被 update 时触发；往 `MemoryPhoto`
+ * 里增删关系**不会**碰父行。而架子排序读的正是 `Memory.updatedAt`。
+ */
+async function touchMemory(memoryId: string): Promise<void> {
+  await prisma.memory.update({
+    where: { id: memoryId },
+    data: { updatedAt: new Date() },
+  });
+}
 
 /**
  * 架子只需要「哪张当封面」，所以这一层查询不把照片整行拉回来。

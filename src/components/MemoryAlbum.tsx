@@ -8,28 +8,20 @@ import { OrganizePanel } from "@/components/OrganizePanel";
 import { PhotoCell } from "@/components/PhotoCell";
 import { isImeKey } from "@/lib/keyboard";
 import { PAGE_INNER, PAGE_SHELL } from "@/lib/layout";
-import { revealStyle, useReveal } from "@/lib/useReveal";
+import { revealStyle, useReveal } from "@/hooks/useReveal";
 import { useExperience } from "@/store/experience";
 import type { MemoryDetail } from "@/types";
 
 /**
  * 一册打开的样子 —— `/memories/<id>`（`07 §12`）。
  *
- * ── 点一张照片就是进照片那一页 ───────────────────────────────────────
+ * 照片交互行为：
  *
- * 用户 2026-10-11：「影册里的照片点开也是进照片那个页」。所以这里**不做
- * 自己的看图层**，走的是与时间线那个网格同一个 `PhotoCell` ——
- * 从格子飞进画布，落点 `/?photo=<id>`，`Back` 回这一册
- * （`Back` 去哪由 `stage.entryFromHref` 决定，它记的就是这一页的路径）。
- *
- * ── 三个动作 ─────────────────────────────────────────────────────────
- *
- * 用户 2026-10-11：「**改名保持现在这种，整理和删除是按钮**」，
- * 「按钮……放在进入某一册后的**页面右上**」。所以：
+ * 改名保持行内编辑，整理与删除以图标按钮置于页面右上角：
  *
  * ```text
  * 猫猫                            [▦]  [🗑]      ← 整理 / 删除，右上角一排
- * ────────────────────────────────────────
+ * 布局结构：
  * ┌────┐┌────┐┌────┐
  * │    ││    ││    │   …
  * └────┘└────┘└────┘
@@ -50,7 +42,7 @@ import type { MemoryDetail } from "@/types";
  *
  * ⚠️ **文案不留解释性的句子**（用户 2026-10-11：「所有的文字都不要太白话了」）。
  *
- * ── 为什么「整理」只有一个入口 ───────────────────────────────────────
+ * 整理功能入口设计：
  *
  * 加与移出是同一件事的两面（这张照片属不属于这一册），共用同一个网格、
  * 同一套多选、同一个 `Done`。分成两个入口，人会以为那是两件事。
@@ -87,7 +79,7 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
   const [organizing, setOrganizing] = useState(openOrganize);
 
   /**
-   * 进场的揭示 —— 与相册首屏、时间线、架子**同一份代码**（`lib/useReveal`）。
+   * 进场的揭示 —— 与相册首屏、时间线、架子**同一份代码**（`src/hooks/useReveal`）。
    *
    * 用户 2026-10-11：「进 memorys 页面也和其他页面一样做个效果吧」。
    * 分两处、差 120ms：先名字与那两颗图标，再是下面的照片。
@@ -321,7 +313,7 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
         这与照片页为什么要有 `Back` 是同一条（硬约束 #11、`16 §8.6`）：
         **进得去的门就是出得来的门。**
 
-        ── 为什么落在**左下角**，而不是标题左边 ────────────────────────
+        // 返回出口与左下控制基线对齐：
 
         第一版放在页头左边，用户当天就指出来：「粒子切换那里的 back 在中下，
         这里在上面，感觉很割裂」。

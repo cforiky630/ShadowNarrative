@@ -117,7 +117,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
     const photo = await getPhotoDetail(userId, id);
     if (!photo) throw new ApiError("NOT_FOUND", "照片不存在");
 
-    return ok(await runJournalNote({ photoId: id }));
+    return ok(await runJournalNote({ userId, photoId: id }));
   } catch (error) {
     return failFrom(error, "api/photos/[id]/journal POST");
   }

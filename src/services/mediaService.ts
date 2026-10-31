@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
 import exifr from "exifr";
 import { ApiError } from "@/lib/apiResponse";
 import { resolvePhotosDir } from "@/lib/dataDir";
@@ -86,7 +88,7 @@ export interface StoredPhotoFile {
  * ⚠️ 不要信任浏览器给的 MIME。声明与内容不符直接拒（08 §12）。
  */
 export async function savePhotoFile(file: File): Promise<StoredPhotoFile> {
-  // --- 1. MIME / 大小 / 扩展名 ---
+  // 1. MIME / 大小 / 扩展名校验
   const allowed = ALLOWED[file.type];
   if (!allowed) {
     throw new ApiError(
@@ -106,7 +108,7 @@ export async function savePhotoFile(file: File): Promise<StoredPhotoFile> {
 
   const bytes = new Uint8Array(await file.arrayBuffer());
 
-  // --- 2. 真实格式（读文件头，不信浏览器） ---
+  // 2. 真实格式校验（解析文件头）
   const info = readImageInfo(bytes);
   if (!info) {
     throw new ApiError(
@@ -121,7 +123,7 @@ export async function savePhotoFile(file: File): Promise<StoredPhotoFile> {
     );
   }
 
-  // --- 3. 尺寸合理性 ---
+  // 3. 尺寸合理性校验
   if (info.width < MIN_EDGE || info.height < MIN_EDGE) {
     throw new ApiError("INVALID_INPUT", `图片太小，短边至少 ${MIN_EDGE}px`);
   }
@@ -137,13 +139,13 @@ export async function savePhotoFile(file: File): Promise<StoredPhotoFile> {
    */
   const exifTakenAt = await readExifTakenAt(bytes);
 
-  // --- 5. contentHash ---
+  // 4. 计算 contentHash
   // 明文字节的 SHA-256。用作本地身份与完整性校验。
   // ⚠️ 备份上行时**不能**直接用它当 blob id（会有确认预言机），
   //    须经 HMAC-SHA256(用户密钥, 它) 变换 —— 见 18 §2 与 schema 注释。
   const contentHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
-  // --- 6. 落盘 ---
+  // 5. 文件落盘持久化
   // turbopackIgnore：见 dataDir.ts 的同名说明 —— 数据目录在项目之外，
   // 不是随源码打包的资源
   const storageKey = `${randomUUID()}.${allowed.ext}`;
@@ -170,7 +172,7 @@ export async function savePhotoFile(file: File): Promise<StoredPhotoFile> {
  * 于是每张照片的 `takenAt` 永远是 null、全部回落到导入时间。
  * 规格里写了，代码里没有。
  *
- * ── 三个必须守住的点 ────────────────────────────────────────────────
+ * EXIF 解析规则与隐私约束：
  *
  * 1. **只 pick 三个日期字段。** exifr 默认把整块 EXIF 都解出来，
  *    那里面**有 GPS** —— 而 `12 §3` 与 `08 §13` 明确要求 GPS 默认不落库。
@@ -308,6 +310,26 @@ export function resolveStoragePath(storageKey: string): string {
 /** 读回原图字节。供文件路由与 AI 调用复用。 */
 export async function readStoredFile(storageKey: string): Promise<Buffer> {
   return readFile(resolveStoragePath(storageKey));
+}
+
+/**
+ * 以流的方式打开已存储的文件。供文件路由使用。
+ *
+ * 和 `readStoredFile` 的区别：不把整张原图读进内存再拷贝一份，
+ * 而是边读边发，并给出 `size` 好让响应带上 Content-Length。
+ *
+ * 先 `stat` 再建流 —— 文件不存在时在这里就抛 ENOENT（调用方按 404 处理），
+ * 而不是等响应头发出之后才在流里出错。
+ */
+export async function openStoredFile(
+  storageKey: string,
+): Promise<{ body: ReadableStream<Uint8Array>; size: number }> {
+  const filePath = resolveStoragePath(storageKey);
+  const { size } = await stat(filePath);
+  return {
+    body: Readable.toWeb(createReadStream(filePath)) as ReadableStream<Uint8Array>,
+    size,
+  };
 }
 
 /**

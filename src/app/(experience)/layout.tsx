@@ -6,7 +6,7 @@ import { ExperienceShell } from "@/components/ExperienceShell";
  * 括号是 Next 的路由组语法：**不影响 URL**。`(experience)/page.tsx` 还是 `/`，
  * `(experience)/timeline/page.tsx` 还是 `/timeline`。
  *
- * ── 为什么要这一层 ──────────────────────────────────────────────────
+ * 架构设计考量：
  *
  * 2026-10-10：粒子画布从 `MemorySpace` 提到了这里，因为**它必须在路由切换时
  * 存活**。长在任何一条路由的组件树里，路由一换它就卸载重建 ——

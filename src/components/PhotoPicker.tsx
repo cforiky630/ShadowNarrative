@@ -20,7 +20,7 @@ import type { CSSProperties, ReactNode } from "react";
  * > 必须在处理完把 `e.target.value` 清空，否则用户第二次选同一张毫无反应。
  * > 写几遍就会漏几遍。
  *
- * ── 为什么是 `<label>` 不是 `inputRef.current.click()` ──────────────
+ * 文件选取触发机制：
  *
  * `<label>` 包着 input 是浏览器原生支持的：点标签就是点 input，不用自己接
  * 点击。`input.click()` 那条路要自己加 `tabIndex`、`role`、键盘处理。

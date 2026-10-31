@@ -1,7 +1,7 @@
-import { ApiError, failFrom } from "@/lib/apiResponse";
-import { readStoredFile } from "@/services/mediaService";
-import { getPhotoDetail } from "@/services/photoService";
+import { ApiError } from "@/lib/apiResponse";
+import { getPhotoFileRef } from "@/services/photoService";
 import { getLocalUserId } from "@/services/userService";
+import { serveStoredFile, storedFileError } from "../serveStoredFile";
 
 /**
  * 缩略图（`08-DATA_API_SPEC.md` §6）。
@@ -9,7 +9,7 @@ import { getLocalUserId } from "@/services/userService";
  * 相册、时间线、进入照片时的飞行图都取这个地址；**原图只有画布
  * 与 AI 用**（粒子要按像素采样，`16 §8.1` 要「清晰可辨认的原图」）。
  *
- * ── 没有缩略图时**回落原图**，不是 404 ─────────────────────────────
+ * 降级策略（无缩略图时回退至原图）：
  *
  * 缩略图是**可选**的派生资源：非浏览器上传没有（`08 §6`）、
  * 老照片没有、将来回填之前也没有。让这里回落，调用方就永远只需要
@@ -18,7 +18,7 @@ import { getLocalUserId } from "@/services/userService";
  * 这也是 `05 §7` 给 Python 服务定的那个姿态的同一条：
  * 派生资源不可用时降级为「原图直出」，不报错。
  *
- * ── 两段的缓存头**必须不一样** ──────────────────────────────────────
+ * 缓存策略说明：
  *
  * 缩略图的文件名是服务端生成的 UUID，内容永不改变 ⇒ `immutable`。
  *
@@ -58,34 +58,27 @@ export async function GET(_request: Request, { params }: RouteParams) {
     const userId = await getLocalUserId();
 
     // ownership 校验合成在查询条件里，不做「先查出再判断」的两段式（08 §1）
-    const photo = await getPhotoDetail(userId, id);
+    const photo = await getPhotoFileRef(userId, id);
 
     // 找不到与不属于当前用户一律 404 —— 不泄露「这个资源存在」（08 §5）
     if (!photo) throw new ApiError("NOT_FOUND", "资源不存在");
 
     if (photo.thumbnailKey) {
-      const bytes = await readStoredFile(photo.thumbnailKey);
-      return new Response(new Uint8Array(bytes), {
-        headers: {
-          "Content-Type": thumbnailMimeType(photo.thumbnailKey),
-          "Cache-Control": "public, max-age=31536000, immutable",
-        },
+      return await serveStoredFile({
+        storageKey: photo.thumbnailKey,
+        mimeType: thumbnailMimeType(photo.thumbnailKey),
+        // `private`：私人照片不进共享缓存（与 `/file` 同一条）
+        cacheControl: "private, max-age=31536000, immutable",
       });
     }
 
     // 回落：原图直出。缓存头见文件头那一段
-    const bytes = await readStoredFile(photo.storageKey);
-    return new Response(new Uint8Array(bytes), {
-      headers: {
-        "Content-Type": photo.mimeType,
-        "Cache-Control": "private, no-cache",
-      },
+    return await serveStoredFile({
+      storageKey: photo.storageKey,
+      mimeType: photo.mimeType,
+      cacheControl: "private, no-cache",
     });
   } catch (error) {
-    // 记录在库里但文件丢了 —— 属于数据不一致，同样按不存在处理
-    return failFrom(
-      error instanceof ApiError ? error : new ApiError("NOT_FOUND", "资源不存在"),
-      "api/photos/[id]/thumbnail",
-    );
+    return storedFileError(error, "api/photos/[id]/thumbnail");
   }
 }

@@ -18,7 +18,7 @@ import "@/styles/accordion-gallery.css";
  * 样式在 `src/styles/accordion-gallery.css`（走 `globals.css` 那个入口，
  * 因为项目的 `@import` 全部集中在最前面 —— 见那个文件顶部的说明）。
  *
- * ── 相对上游改了四处，每一处都有理由 ──────────────────────────────
+ * 上游适配与定制改动：
  *
  * 1. **TSX。** 项目全量 TypeScript，上游是 JSX。
  *

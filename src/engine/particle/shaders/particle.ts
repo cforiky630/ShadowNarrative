@@ -62,7 +62,7 @@ varying float vAlpha;
 ${DISSOLVE_GLSL}
 
 void main() {
-  // --- 滑动进度 ---
+  // 滑动进度
   // smoothstep 本身是 ease-in-out，起步与收尾都慢，符合 02 §10「慢、柔和、有惯性」
   float m = smoothstep(P_SLIDE_IN, P_SLIDE_OUT, uProgress);
 
@@ -74,7 +74,7 @@ void main() {
     sin(aRandom * 13.1)
   );
 
-  // --- 滑动中段的拂动 ---
+  // 滑动中段的拂动
   // 中段最大、两端归零，所以不会破坏 A 与 B 两端的位置。
   // 幅度很小（约云宽的 2%）：目的是让过程像沙粒拂过，而不是机械插值。
   // 用户明确要求「原地滑动」，所以这里刻意不做整体散开。
@@ -82,7 +82,7 @@ void main() {
   pos += jitter * lift * uScatter * 0.045;
   pos.z += lift * uScatter * 0.05;
 
-  // --- 溶解（照片 ⇄ 粒子）---
+  // 溶解（照片 ⇄ 粒子）
   // 用与四边形**完全相同**的场，保证粒子出现在照片刚消失的位置。
   //
   // 用 aPositionA 算而不是 pos：pos 会被指针场与呼吸扰动，
@@ -98,7 +98,7 @@ void main() {
   // 刚出现时带一点随机偏移，落定才稳 —— 像碎屑落下，而不是凭空点亮
   pos += jitter * (1.0 - appear) * 0.16;
 
-  // --- 呼吸（06 §7）---
+  // 呼吸（06 §7）
   float ph = aRandom * 6.2831853;
   pos += vec3(
     sin(uTime * 0.35 * uNoiseSpeed + ph),
@@ -106,13 +106,13 @@ void main() {
     sin(uTime * 0.21 * uNoiseSpeed + ph * 0.6)
   ) * (0.0045 * uMotion);
 
-  // --- 湍流 ---
+  // 湍流
   pos.xy += vec2(
     sin(uTime * 1.10 * uNoiseSpeed + pos.y * 4.0 + ph),
     cos(uTime * 0.90 * uNoiseSpeed + pos.x * 4.0 + ph)
   ) * (uTurbulence * 0.012);
 
-  // --- 指针场（06 §8）---
+  // 指针场（06 §8）
   // 无状态：位移只是当前位置与指针的函数。指针连续移动时粒子平滑进退，
   // 移开后 falloff 自然回落到 0，不需要额外的恢复积分。
   vec2  d       = pos.xy - uPointer;
@@ -120,7 +120,7 @@ void main() {
   float falloff = 1.0 - smoothstep(0.0, uMouseRadius, r);
   pos.xy += normalize(d + vec2(1e-6)) * uMouseForce * falloff * 0.16;
 
-  // --- 输出 ---
+  // 输出
   vColor = mix(aColorA, aColorB, m);
 
   // 色彩扰动：每个粒子在自己的颜色上做一点偏移，让画面更像沙粒而不是印刷网点。

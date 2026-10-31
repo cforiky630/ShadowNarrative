@@ -4,7 +4,7 @@
  * 这是全项目最关键的一个算法（06-PARTICLE_ENGINE.md §14），
  * A→B Morph 的质量完全取决于它，所以单独留一个可重复执行的验证脚本。
  *
- * 运行：node scripts/verify-hilbert.mjs
+ * 运行：node scripts/dev/verify-hilbert.mjs
  * 它直接 import TypeScript 源文件，依赖 Node 24 的原生类型剥离。
  */
 
@@ -14,7 +14,7 @@ import {
   quantize,
   hilbertOrder,
   windowedNearestNeighbor,
-} from "../src/engine/particle/HilbertSort.ts";
+} from "../../src/engine/particle/HilbertSort.ts";
 
 let failures = 0;
 const fail = (msg) => {
@@ -22,7 +22,6 @@ const fail = (msg) => {
   failures++;
 };
 
-// ---------------------------------------------------------------------------
 console.log("[1] order=3 时必须是哈密顿路径（相邻格曼哈顿距离恒为 1）");
 {
   const order = 3;
@@ -51,7 +50,6 @@ console.log("[1] order=3 时必须是哈密顿路径（相邻格曼哈顿距离�
   if (jumps > 0) fail("存在非相邻跳转，不是连续路径");
 }
 
-// ---------------------------------------------------------------------------
 console.log("\n[2] xy2d 与 d2xy 必须互逆");
 {
   const order = 4;
@@ -65,7 +63,6 @@ console.log("\n[2] xy2d 与 d2xy 必须互逆");
   if (bad > 0) fail("xy2d 与 d2xy 不互逆");
 }
 
-// ---------------------------------------------------------------------------
 console.log("\n[3] 生产参数 order=16 下的排序质量与耗时");
 {
   const N = 120_000; // Ultra 档粒子数
@@ -99,7 +96,6 @@ console.log("\n[3] 生产参数 order=16 下的排序质量与耗时");
   if (ratio >= 1) fail("排序没有带来空间局部性改善");
 }
 
-// ---------------------------------------------------------------------------
 console.log("\n[4] 窗口化最近邻交换必须降低总飞行距离");
 {
   const N = 4000;
@@ -138,7 +134,6 @@ console.log("\n[4] 窗口化最近邻交换必须降低总飞行距离");
   if (after > before) fail("交换后总距离反而变大");
 }
 
-// ---------------------------------------------------------------------------
 console.log("\n[5] quantize 必须 clamp 越界输入而不是抛错");
 {
   const cases = [-2, -1, 0, 0.5, 1, 2, NaN];

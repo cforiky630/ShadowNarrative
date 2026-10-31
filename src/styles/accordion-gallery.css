@@ -1,21 +1,8 @@
-/* ==========================================================================
-   AccordionGallery —— 来自 React Bits（https://reactbits.dev）
-   组件本体在 src/components/AccordionGallery.tsx，这里只放它带的样式。
-
-   ⚠️ 这份**由组件自己 import**（`import "@/styles/accordion-gallery.css"`），
-   不走 globals.css 的 @import 链 —— 那份文件顶部记着一条坑：
-   @import 必须全部集中在最前面，挂在 components.css 之后会被**静默丢弃**
-   （实测 `.ag-panel` 一条规则都没进样式表，控制台却没有任何报错）。
-
-   刻意**保留上游的类名**（`.accordion-gallery` / `.ag-panel*`），
-   没有改成项目的 `sn-` 前缀 —— 这样以后从上游取新版时能直接 diff。
-   命名空间够窄，撞不上。
-
-   与上游逐字一致，只改了一处：`.ag-panel` 的底色。
-   上游写死 `#0a0713`，这里换成项目的 token（`02-DESIGN_SYSTEM.md`）。
-   其余的颜色都由组件以 CSS 变量下发（`--ag-accent` / `--ag-overlay` /
-   `--ag-text`），调用方传我们的 token 进去就行，不必改这份文件。
-   ========================================================================== */
+/**
+ * AccordionGallery 样式
+ * 来源：React Bits (https://reactbits.dev)
+ * 变量由组件统一映射至设计系统 Token。
+ */
 
 .accordion-gallery {
   --ag-accent: #ffffff;

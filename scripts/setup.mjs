@@ -53,17 +53,17 @@ function step(n, text) {
 async function main() {
   console.log("Shadow Narrative — 首次运行");
 
-  // --- 1. 解析数据目录 ---
+  // 1. 解析数据目录
   step(1, "解析数据目录");
   const dataDir = resolveDataDir();
   console.log(`      ${dataDir}`);
 
-  // --- 2. 创建目录结构 ---
+  // 2. 创建目录结构
   step(2, "创建目录结构");
   await mkdir(resolvePhotosDir(), { recursive: true });
   console.log(`      ${resolvePhotosDir()}`);
 
-  // --- 3. 跑迁移 ---
+  // 3. 执行 Prisma 迁移
   step(3, "应用数据库迁移");
   // 传单个命令字符串而不是 args 数组：Node 24 起，同时传 args 与 shell:true
   // 会触发 DEP0190（参数不转义，只做拼接）。命令是写死的常量，不经用户输入。
@@ -79,7 +79,7 @@ async function main() {
     process.exit(migrate.status ?? 1);
   }
 
-  // --- 4. 凭据模板 ---
+  // 4. 生成凭据模板
   step(4, "本机凭据");
   const secretsPath = resolveSecretsPath();
   if (await exists(secretsPath)) {
@@ -91,7 +91,7 @@ async function main() {
     console.log("      AI key 留空 —— 到设置页填，或直接编辑这个文件");
   }
 
-  // --- 5. 收尾 ---
+  // 5. 初始化完成提示
   step(5, "完成");
   const host = process.env.SN_HOST ?? "127.0.0.1";
   const port = process.env.PORT ?? "3000";

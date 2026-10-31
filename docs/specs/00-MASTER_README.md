@@ -48,8 +48,6 @@
 - 炫目的霓虹赛博朋克
 - 强烈的 3D 科幻 Dashboard
 
-**斜轴相册可以有「在空间里穿行」的感觉，但它不是一个炫目的 3D 展厅。**
-
 ## 2. 强制读取顺序
 
 必须按下列顺序完整读取：
@@ -109,7 +107,7 @@
 | 13 | 本地、预览、生产部署与环境变量 |
 | 14 | 最终完整验收清单 |
 | 15 | 设备能力探测、性能档位矩阵与降级策略 |
-| 16 | 斜轴相册、Library、Photo View、原图⇄粒子切换 |
+| 16 | 相册手风琴画廊、时间线、Photo View、原图⇄粒子切换 |
 | 17 | 自托管交付形态、数据目录、AI 凭据 |
 | 18 | 备份协议（只定协议，不实现后端） |
 
@@ -124,11 +122,10 @@
 - Zustand
 - **GSAP** —— 只用于镜头编排（`16-ALBUM_SPACE.md` §11）
 - Motion for React —— 只用于 UI 微交互
-- shadcn/ui
 - Tailwind CSS 4
 - **SQLite + Prisma**（自托管，一个文件，零配置）
-- **备份后端用 PostgreSQL**（协议见 `18-BACKUP_PROTOCOL.md`）
-- **Python + FastAPI**（仅图像管线，见 `05-TECH_ARCHITECTURE.md` §2）
+- **备份后端协议**（协议见 `18-BACKUP_PROTOCOL.md`）
+- **Python + FastAPI**（仅图像管线备选，见 `05-TECH_ARCHITECTURE.md` §2）
 
 如果项目已有成熟技术栈，Agent 可以保留现有技术，只要不破坏本项目的核心架构边界。
 
@@ -136,13 +133,13 @@
 
 产品只需要理解为 **7 个主要体验状态**：
 
-1. Album
-2. Photo View
-3. Photo Particle
-4. Conversation
-5. Journal
-6. Library
-7. Memory Theater
+1. Album（相册首屏手风琴画廊）
+2. Photo View（原图凝视态）
+3. Photo Particle（粒子态解构与 3D 旋转）
+4. Conversation（伴随对话）
+5. Journal（随笔小记）
+6. Timeline（中央时间轴，取代原计划的 Library 抽屉，见 `01 §5`）
+7. Memory Theater（影院漫游，待定）
 
 这些不是 7 个割裂的网站页面，而是同一个空间的不同状态。
 详细规格见 `16-ALBUM_SPACE.md`。
@@ -152,9 +149,9 @@
 ```text
 进入 Shadow Narrative
     ↓
-Album（斜轴相册，收藏的照片）
+Album（手风琴画廊，精选与收藏照片）
     ↓
-拖拽沿轴移动，焦点落在某张
+移动光标舒展画幅，焦点落在某张
     ↓
 点击 → 相机推进
     ↓
@@ -168,7 +165,7 @@ Photo View（原图模式）
     ↓
 （用户主动）整理成随笔小记
     ↓
-返回 Album
+返回上一级空间（Album / Timeline / Memories）
 ```
 
 ## 8. 开发顺序

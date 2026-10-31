@@ -4,8 +4,8 @@
 // 语气这种东西没法靠读 prompt 判断，只能看输出。
 //
 // 用法：
-//   node scripts/try-subtitles.mjs <图片...>        每张 6 条
-//   N=3 node scripts/try-subtitles.mjs <图片...>    每张 3 条
+//   node scripts/dev/try-subtitles.mjs <图片...>        每张 6 条
+//   N=3 node scripts/dev/try-subtitles.mjs <图片...>    每张 3 条
 //
 // 关键：直接 import src/services/aiPrompt.ts —— 看到的就是**线上会说的**，
 // 不是另写一份"调试用提示词"（那两份一定会各改各的）。
@@ -18,7 +18,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { SYSTEM_PROMPT, USER_INSTRUCTION } from "../src/services/aiPrompt.ts";
+import { SYSTEM_PROMPT, USER_INSTRUCTION } from "../../src/services/aiPrompt.ts";
 
 const images = process.argv.slice(2);
 if (images.length === 0) {

@@ -137,7 +137,7 @@ Space     允许暂停/继续可暂停动画
 - tap
 - drag
 - swipe
-- pinch（斜轴相册里用于沿轴缩放前进）
+- pinch / 双指捏合手势（画廊缩放与画幅舒展）
 
 移动端不能简单复制 mousemove。
 

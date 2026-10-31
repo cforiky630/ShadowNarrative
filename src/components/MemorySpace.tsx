@@ -10,10 +10,10 @@ import HoldButton from "@/components/HoldButton";
 import { PhotoDate } from "@/components/PhotoDate";
 import { Subtitle } from "@/components/Subtitle";
 import { formatDate } from "@/lib/formatDate";
-import { isImeKey } from "@/lib/keyboard";
 import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
-import { usePhotoDrop } from "@/lib/usePhotoDrop";
+import { usePhotoDrop } from "@/hooks/usePhotoDrop";
+import { useEscape } from "@/hooks/useEscape";
 import type { AiState, PhotoDetail } from "@/types";
 import { useExperience } from "@/store/experience";
 
@@ -409,7 +409,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
   /**
    * 拖入照片。
    *
-   * 监听挂在 `window` 上（`src/lib/usePhotoDrop.ts` 里，相册也共用那一份）。
+   * 监听挂在 `window` 上（`src/hooks/usePhotoDrop.ts` 里，相册也共用那一份）。
    * 不挂 `<main>` 是因为画布压在它之上（指针要穿透过去，否则拖拽旋转失效），
    * 文件拖到页面上时命中的是画布那一层 —— `main` 的 `onDragOver` / `onDrop`
    * 一次都不会触发，照片拖进去毫无反应（踩过）。
@@ -432,15 +432,12 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
    * 所以 `pointerdown` 与 `pointerup` 都重新计时：手一搭上去，倒计时重走。
    * 于是「两秒」量的是**没碰它的时间**，不是「从点删除算起的时间」。
    */
+  /** 收回「删除待确认」。Esc、点到别处、倒计时都走这一处 */
+  const disarm = useCallback(() => setConfirmDelete(false), []);
+  useEscape(confirmDelete, disarm);
+
   useEffect(() => {
     if (!confirmDelete) return;
-
-    const disarm = () => setConfirmDelete(false);
-
-    const onKey = (e: KeyboardEvent) => {
-      // 组字中的 Esc 是输入法在取消候选，不该把待确认的删除收回去
-      if (e.key === "Escape" && !isImeKey(e)) disarm();
-    };
 
     /*
      * 点到别处收起。用 `pointerdown` 不用 `click` —— 和 `DockCard` 一样：
@@ -455,14 +452,12 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     };
 
     armRevertTimer();
-    window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onOutside);
     return () => {
-      window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", onOutside);
       if (revertTimer.current) clearTimeout(revertTimer.current);
     };
-  }, [confirmDelete, armRevertTimer]);
+  }, [confirmDelete, armRevertTimer, disarm]);
 
   /**
    * 删除当前照片。顺序由服务端保证：先删文件再删记录（08 §16）。
@@ -609,7 +604,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
         指针事件默认穿透，只有按钮自己接收 —— 否则会挡住拖拽旋转
         （`main` 整体是 `pointer-events: none` 的，见 render 顶部）。
 
-        ── 为什么透明度可以放在这一层 ──────────────────────────────────
+        透明度层级设计说明：
         用户 2026-10-10 要求日期与字幕「淡入」，而这一层做得到、别的层做不到。
 
         任何带 `opacity < 1` 的元素都会成为**层叠上下文**，然后按它自己在父级里的
@@ -659,6 +654,13 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
             见 `PhotoDate`。
           */}
           <PhotoDate
+            /*
+             * ⚠️ `key` 让外部改了日期（`router.refresh()`）时这一格带着新值
+             * 重挂一次。它没有 props → state 的同步 effect，因为项目禁的是
+             * effect 里同步 setState（`react-hooks/set-state-in-effect`）——
+             * 重挂比一条会级联渲染的 effect 便宜，也不会留下半旧的本地值。
+             */
+            key={takenAt ?? "none"}
             photoId={photo.id}
             takenAt={takenAt}
             createdAt={photo.createdAt}
@@ -781,7 +783,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
             （回原图）了，再并排一个 `Back`（回相册 / 时间线），屏幕上就是
             两个都读作「回去」、去向却不同的东西。
 
-            ── 为什么包一层 span 而不是直接给出参 ──────────────────────
+            布局容器设计说明：
 
             收的**不只是透明度，还有宽度和它左边那段间距**：
             只淡出的话这一行仍然是原来那么宽，居中的结果就是「返回」偏左
@@ -894,6 +896,16 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
         onPointerUp={armRevertTimer}
         onPointerCancel={armRevertTimer}
         className="pointer-events-auto text-micro absolute bottom-6 left-32 z-10 flex h-[46px] items-center gap-5"
+        /*
+         * ⚠️ 和文字层同一个拍子淡入。这一组在 `.sn-content` 里，而那一层
+         * 在飞行结束时会**瞬间**从 0 回到 1（`data-leaving` 一撤，过渡就没有
+         * 起点了）—— 不给它自己一条过渡，`删除` 会在交接那一帧凭空出现，
+         * 而日期与字幕是淡进来的。同一屏两种出现方式，读起来就是「割裂」。
+         */
+        style={{
+          opacity: entering ? 0 : 1,
+          transition: "opacity var(--duration-ui) var(--ease-enter)",
+        }}
       >
         {busy && (
           <span className="pointer-events-none text-text-primary/40">
@@ -980,7 +992,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
               长按把「确认」从又一次点击变成一件要花掉时间的事 ——
               删除不可逆（`08 §16` 先删文件再删记录），值得这道门。
 
-              ── 配色全部走项目 token，不用上游那个紫色 ──────────────────
+              配色统一使用系统 Token：
               `02 §3`：粒子颜色优先来自照片本身，整套配色里**没有强调色**。
               所以「危险」在这个产品里的表达方式是**提亮，不是染色**
               （深色背景上接近纯白是最抢眼的）—— 液体用 `--text-primary`，

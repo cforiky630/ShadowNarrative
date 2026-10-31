@@ -1,6 +1,6 @@
 # Shadow Narrative — Album Space
 
-本文档定义产品第一屏（斜轴相册）与照片界面的完整规格。
+本文档定义产品第一屏（相册手风琴画廊 Accordion Gallery）与照片界面的完整规格。
 
 ## 1. 空间总览
 
@@ -766,7 +766,7 @@ gsap.registerEase("sn-enter", CustomEase.create("sn-enter", "0.16,1,0.30,1"));
 gsap.registerEase("sn-morph", CustomEase.create("sn-morph", "0.65,0,0.35,1"));
 ```
 
-### 11.2.1 每个空间的**进场揭示**（`lib/useReveal`）
+### 11.2.1 每个空间的**进场揭示**（`src/hooks/useReveal`）
 
 > ⚠️ 2026-10-11 补进规格。在这之前它**只活在代码注释里** —— 于是影册那两页
 > （架子与一册）建的时候没人知道有这条，从顶栏切过去是「一下闪出来」，
@@ -782,7 +782,7 @@ gsap.registerEase("sn-morph", CustomEase.create("sn-morph", "0.65,0,0.35,1"));
 | 影册架子 | 标题那一行 / 册子那一堆 | 120ms |
 | 一册 | 名字与那两颗图标 / 下面的照片 | 120ms |
 
-用的就是 `src/lib/useReveal.ts` 那一份 —— **不是仿的，同一份代码**。
+用的就是 `src/hooks/useReveal.ts` 那一份 —— **不是仿的，同一份代码**。
 透明度 + 上移 14px + 模糊收清，缓动与时长从 token 读（`02 §10`）。
 
 ⚠️ 三件事别漏：

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
-import { motion } from "motion/react";
+import { m } from "motion/react";
 import { isImeKey } from "@/lib/keyboard";
 import type { ConversationMessage } from "@/types";
 
@@ -22,7 +22,7 @@ import type { ConversationMessage } from "@/types";
  * 于是「还能拖粒子，而且点不了聊天框」（用户 2026-10-10 报的正是这个）。
  * 判据不是「谁看着像要能点」，而是**它在不在那个 `none` 的子树里**。
  *
- * ── 形态是用户 2026-10-10 定的 ──────────────────────────────────────
+ * 伴随对话面板交互设计：
  *
  * > 只有粒子界面能进入对话…点击那条主题盖上一层浮层背景（这个浮层是全屏的
  * > 遮罩）实时模糊，然后对话、对话入场要有逐条从下面上来的效果
@@ -36,7 +36,7 @@ import type { ConversationMessage } from "@/types";
  *    ⚠️ 只有**打开时已有的那些**参与错开，新发的那条延迟是 0 ——
  *    否则聊到第二十条时，每说一句都要等一秒才看见。
  *
- * ── 两条规格约束 ────────────────────────────────────────────────────
+ * 规格约束：
  *
  * - **不用气泡**（§9）。AI 的话是正文，用户的话更淡，靠明暗分层，
  *   没有边框、没有背景块。字幕就是列表的第一条（`08 §3`：不做两套数据）。
@@ -191,10 +191,17 @@ export function ConversationPanel({
        * 对账。**服务端在调模型之前就把用户那句话落库了** ——
        * 所以模型失败时，那句话其实已经在库里。只报错不重取的话，
        * 用户再点一次发送就会把同一句存两遍。
+       *
+       * 顺带决定输入框要不要把这句话还回去：重取之后最后一条用户消息
+       * 就是它 ⇒ 已经存下（只是 AI 没回上），不要再让用户重打；
+       * 否则还回去，让他直接按发送重试。
        */
-      await load().catch(() => {
-        // 连重取都失败，说明服务端整个不通；错误已经报出去了
-      });
+      const refreshed = await load().catch(() => null);
+      const lastUser = refreshed
+        ?.slice()
+        .reverse()
+        .find((m) => m.role === "user" && !m.isSubtitle);
+      if (!lastUser || lastUser.content !== text) setDraft(text);
     } finally {
       setSending(false);
       onReplyingChange?.(false);
@@ -217,7 +224,7 @@ export function ConversationPanel({
       骨架，一屏只有两句话时中间是空的，读起来像没加载完。
       现在消息和输入挨在一起，高度封顶，超出在内部滚。
     */
-    <motion.div
+    <m.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       // 用 spring 而不是写一条 cubic-bezier：`16 §11.2` 不许把曲线抄进代码，
@@ -226,9 +233,9 @@ export function ConversationPanel({
       className="flex max-h-[78dvh] min-h-0 w-full min-w-0 flex-1 flex-col"
     >
         <div className="sn-noscrollbar min-h-0 flex-1 overflow-y-auto">
-          {list.map((m, i) => (
-              <motion.div
-                key={m.id}
+          {list.map((msg, i) => (
+              <m.div
+                key={msg.id}
                 initial={{ opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{
@@ -239,17 +246,17 @@ export function ConversationPanel({
                   delay: i < initialCount ? i * 0.06 : 0,
                 }}
                 className={
-                  m.isSubtitle
+                  msg.isSubtitle
                     ? "text-body text-text-primary/85"
-                    : m.role === "user"
+                    : msg.role === "user"
                       ? // 我说的靠右（用户 2026-10-10）。不用气泡（§9）——
                         // 靠**对齐 + 明暗**分层就够了，加个框就变成 IM 了
                         "text-body mt-7 ml-auto max-w-[85%] text-right text-text-primary/40"
                       : "text-body mt-7 text-text-primary/90"
                 }
               >
-                {m.content}
-              </motion.div>
+                {msg.content}
+              </m.div>
             ))}
 
             {sending && (
@@ -329,6 +336,6 @@ export function ConversationPanel({
             摆在每次对话的下面只是重复，还占着最底下那行。
           */}
         </div>
-      </motion.div>
+      </m.div>
   );
 }

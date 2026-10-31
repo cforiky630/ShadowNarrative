@@ -15,10 +15,11 @@ import AccordionGallery, {
 } from "@/components/AccordionGallery";
 import { useStage } from "@/components/ExperienceShell";
 import { PhotoPicker } from "@/components/PhotoPicker";
+import { formatDate } from "@/lib/formatDate";
 import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
-import { usePhotoDrop } from "@/lib/usePhotoDrop";
-import { revealStyle, useReveal } from "@/lib/useReveal";
+import { usePhotoDrop } from "@/hooks/usePhotoDrop";
+import { revealStyle, useReveal } from "@/hooks/useReveal";
 import { useExperience } from "@/store/experience";
 import type { Photo } from "@/types";
 
@@ -28,7 +29,7 @@ import type { Photo } from "@/types";
  * 一排照片，当前那张展开、其余收成细条。**不是平铺网格**：
  * 没有行列、没有对齐的格子、没有边界。
  *
- * ── 形态换过一次 ────────────────────────────────────────────────────
+ * 交互设计形态：
  *
  * 2026-10-10 的第一版是**斜轴**：照片沿一条斜轴排布、由近及远退去
  * （`§2.2` 的 `normalize(0.62, 0.26, -1.0)`）。那一版调了一轮方向
@@ -103,7 +104,7 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
   const stageRef = useRef<HTMLElement>(null);
 
   /**
-   * 进场的揭示（`src/lib/useReveal.ts`）。
+   * 进场的揭示（`src/hooks/useReveal.ts`）。
    *
    * 用户 2026-10-10：「时间线页面就很好，切到该页面会有一个动效，
    * 我希望首页也有这个效果而不是一下闪出来」。
@@ -143,7 +144,7 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
     () =>
       all.map((photo) => ({
         image: `/api/photos/${photo.id}/thumbnail`,
-        label: formatDate(photo.takenAt ?? photo.createdAt),
+        label: formatDate(photo.takenAt ?? photo.createdAt) ?? "",
       })),
     [all],
   );
@@ -166,7 +167,7 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
     [all, enter],
   );
 
-  // ── 上传（§5：相册就是上传的地方）────────────────────────────────
+  // 照片上传交互
 
   const acceptFile = useCallback(
     async (file: File) => {
@@ -191,7 +192,7 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
 
   const dropping = usePhotoDrop(acceptFile);
 
-  // ── 渲染 ──────────────────────────────────────────────────────────
+  // 空间视图渲染
 
   if (all.length === 0) {
     return (
@@ -360,15 +361,4 @@ function DropFrame() {
   return (
     <div className="pointer-events-none fixed inset-0 z-20 border border-border-subtle" />
   );
-}
-
-/** 02-DESIGN_SYSTEM.md §4 的日期格式：2025 · 09 · 28 */
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y} · ${m} · ${day}`;
 }

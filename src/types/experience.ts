@@ -1,27 +1,12 @@
 /**
- * 体验状态机与显示模式
+ * 显示模式
  *
- * 来源：docs/specs/
- *   - 体验状态机      04-UX_INTERACTION_SPEC.md §2 与 05-TECH_ARCHITECTURE.md §9
- *   - 显示模式        16-ALBUM_SPACE.md §8
- */
-
-/**
- * 体验状态机。
+ * 来源：docs/specs/16-ALBUM_SPACE.md §8
  *
- * 定义在 04-UX_INTERACTION_SPEC.md §2 与 05-TECH_ARCHITECTURE.md §9，三处必须一致。
- * 原设计里的 SCATTER / ASSEMBLE 两个阶段已随「原地滑动」的转场决定取消。
+ * 原 `ExperienceMode`（rest / explore / focus / …）是 Round 1 的状态机模型，
+ * 实现里从未被读写过 —— 2026-10-31 随死代码一起删掉。真正的模式只分两层：
+ * 「原图 ⇄ 粒子」（本文件）与「哪个空间」（`store/experience.ts` 的 `stage.space`）。
  */
-export type ExperienceMode =
-  | "rest"
-  | "explore"
-  | "focus"
-  | "interact"
-  | "orbit"
-  | "morphing"
-  | "story"
-  | "journal"
-  | "conversation";
 
 /**
  * 原图 ⇄ 粒子。

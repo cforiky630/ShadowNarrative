@@ -1,48 +1,43 @@
-/* ==========================================================================
-   Shadow Narrative — Design Tokens
-   Source of truth: docs/specs/02-DESIGN_SYSTEM.md
-   这里的每一个值都必须能在 02-DESIGN_SYSTEM.md 里找到对应条目。
-   改这里之前先改文档。
-
-   注意：不要在本文件里写 @import —— 入口 src/app/globals.css 已经
-   集中导入，这里再写会因为「@import 必须在其他规则之前」而被丢弃。
-   ========================================================================== */
+/**
+ * Shadow Narrative — Design Tokens
+ * 来源：docs/specs/02-DESIGN_SYSTEM.md
+ */
 
 :root {
-  /* --- Color / Background (02 §2) --- */
+  /* Color / Background (02 §2) */
   --background: #050505;
   --surface: #080808;
   --surface-elevated: #0b0b0b;
 
-  /* --- Color / Text (02 §2) --- */
+  /* Color / Text (02 §2) */
   --text-primary: #f5f5f5;
   --text-secondary: #8a8a8a;
   --text-tertiary: #555555;
 
-  /* --- Color / Border (02 §2) --- */
+  /* Color / Border (02 §2) */
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-faint: rgba(255, 255, 255, 0.05);
 
-  /* --- Color / Glass (02 §2) --- */
+  /* Color / Glass (02 §2) */
   --glass: rgba(255, 255, 255, 0.04);
   --glass-strong: rgba(255, 255, 255, 0.07);
 
-  /* --- Typography (02 §4) --- */
+  /* Typography (02 §4) */
   /* --font-inter 由 next/font 注入（src/app/layout.tsx），自托管无外部请求 */
   --font-sans: var(--font-inter), "MiSans", "HarmonyOS Sans SC",
     "Source Han Sans SC", system-ui, sans-serif;
 
-  /* --- Radius (02 §6) --- */
+  /* Radius (02 §6) */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 20px;
   --radius-pill: 999px;
 
-  /* --- Blur (02 §8) --- */
+  /* Blur (02 §8) */
   --blur-min: 8px;
   --blur-max: 24px;
 
-  /* --- Layering / Z-index (02 §11) --- */
+  /* Layering / Z-index (02 §11) */
   --z-background: 0;
   --z-particle-canvas: 1;
   --z-scene-content: 10;
@@ -51,14 +46,14 @@
   --z-dialogs: 40;
   --z-critical-overlay: 50;
 
-  /* --- Motion / Duration (02 §9) --- */
+  /* Motion / Duration (02 §9) */
   --duration-micro: 200ms;
   --duration-ui: 350ms;
   --duration-scene: 800ms;
   --duration-morph: 1200ms;
   --duration-story: 1000ms;
 
-  /* --- Motion / Easing (02 §10: 慢、柔和、有惯性、有阻尼，不要线性、不要 bounce) --- */
+  /* Motion / Easing (02 §10: 慢、柔和、有惯性、有阻尼，不要线性、不要 bounce) */
   --ease-enter: cubic-bezier(0.16, 1, 0.3, 1); /* 柔和落定，无回弹 */
   --ease-exit: cubic-bezier(0.4, 0, 0.2, 1); /* 安静退场 */
   --ease-morph: cubic-bezier(0.65, 0, 0.35, 1); /* 对称，克制 */

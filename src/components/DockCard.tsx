@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { isImeKey } from "@/lib/keyboard";
+import { useEscape } from "@/hooks/useEscape";
 
 /**
  * 从左下那颗胶囊长出来的浮卡。
@@ -15,7 +15,7 @@ import { isImeKey } from "@/lib/keyboard";
  * 两套一样的外壳摆在一起等于两份会各自漂移的动效性格（`05 §7` 对动画
  * 说过同一件事，只是发生在卡片上）。
  *
- * ── 三条不能丢的纪律 ────────────────────────────────────────────────
+ * 浮卡交互规范：
  *
  * 1. **不换页、不出暗色遮罩**（`07 §11.2`）：卡片就从胶囊那儿长出来，
  *    底下的照片还在。点空白处收起 —— 那一层是透明的，只是接点击。
@@ -39,15 +39,7 @@ export function DockCard({ label, open, onClose, children }: DockCardProps) {
   const openerRef = useRef<HTMLElement | null>(null);
 
   // Esc 收起（04-UX_INTERACTION_SPEC.md §7 的退出顺序第一层）
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      // 组字中的 Esc 是输入法在取消候选，不是「收起这张卡」（`lib/keyboard.ts`）
-      if (e.key === "Escape" && !isImeKey(e)) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useEscape(open, onClose);
 
   useEffect(() => {
     if (!open) {

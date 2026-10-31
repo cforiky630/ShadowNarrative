@@ -126,7 +126,7 @@ export function sampleImage(
   const data = ctx.getImageData(0, 0, w, h).data;
   const pixels = w * h;
 
-  // --- 权重 + 累积分布（06 §6）---
+  // 权重与累积分布构建（06 §6）
   const cdf = new Float64Array(pixels);
   const lumaBuf = new Float32Array(pixels);
   let acc = 0;
@@ -160,7 +160,7 @@ export function sampleImage(
     return uniformSample(aspect, count);
   }
 
-  // --- 分层逆变换采样（06 §5 step 5）---
+  // 分层逆变换采样（06 §5）
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   const luma = new Float32Array(count);

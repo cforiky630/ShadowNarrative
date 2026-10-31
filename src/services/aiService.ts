@@ -30,9 +30,7 @@ import {
  *   - `sentSummary` 记录「发出去了什么」，供界面披露
  */
 
-// ---------------------------------------------------------------------------
-// 请求参数（09 §20）
-// ---------------------------------------------------------------------------
+/** 请求参数配置 (09 §20) */
 
 /**
  * ⚠️ `effort` 必须显式设为 `low`。
@@ -89,9 +87,7 @@ const DETAIL = "low" as const; // 09 §20 默认值：降采样到 512×512 足�
 // 提示词在 ./aiPrompt.ts —— 产品性格是会被反复调的东西，单独成文件，
 // 好让它能脱离服务层单独试验（见该文件的说明）。
 
-// ---------------------------------------------------------------------------
-// 输出后过滤（09 §20 第 2 层 —— 文档写明是硬性要求）
-// ---------------------------------------------------------------------------
+/** 输出后过滤与安全防护 (09 §20) */
 
 /**
  * 排他性与依赖制造类短语（09 §3 §4.6）。
@@ -212,9 +208,7 @@ function degradeSubtitle(description: string): string {
   return "嗯，这张。";
 }
 
-// ---------------------------------------------------------------------------
-// 结构校验（09 §20：必须用 schema 校验，失败重试 1 次，仍失败返回 502）
-// ---------------------------------------------------------------------------
+/** 数据结构校验 (09 §20) */
 
 /** 手写校验，不引 zod —— 保持零新依赖（05 §17 依赖策略）。 */
 function isClaim(value: unknown): value is Claim {
@@ -277,9 +271,7 @@ function normalizeSourceRefs(value: unknown): SourceRef[] | null {
   return refs.length > 0 ? refs : null;
 }
 
-// ---------------------------------------------------------------------------
-// 上游调用
-// ---------------------------------------------------------------------------
+/** 上游调用请求封装 */
 
 interface DeepSeekChoice {
   finish_reason?: string;
@@ -423,9 +415,7 @@ function parseJsonObject(raw: string): unknown {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 对外：分析一张照片的字节
-// ---------------------------------------------------------------------------
+/** 图像分析接口 */
 
 export interface AnalyzeResult {
   payload: PhotoAnalysisPayload;
@@ -553,9 +543,7 @@ async function requestParsed(
   throw new ApiError("AI_UPSTREAM_FAILED", "AI 没有给出可用的回应");
 }
 
-// ---------------------------------------------------------------------------
-// 对外：完整流程（读图 → 分析 → 落库 → 更新状态）
-// ---------------------------------------------------------------------------
+/** 异步图像分析完整管线 */
 
 /**
  * 分析一张照片并把结果落库。
@@ -632,9 +620,7 @@ export async function runPhotoAnalysis(params: {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 对话（Round 8）
-// ---------------------------------------------------------------------------
+/** 伴随对话处理 (09 §9) */
 
 /**
  * 带进 prompt 的历史最多几条。
@@ -646,12 +632,12 @@ export async function runPhotoAnalysis(params: {
 const HISTORY_LIMIT = 20;
 
 /** 用户一条消息的长度上限。超了直接拒（`08 §5` 的 `INVALID_INPUT`） */
-export const MESSAGE_MAX_CHARS = 2000;
+const MESSAGE_MAX_CHARS = 2000;
 
 /**
  * 用户说了一句，让 AI 回一句（Round 8，`09 §9`–§11）。
  *
- * ── 与 `runPhotoAnalysis` 的三处不同，每一处都是有意的 ──────────────
+ * 与单张分析的设计差异：
  *
  * 1. **不进 `after()`。** 用户在等这句话。它是一次有超时的同步请求，
  *    失败就直接告诉他 —— 而不是像上传那样标个状态让他轮询。
@@ -669,6 +655,7 @@ export const MESSAGE_MAX_CHARS = 2000;
  * 发送范围见下面那段注释。
  */
 export async function runConversationReply(params: {
+  userId: string;
   photoId: string;
   content: string;
 }): Promise<ConversationMessage> {
@@ -678,8 +665,12 @@ export async function runConversationReply(params: {
     throw new ApiError("INVALID_INPUT", `一条最多 ${MESSAGE_MAX_CHARS} 个字`);
   }
 
-  const photo = await prisma.photo.findUnique({
-    where: { id: params.photoId },
+  /*
+   * ⚠️ **userId 一起进查询条件**（`08 §1`）。路由层已经校验过一次，
+   * 但服务层不能依赖「调用方记得先校验」—— 那是越权写入唯一的最后一道门。
+   */
+  const photo = await prisma.photo.findFirst({
+    where: { id: params.photoId, userId: params.userId },
     select: { id: true, storageKey: true, mimeType: true },
   });
   if (!photo) throw new ApiError("NOT_FOUND", "照片不存在");
@@ -695,7 +686,20 @@ export async function runConversationReply(params: {
   }
 
   const history = await listMessages(photo.id);
-  const recent = history.slice(-HISTORY_LIMIT);
+  /*
+   * ⚠️ **超长时丢最早的，但字幕要留着。** 它是这段对话的地基（模型在第一轮
+   * 之后看不到照片，靠的就是字幕与 `PhotoAnalysis`）。原先直接
+   * `slice(-HISTORY_LIMIT)` 会把第一条 —— 也就是字幕 —— 一起丢掉，
+   * 与上面 `HISTORY_LIMIT` 注释里写的「字幕那条留着」正好相反。
+   */
+  const subtitle = history.find((m) => m.isSubtitle);
+  const recent =
+    history.length > HISTORY_LIMIT
+      ? [
+          ...(subtitle ? [subtitle] : []),
+          ...history.slice(-(HISTORY_LIMIT - (subtitle ? 1 : 0))),
+        ]
+      : history;
 
   /*
    * 这一轮要不要把图片一起发出去。
@@ -773,24 +777,8 @@ export async function runConversationReply(params: {
 }
 
 /**
- * 对话那一次调用：**先开着思考，实在不行就降下来重来一次**。
- *
- * ── 为什么要有那一趟兜底 ─────────────────────────────────────────────
- *
- * 用户 2026-10-11 要的是「**开思考，限制一下强度和时间**」。实测下来，
- * medium 档确实让回复活了一点（同一段对话，思考开着之后从「复述他的话 +
- * 一个问句」变成了接得住话的短句），但它是**有代价**的：
- *
- * - 慢：实测 1.2s – 6.3s（`effort: low` 那条路是 0.3 – 0.6s）
- * - 而且**偶尔想过头**：推理把 max_tokens 吃光，`finish_reason: "length"`，
- *   用户收到的是「AI 的回应不完整」。实测四次里中了一次
- *
- * 聊天里偶尔弹一个错是不能接受的 —— 所以超预算时**降一档重来**：
- * `effort: low` 那条路又快又稳（字幕一直用它），代价只是这一条回复平淡些。
- * **平淡比报错好。**
- *
- * ⚠️ 只对「上游失败」兜底，别的错误照旧往上抛（网络、鉴权、限流不是
- * 降档能解决的）。
+ * 对话模型调用机制：优先开启 medium 思考档位以提升对话理解质量。
+ * 若遇输出长度超限或调用异常，自动降级至 low 档位兜底重试，保障交互可用性。
  */
 async function replyWithFallback(
   credentials: AiCredentials,
@@ -906,9 +894,7 @@ async function guardReply(
   return cleaned;
 }
 
-// ---------------------------------------------------------------------------
-// 随笔小记（Round 8 后半）
-// ---------------------------------------------------------------------------
+/** 随笔小记生成处理 (09 §12) */
 
 /**
  * 发给模型的对话上限。
@@ -941,10 +927,12 @@ const NOTE_MATERIAL_LIMIT = 100;
  * 就存在 `PhotoAnalysis.payload` 里（`09 §17`：只发当前这一张也不需要重复发）。
  */
 export async function runJournalNote(params: {
+  userId: string;
   photoId: string;
 }): Promise<JournalNote> {
-  const photo = await prisma.photo.findUnique({
-    where: { id: params.photoId },
+  // 与 `runConversationReply` 同一条：ownership 合成在查询条件里（`08 §1`）
+  const photo = await prisma.photo.findFirst({
+    where: { id: params.photoId, userId: params.userId },
     select: { id: true },
   });
   if (!photo) throw new ApiError("NOT_FOUND", "照片不存在");

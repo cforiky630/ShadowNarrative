@@ -96,7 +96,7 @@ export async function POST(request: Request) {
   }
 }
 
-// ---------------------------------------------------------------------------
+// 表单字段解析辅助函数
 
 function asOptionalString(v: FormDataEntryValue | null): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;

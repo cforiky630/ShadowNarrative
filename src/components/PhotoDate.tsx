@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   useDatePicker,
@@ -8,13 +8,13 @@ import {
   type DPPropGetter,
   type DPPropsGetterConfig,
 } from "@rehookify/datepicker";
+import { useEscape } from "@/hooks/useEscape";
 import { formatDate, formatMonth } from "@/lib/formatDate";
-import { isImeKey } from "@/lib/keyboard";
 
 /**
  * 照片的日期 —— 显示，以及**改它**（`16 §7.1` 那一行）。
  *
- * ── 为什么不是输入框 ─────────────────────────────────────────────────
+ * 日期选择交互设计：
  *
  * 用户 2026-10-11：「照片的日期应该提供修改功能（在原图页提供），
  * **但是不能是输入**，请寻找一个组件，而且要去适配当前风格」。
@@ -22,7 +22,7 @@ import { isImeKey } from "@/lib/keyboard";
  * 一个日期不是一串要人敲的字符，是一格要人挑的日子 —— 输入框还逼着他
  * 记住格式。
  *
- * ── 为什么是 `@rehookify/datepicker` ─────────────────────────────────
+ * 选型考量：
  *
  * 它是**无头的**（headless）：只给日历的**结构与日期运算**（月长、闰年、
  * 周起始、选中态、键盘可达的 prop getter），DOM 一行都不带 —— 所以这个产品
@@ -34,7 +34,7 @@ import { isImeKey } from "@/lib/keyboard";
  * 还盯着封装后的体积。React Bits 那边**没有**日期类组件（它的目录是视觉
  * 向的：搬过来的 `AccordionGallery` / `HoldButton` 都是那一类）。
  *
- * ── 三件事的规矩 ─────────────────────────────────────────────────────
+ * 交互行为约束：
  *
  * 1. **只挑到「天」**，但存的是时刻。所以挑完之后**保留原来的时刻**
  *    （`takenAt` 有就沿用它的时分；没有就用正午 —— 正午离两头的时区边界
@@ -112,16 +112,8 @@ export function PhotoDate({
     [saving, value, photoId, onSaved],
   );
 
-  // Esc 收起。⚠️ 先过 `isImeKey`（`lib/keyboard.ts`）—— 这里的当下没有输入框，
-  // 但那一句的代价是零，而这个产品已经为「组字中的 Esc」栽过两次
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !isImeKey(e)) setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  // Esc 收起。输入法组字中的 Esc 由 hook 里的 `isImeKey` 挡掉（`lib/keyboard.ts`）
+  useEscape(open, () => setOpen(false));
 
   return (
     <span className="pointer-events-auto relative">
@@ -172,7 +164,7 @@ export function PhotoDate({
 /**
  * 日历本身。
  *
- * ── 两态：**选中**与**已保存** ───────────────────────────────────────
+ * 状态呈现规范：
  *
  * 挑一天只动**选中**（`draft`），按 `Save` 才写库。所以：
  *
@@ -245,7 +237,7 @@ function Calendar({
       style={{ backgroundColor: "var(--glass-strong)" }}
     >
       {/*
-        ── 头一行：日子那一屏显示「2026 · 10」，年月那一屏显示「2026」 ────
+        // 头一行：日子那一屏显示「2026 · 10」，年月那一屏显示「2026」
 
         用户 2026-10-11：「**年月怎么调**」。原先只有一对 ‹ › 走月份，
         想看三年前的照片得点三十六下 —— 老照片是这个产品里的大多数。
