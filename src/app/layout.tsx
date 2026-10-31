@@ -6,8 +6,6 @@ import { OverlayScrollbar } from "@/components/OverlayScrollbar";
 import { ParticleControls } from "@/components/ParticleControls";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { TopNavigation } from "@/components/TopNavigation";
-import "@/styles/tokens.css";
-import "@/styles/components.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
