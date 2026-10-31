@@ -17,8 +17,8 @@ import { useStage } from "@/components/ExperienceShell";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
-import { usePhotoDrop } from "@/lib/usePhotoDrop";
-import { revealStyle, useReveal } from "@/lib/useReveal";
+import { usePhotoDrop } from "@/hooks/usePhotoDrop";
+import { revealStyle, useReveal } from "@/hooks/useReveal";
 import { useExperience } from "@/store/experience";
 import type { Photo } from "@/types";
 
@@ -103,7 +103,7 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
   const stageRef = useRef<HTMLElement>(null);
 
   /**
-   * 进场的揭示（`src/lib/useReveal.ts`）。
+   * 进场的揭示（`src/hooks/useReveal.ts`）。
    *
    * 用户 2026-10-10：「时间线页面就很好，切到该页面会有一个动效，
    * 我希望首页也有这个效果而不是一下闪出来」。

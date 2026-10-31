@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
 
 /**
- * 用户与偏好设置。
+ * 用户解析。
  *
- * 规格：08 §1 硬约束 #1、08 §3（UserSettings）
+ * 规格：08 §1 硬约束 #1、12 §4、17 §1
  *
  * ⚠️ `getLocalUserId()` 是**全应用唯一的用户解析点**。
  *
@@ -26,30 +26,4 @@ export async function getLocalUserId(): Promise<string> {
     select: { id: true },
   });
   return user.id;
-}
-
-export interface UserSettingsView {
-  particlePreset: string;
-  backupEndpoint: string | null;
-  backupAuto: boolean;
-}
-
-/**
- * 读取用户设置，不存在时按默认值初始化（08-DATA_API_SPEC.md §3）。
- *
- * 采用 upsert 保证并发读写安全，避免并发请求时撞唯一约束。
- */
-export async function getSettings(userId: string): Promise<UserSettingsView> {
-  const settings = await prisma.userSettings.upsert({
-    where: { userId },
-    create: { userId },
-    update: {},
-    select: {
-      particlePreset: true,
-      backupEndpoint: true,
-      backupAuto: true,
-    },
-  });
-
-  return settings;
 }

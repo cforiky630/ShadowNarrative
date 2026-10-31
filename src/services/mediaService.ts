@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
 import exifr from "exifr";
 import { ApiError } from "@/lib/apiResponse";
 import { resolvePhotosDir } from "@/lib/dataDir";
@@ -308,6 +310,26 @@ export function resolveStoragePath(storageKey: string): string {
 /** 读回原图字节。供文件路由与 AI 调用复用。 */
 export async function readStoredFile(storageKey: string): Promise<Buffer> {
   return readFile(resolveStoragePath(storageKey));
+}
+
+/**
+ * 以流的方式打开已存储的文件。供文件路由使用。
+ *
+ * 和 `readStoredFile` 的区别：不把整张原图读进内存再拷贝一份，
+ * 而是边读边发，并给出 `size` 好让响应带上 Content-Length。
+ *
+ * 先 `stat` 再建流 —— 文件不存在时在这里就抛 ENOENT（调用方按 404 处理），
+ * 而不是等响应头发出之后才在流里出错。
+ */
+export async function openStoredFile(
+  storageKey: string,
+): Promise<{ body: ReadableStream<Uint8Array>; size: number }> {
+  const filePath = resolveStoragePath(storageKey);
+  const { size } = await stat(filePath);
+  return {
+    body: Readable.toWeb(createReadStream(filePath)) as ReadableStream<Uint8Array>,
+    size,
+  };
 }
 
 /**

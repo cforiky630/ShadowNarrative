@@ -17,6 +17,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   LinearFilter,
+  LinearMipmapLinearFilter,
   Mesh,
   NoColorSpace,
   PerspectiveCamera,
@@ -150,6 +151,8 @@ export class ParticleSystem {
   private quadBitmap: ImageBitmap | null = null;
   /** 模式切换的 GSAP 补间，dispose 时要杀掉 */
   private modeTween: ReturnType<typeof import("gsap").gsap.to> | null = null;
+  /** 相机的 GSAP 补间（复位 / 回正 / 推近）。三者互斥，新的开始前先杀旧的 */
+  private camTween: ReturnType<typeof import("gsap").gsap.to> | null = null;
 
   /** 当前显示模式 */
   private mode: DisplayMode = "photo";
@@ -628,9 +631,7 @@ export class ParticleSystem {
     this.tier = tier;
     const spec = TIER_SPECS[tier];
 
-    if (this.renderer) {
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, spec.maxDpr));
-    }
+    this.applyPixelRatio();
     this.monitor?.setBudget(spec.frameBudgetMs);
 
     const reduced = this.reducedMotion || tier === "low" || tier === "minimal";
@@ -650,6 +651,24 @@ export class ParticleSystem {
 
   private async resampleCurrent(): Promise<void> {
     if (this.currentBitmap) await this.setImage(this.currentBitmap);
+  }
+
+  /**
+   * 画布的像素比。
+   *
+   * ⚠️ **原图模式下用满 `devicePixelRatio`，不受档位 `maxDpr` 约束。**
+   * 那个上限是为粒子（几十万点、每帧都在跑）留的余量；原图只是一张贴了
+   * 纹理的四边形，按满 DPR 画几乎不要钱。不这么做的话，降过档或 2x 屏的
+   * 机器上画布里的照片会明显比缩略图糊 —— 飞行交接那一下就是
+   * 「清晰 → 模糊」的硬切，而不是同一张图的交叉淡化。
+   */
+  private applyPixelRatio(): void {
+    if (!this.renderer) return;
+    const dpr = window.devicePixelRatio || 1;
+    const spec = TIER_SPECS[this.tier];
+    this.renderer.setPixelRatio(
+      this.mode === "photo" ? dpr : Math.min(dpr, spec.maxDpr),
+    );
   }
 
   /**
@@ -849,6 +868,8 @@ export class ParticleSystem {
     const cam = this.camera;
     if (!cam) return null;
 
+    cam.updateMatrixWorld(true);
+
     const aspect = this.currentSample?.aspect ?? 1;
     const halfW = aspect >= 1 ? 1 : aspect;
     const halfH = aspect >= 1 ? 1 / aspect : 1;
@@ -866,14 +887,19 @@ export class ParticleSystem {
       [1, 1],
     ] as const) {
       const v = new Vector3(sx * halfW, sy * halfH, 0).project(cam);
-      xs.push((v.x * 0.5 + 0.5) * w);
+      xs.push(rect.left + (v.x * 0.5 + 0.5) * w);
       // NDC 的 y 向上，CSS 的 y 向下
-      ys.push((1 - (v.y * 0.5 + 0.5)) * h);
+      ys.push(rect.top + (1 - (v.y * 0.5 + 0.5)) * h);
     }
 
     const x0 = Math.min(...xs);
     const y0 = Math.min(...ys);
-    return { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 };
+    return {
+      x: Math.round(x0),
+      y: Math.round(y0),
+      w: Math.round(Math.max(...xs) - x0),
+      h: Math.round(Math.max(...ys) - y0),
+    };
   }
 
   resize(): void {
@@ -933,6 +959,10 @@ export class ParticleSystem {
       this.controls.minDistance = nextFit * 0.20;
       this.controls.maxDistance = nextFit * 2.60;
       this.controls.update();
+    }
+    this.camera.updateMatrixWorld(true);
+    if (this.renderer && this.scene) {
+      this.renderer.render(this.scene, this.camera);
     }
   }
 
@@ -1038,20 +1068,36 @@ export class ParticleSystem {
       // 标 NoColorSpace 则用普通 RGBA8，texture2D 拿到原始 sRGB 值，
       // 直接写画布即为正确显示。最少活动部件。
       tex.colorSpace = NoColorSpace;
-      // 不生成 mipmap：这张图基本是 1:1 显示，省一次全尺寸的降采样
-      tex.generateMipmaps = false;
-      tex.minFilter = LinearFilter;
+      /*
+       * ⚠️ **要 mipmap。** 原图（常见 1500–4000px）在这里是**缩小显示**的
+       * （照片页约 400–900 CSS px），而 `LinearFilter` 只采一层全尺寸纹理，
+       * 降采样时没有 mip 链可挑，高频细节会闪成噪点 —— 与飞行图那张
+       * 1024px 缩略图相比，交界处会读成「换成了一张更脏的图」。
+       *
+       * 实测（1696×1363 原图，显示 490×394，逐像素邻差能量）：
+       *   无双线性 mipmap 23.99 · 有三线性 mipmap 18.14 · 2D 高质量缩略图 18.77
+       * 也就是开了 mipmap 之后画布与缩略图的锐度才真正对齐。
+       *
+       * 代价只有一次性的全尺寸降采样链，远小于粒子采样本身。
+       */
+      tex.generateMipmaps = true;
+      tex.minFilter = LinearMipmapLinearFilter;
       tex.magFilter = LinearFilter;
       tex.needsUpdate = true;
       this.quadTexture = tex;
-      this.quadBitmap = this.currentBitmap;
 
       if (this.quadMaterial) {
         this.quadMaterial.uniforms.uMap.value = tex;
       }
 
-      // 旧图现在没有任何引用了，可以关掉。
-      // 不能更早关：贴图指着它，WebGL 上下文丢失重建时会重新读源。
+      /*
+       * 旧图现在没有任何引用了，可以关掉。
+       * 不能更早关：贴图指着它，WebGL 上下文丢失重建时会重新读源。
+       *
+       * ⚠️ **`old` 必须在改写 `quadBitmap` 之前读下来。** 先赋值再读的话
+       * `old === currentBitmap` 恒成立，这个分支永远不会执行 —— 每看一张
+       * 照片就漏一张 ImageBitmap（12MP 约 48MB），而且一声不响。
+       */
       const old = this.quadBitmap;
       this.quadBitmap = this.currentBitmap;
       if (old && old !== this.currentBitmap) old.close();
@@ -1094,6 +1140,14 @@ export class ParticleSystem {
 
     const from = this.mode;
     this.mode = mode;
+
+    /*
+     * 像素比跟着模式走（原图满 DPR、粒子按档位封顶）。改完必须 resize 一次，
+     * drawing buffer 才会按新像素比重建；`resize()` 会按 `nextFit / prevFit`
+     * 保留用户的视角与相对缩放。
+     */
+    this.applyPixelRatio();
+    this.resize();
 
     const toParticle = mode === "particle";
 
@@ -1192,7 +1246,8 @@ export class ParticleSystem {
     const to = target.clone().add(dir);
 
     const from = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
-    ensureGsap().to(from, {
+    this.camTween?.kill();
+    this.camTween = ensureGsap().to(from, {
       x: to.x,
       y: to.y,
       z: to.z,
@@ -1200,6 +1255,7 @@ export class ParticleSystem {
       ease: EASE.morph,
       onUpdate: () => cam.position.set(from.x, from.y, from.z),
       onComplete: () => {
+        this.camTween = null;
         if (controls) {
           controls.enabled = true;
           controls.update();
@@ -1263,12 +1319,58 @@ export class ParticleSystem {
    *
    * 旋转是探索，但用户需要一个随时能回到「照片」的方式 ——
    * 否则转到一个奇怪的角度后就找不回原来的画面了。
+   *
+   * ⚠️ **默认是动画过渡，不是瞬跳。** 用户 2026-10-31：「复位视角的效果
+   * 也没了，不要直接跳回原状态」。镜头回正与「返回原图」是同一种动作
+   * （§8.7），所以共用 `--ease-morph` / `--duration-morph`。
+   *
+   * `immediate` 只给「进入照片之前的复位」用：那一下必须瞬间到位，
+   * 因为飞行终点是按**那一刻**的相机算的，相机还在动就会算错。
+   * `prefers-reduced-motion` 下同样直接到位（`04 §15`）。
    */
-  resetView(): void {
-    if (!this.camera) return;
-    this.camera.position.set(0, this.targetY, this.fitDistance);
-    this.controls?.target.set(0, this.targetY, 0);
-    this.controls?.update();
+  resetView(options?: { immediate?: boolean }): void {
+    const cam = this.camera;
+    const controls = this.controls;
+    if (!cam) return;
+
+    this.camTween?.kill();
+    this.camTween = null;
+
+    if (options?.immediate || this.reducedMotion) {
+      cam.position.set(0, this.targetY, this.fitDistance);
+      controls?.target.set(0, this.targetY, 0);
+      controls?.update();
+      cam.updateMatrixWorld(true);
+      if (this.renderer && this.scene) {
+        this.renderer.render(this.scene, cam);
+      }
+      this.lastRotated = false;
+      this.onViewChange?.(false);
+      return;
+    }
+
+    // 补间期间夺走控制权，否则 OrbitControls 的阻尼会和它打架
+    if (controls) controls.enabled = false;
+
+    const from = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
+    const to = { x: 0, y: this.targetY, z: this.fitDistance };
+
+    this.camTween = ensureGsap().to(from, {
+      ...to,
+      duration: DUR.morph,
+      ease: EASE.morph,
+      onUpdate: () => cam.position.set(from.x, from.y, from.z),
+      onComplete: () => {
+        this.camTween = null;
+        if (controls) {
+          controls.target.set(0, this.targetY, 0);
+          controls.enabled = true;
+          controls.update();
+        }
+        this.lastRotated = false;
+        this.onViewChange?.(false);
+      },
+    });
   }
 
   /** 当前是否处于正视角（供 UI 决定要不要显示「复位」） */
@@ -1297,12 +1399,14 @@ export class ParticleSystem {
     const from = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
     const to = { x: 0, y: this.targetY, z: this.fitDistance };
 
-    ensureGsap().to(from, {
+    this.camTween?.kill();
+    this.camTween = ensureGsap().to(from, {
       ...to,
       duration: DUR.morph,
       ease: EASE.morph,
       onUpdate: () => cam.position.set(from.x, from.y, from.z),
       onComplete: () => {
+        this.camTween = null;
         if (controls) {
           controls.target.set(0, this.targetY, 0);
           controls.enabled = true;
@@ -1332,6 +1436,8 @@ export class ParticleSystem {
     // 原图四边形相关
     this.modeTween?.kill();
     this.modeTween = null;
+    this.camTween?.kill();
+    this.camTween = null;
     this.quadGeometry?.dispose();
     this.quadMaterial?.dispose();
     this.quadTexture?.dispose();

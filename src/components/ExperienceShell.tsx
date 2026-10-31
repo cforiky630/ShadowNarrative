@@ -100,6 +100,8 @@ const ENTER_TIMEOUT_MS = 2000;
 export function ExperienceShell({ children }: { children: ReactNode }) {
   const canvasRef = useRef<ParticleCanvasHandle>(null);
   const heroRef = useRef<HTMLDivElement>(null);
+  /** 画布那一层。飞行期间要把它裁到飞行图的矩形里，见 `paint` 的说明 */
+  const layerRef = useRef<HTMLDivElement>(null);
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 一次只推一张。连点两张会让两段 GSAP 时间线抢同一个 hero。 */
   const entering = useRef(false);
@@ -125,6 +127,12 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
    * （`syncQuad` 里的 halfW/halfH），图像没装上时算的是上一张的。
    */
   const [loadedId, setLoadedId] = useState<string | null>(null);
+  /**
+   * 引擎初始化完成。懒加载之后它不再同步存在 —— 飞行终点
+   * （`photoScreenRect`）要等它，见下面那个 effect 的说明。
+   */
+  const [engineReady, setEngineReady] = useState(false);
+  const handleEngineReady = useCallback(() => setEngineReady(true), []);
 
   /**
    * 现在是哪个空间。由 `AlbumSpace` / `MemorySpace` 挂载时声明 ——
@@ -214,6 +222,20 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
        */
       useExperience.getState().setDisplayMode("photo");
       /*
+       * 上一张如果是粒子态，`setDisplayMode("photo")` 会让引擎播一条
+       * 1200ms 的溶解 —— 而飞行只有 800ms。画布在半途亮起时照片可能还没
+       * 完全凝回来，交接就成了「粒子 + 半张照片」。进入照片永远是原图
+       * （`16 §8.1`），所以这里直接到位，不等那条动画。
+       */
+      canvasRef.current?.setMode("photo", { immediate: true });
+      /*
+       * ⚠️ **立刻到位，不要动画。** 飞行终点是按**这一刻**的相机算的；
+       * 相机还在动的话，算出来的矩形会在飞行途中变，最后一行就会「右边缘
+       * 突然多出去一截」。用户按「复位视角」时走的是默认的动画路径，
+       * 只有进入照片这一下要瞬跳。
+       */
+      canvasRef.current?.resetView({ immediate: true });
+      /*
        * 先读下来再覆写 —— 这是唯一知道「从哪走进来的」的时刻。
        * 相册和照片页的 pathname 都是 `/`，事后从路由上推不出来。
        *
@@ -260,15 +282,21 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
    * 兜底：图像迟迟不到（网络慢、解码失败、引擎没起来）也要收场。
    * 到点了就把 `origin` 清掉 —— 时间线的透明度、画布的显隐都挂在它上面，
    * 不清就等于把用户永远按在退场状态里。
+   *
+   * ⚠️ **飞行一旦接手，这个计时必须让开。** 它原来是无条件 2 秒后清 origin：
+   * 机器慢一点（大图解码 + 引擎 chunk），飞行在 1.5 秒才起步，跑到 2.3 秒
+   * 才结束 —— 2 秒那一下会把飞到一半的图直接抽走，读起来就是「还是跳」。
+   * 现在只要图像到了、引擎也就绪，计时清掉、交给飞行自己的 onComplete。
    */
   useEffect(() => {
     if (!stage.origin) return;
+    if (loadedId === stage.photoId && engineReady) return;
     const t = setTimeout(() => {
       entering.current = false;
       setStage({ origin: null, canvasShown: true });
     }, ENTER_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [stage.origin, setStage]);
+  }, [stage.origin, stage.photoId, loadedId, engineReady, setStage]);
 
   useEffect(() => {
     const origin = stage.origin;
@@ -276,6 +304,11 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
     if (!origin || !hero) return;
     // 终点还没定：图像没装上，引擎算的是上一张的宽高比
     if (loadedId !== stage.photoId) return;
+    /*
+     * 引擎还没就绪：终点算不出来，而 `photoScreenRect()` 这时返回 null。
+     * 等 `onReady`；`ENTER_TIMEOUT_MS` 仍然兜着，不会把人按在退场状态里。
+     */
+    if (!engineReady) return;
 
     const finish = () => {
       entering.current = false;
@@ -285,24 +318,86 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
     const target = canvasRef.current?.photoScreenRect();
     const reduced = useExperience.getState().reducedMotion;
 
-    // 引擎没起来，或用户要求减少动效：不做飞行，直接交接
-    if (!target || reduced) {
+    // 用户要求减少动效：不做飞行，直接交接（`04 §15`）
+    if (reduced) {
+      /*
+       * ⚠️ **减少动效不等于「瞬间换一张」。** 原来的分支是 `finish()` 直接
+       * 收场 —— 飞行被跳过，画面一帧之内从缩略图换成照片，读起来就是「跳」。
+       * 现在改成 300ms 的交叉淡化：没有位移、没有缩放，只有透明度。
+       * 系统开着「减少动画」的用户看到的也是过渡，而不是硬切。
+       */
       setStage({ canvasShown: true });
-      finish();
-      return;
+      const tl = ensureGsap().timeline({ onComplete: finish });
+      tl.to(hero, { autoAlpha: 0, duration: HANDOFF_S, ease: EASE.exit }, 0);
+      return () => {
+        tl.kill();
+      };
+    }
+
+    /*
+     * 拿不到终点（引擎恰好在 resize、或相机被别的东西动过）：不做飞行，
+     * 但**也不要瞬间把图抽走** —— 用一条 `HANDOFF_S` 的淡出交接，和正常
+     * 路径的收尾同一个拍子。读起来是「照片定格后淡入」，不是一次硬切。
+     */
+    if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) {
+      setStage({ canvasShown: true });
+      const tl = ensureGsap().timeline({ onComplete: finish });
+      tl.to(hero, { autoAlpha: 0, duration: HANDOFF_S, ease: EASE.exit }, 0);
+      return () => {
+        tl.kill();
+      };
     }
 
     const gsap = ensureGsap();
+    const start = { ...origin };
+    /** 终点读不到时的兜底（引擎在这一帧没报出来） */
+    const fallback = target;
     const proxy = { ...origin, t: 0 };
 
+    const layer = layerRef.current;
     const paint = () => {
-      hero.style.left = `${proxy.x}px`;
-      hero.style.top = `${proxy.y}px`;
-      hero.style.width = `${proxy.w}px`;
-      hero.style.height = `${proxy.h}px`;
+      /*
+       * 四条边各自取整到整像素。小数边会被抗锯齿成半透明的一列 ——
+       * 缓出的长尾里右 / 下边要在亚像素上磨蹭好几帧，那一列就成了
+       * 「最后一帧右边有条暗线」。取整之后边缘只会一格一格地到位。
+       */
+      const x0 = Math.round(proxy.x);
+      const y0 = Math.round(proxy.y);
+      const x1 = Math.round(proxy.x + proxy.w);
+      const y1 = Math.round(proxy.y + proxy.h);
+      hero.style.left = `${x0}px`;
+      hero.style.top = `${y0}px`;
+      hero.style.width = `${x1 - x0}px`;
+      hero.style.height = `${y1 - y0}px`;
       // 圆角随之收掉：缩略图有圆角，画布里的照片是没有的
-      hero.style.borderRadius = `${3 * (1 - proxy.t)}px`;
+      const radius = 3 * (1 - proxy.t);
+      hero.style.borderRadius = `${radius}px`;
+      /*
+       * ⚠️ **画布这一层只准露出飞行图当前盖住的那一块。**
+       *
+       * 画布里的照片从一开始就在**终点**位置，而飞行图是缓出（`sn-enter`）
+       * 逼近终点的 —— 长尾巴。画布在 45% 处开始淡入时，飞行图离终点还差
+       * 几个像素，**差得最多的是右边和下边**（那两条边走的路最长）：
+       * 画布里的原图就在飞行图的右边缘外面多露出一截，半透明地「戳」出去，
+       * 而这张图右侧本来就可能有一条灰边 —— 读起来就是「右侧一块割裂的东西」。
+       *
+       * 把画布裁成飞行图此刻的矩形：交叉淡化只发生在飞行图**底下**，
+       * 飞行图长到哪、画布就露到哪，边缘永远只有一个。
+       */
+      if (layer) {
+        const b = layer.getBoundingClientRect();
+        const top = Math.max(0, y0 - b.top);
+        const left = Math.max(0, x0 - b.left);
+        const right = Math.max(0, b.right - x1);
+        const bottom = Math.max(0, b.bottom - y1);
+        layer.style.clipPath = `inset(${top}px ${right}px ${bottom}px ${left}px round ${radius}px)`;
+      }
     };
+    const clearClip = () => {
+      if (layer) layer.style.clipPath = "";
+    };
+    // 画布亮起之前就裁好，不依赖第一次 onUpdate
+    paint();
 
     const tl = gsap.timeline({ onComplete: finish });
 
@@ -310,27 +405,51 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
     tl.to(
       proxy,
       {
-        x: target.x,
-        y: target.y,
-        w: target.w,
-        h: target.h,
         t: 1,
         // 与 §11.3 的「相册 → 照片」同一个时长与缓动：
         // 那一条讲的是同一件事 —— 一张照片长成整个画面
         duration: DUR.scene,
         ease: EASE.enter,
-        onUpdate: paint,
+        /*
+         * ⚠️ **终点每帧重读，不写死。**
+         *
+         * 路由切换会让滚动条出现 / 消失，视口宽度随之变化（时间线可滚动、
+         * 照片页不可），画布是 `fixed inset-0`，宽度跟着变 ⇒ 引擎 resize
+         * 并重新投影 ⇒ 照片的终点矩形比飞行开始时宽几个像素。
+         * 终点写死的话，照片落定的位置和画布里的那张差一截 ——
+         * 最后一帧读成「右边缘多出去一块」。
+         *
+         * `t` 还小的时候终点变化会被乘小，起步那一下看不出来；
+         * `t → 1` 时它已经收敛到**当前**的画布矩形，交接严丝合缝。
+         */
+        onUpdate: () => {
+          const tgt = canvasRef.current?.photoScreenRect() ?? fallback;
+          proxy.x = start.x + (tgt.x - start.x) * proxy.t;
+          proxy.y = start.y + (tgt.y - start.y) * proxy.t;
+          proxy.w = start.w + (tgt.w - start.w) * proxy.t;
+          proxy.h = start.h + (tgt.h - start.h) * proxy.t;
+          paint();
+        },
       },
       0,
     );
     // 飞行过半才亮画布。早了会叠影，晚了会闪黑
     tl.call(() => setStage({ canvasShown: true }), [], DUR.scene * 0.45);
-    tl.to(hero, { autoAlpha: 0, duration: HANDOFF_S, ease: EASE.enter }, DUR.scene * 0.7);
+    /*
+     * 在飞行接近完成的最后 HANDOFF_S 秒内渐隐交接，与位移在 DUR.scene 同时结束。
+     *
+     * ⚠️ **淡出用 sn-exit，不用 sn-enter。** `sn-enter` 是 expo-out（前快后慢），
+     * 拿它做透明度淡出时，前 60ms 就从 1 掉到 0.3 —— 缩略图与画布里的原图
+     * 哪怕只差一点锐度/采样方式，读起来也是「最后一帧突然换了一张」。
+     * `sn-exit` 起步慢、收得稳，300ms 里均匀地让画布接管，这才是交叉淡化。
+     */
+    tl.to(hero, { autoAlpha: 0, duration: HANDOFF_S, ease: EASE.exit }, DUR.scene - HANDOFF_S);
 
     return () => {
       tl.kill();
+      clearClip();
     };
-  }, [stage.origin, stage.photoId, loadedId, setStage]);
+  }, [stage.origin, stage.photoId, loadedId, engineReady, setStage]);
 
   // -------------------------------------------------------------------------
 
@@ -362,6 +481,7 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
         div 会挡住叠放的左右滑动。
       */}
       <div
+        ref={layerRef}
         data-sn-canvas-layer
         aria-hidden={!stage.canvasShown}
         className="fixed inset-0"
@@ -369,8 +489,8 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
           opacity: stage.canvasShown ? 1 : 0,
           pointerEvents: stage.canvasShown ? "auto" : "none",
           background: "var(--background)",
-          // 与内容层同一条缓动：它们是一次交叉淡化，不是两个独立动画
-          transition: "opacity var(--duration-scene) var(--ease-enter)",
+          // 与内容层同一条缓动：在交接完成前充分展开，避免交接时半透明导致末帧闪烁
+          transition: "opacity var(--duration-ui) var(--ease-enter)",
         }}
       >
         <ParticleCanvas
@@ -379,6 +499,7 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
           fillHeight={FILL_HEIGHT}
           offsetY={OFFSET_Y}
           onUnsupported={() => setStage({ unsupported: true })}
+          onReady={handleEngineReady}
           onStats={showDebug ? setStats : undefined}
           onViewChange={(rotated) => setStage({ rotated })}
           // 时间线上画布只是藏着 —— 停掉循环，别让 15 万粒子在没人看的地方跑
@@ -438,10 +559,8 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
             width: stage.origin.w,
             height: stage.origin.h,
             borderRadius: 3,
-            // 交给 GSAP 置 1。写 0 而不是 1 是有意的：万一上面的 effect 提前
-            // 返回（图像没到），这张图不该就那么杵在屏幕上
-            opacity: 0,
-            visibility: "hidden",
+            // 初始直接可见，与网格中被点击的缩略图像素级重叠
+            opacity: 1,
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}

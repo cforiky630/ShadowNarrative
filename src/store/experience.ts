@@ -14,13 +14,10 @@ import {
   DEFAULT_PRESET,
   PARTICLE_PRESETS,
   TIER_ORDER,
-  TIER_SPECS,
   type DisplayMode,
-  type ExperienceMode,
   type ParticleParams,
   type ParticlePresetName,
   type PerformanceTier,
-  type Photo,
 } from "@/types";
 
 interface UiState {
@@ -102,14 +99,6 @@ export interface StageState {
 }
 
 interface ExperienceState {
-  // --- 状态机 ---
-  mode: ExperienceMode;
-  setMode: (mode: ExperienceMode) => void;
-
-  // --- 当前照片 ---
-  currentPhoto: Photo | null;
-  setCurrentPhoto: (photo: Photo | null) => void;
-
   // --- 粒子参数 ---
   params: ParticleParams;
   setParam: <K extends keyof ParticleParams>(
@@ -124,14 +113,11 @@ interface ExperienceState {
   // --- 性能档位 ---
   /** L1+L2 探测得到的初始档 */
   tier: PerformanceTier;
-  /** 强制档位（?tier= 查询参数），非空时覆盖自动档位 */
-  tierOverride: PerformanceTier | null;
   /** L3 运行时降档。只降不升，见 15-DEVICE_ADAPTATION.md §3 */
   degradeTier: () => void;
   /** 用户是否手动选过档位。选过后关闭自动降档。 */
   tierPinnedByUser: boolean;
   setTier: (tier: PerformanceTier, byUser?: boolean) => void;
-  setTierOverride: (tier: PerformanceTier | null) => void;
 
   // --- 显示模式 ---
   /**
@@ -162,12 +148,6 @@ interface ExperienceState {
 }
 
 export const useExperience = create<ExperienceState>((set, get) => ({
-  mode: "rest",
-  setMode: (mode) => set({ mode }),
-
-  currentPhoto: null,
-  setCurrentPhoto: (currentPhoto) => set({ currentPhoto }),
-
   params: { ...DEFAULT_PARTICLE_PARAMS },
   /*
    * 出厂那一档。**从 `types` 里取，不在这里写死** —— 默认参数是由
@@ -195,11 +175,9 @@ export const useExperience = create<ExperienceState>((set, get) => ({
     }),
 
   tier: "medium",
-  tierOverride: null,
   tierPinnedByUser: false,
   setTier: (tier, byUser = false) =>
     set((s) => ({ tier, tierPinnedByUser: byUser || s.tierPinnedByUser })),
-  setTierOverride: (tierOverride) => set({ tierOverride }),
   degradeTier: () => {
     const { tier, tierPinnedByUser } = get();
     if (tierPinnedByUser) return; // 用户手动选过后不再自动降档
@@ -274,23 +252,3 @@ export const useExperience = create<ExperienceState>((set, get) => ({
     })),
   setDebugOpen: (debugOpen) => set((s) => ({ ui: { ...s.ui, debugOpen } })),
 }));
-
-// ---------------------------------------------------------------------------
-// 派生选择器
-//
-// 用 useExperience(selectEffectiveTier) 这种形式调用。
-// 不要把「计算属性方法」放进 store —— 函数引用不变，档位变化时不会触发重渲染。
-// ---------------------------------------------------------------------------
-
-export type ExperienceStore = ReturnType<typeof useExperience.getState>;
-
-/** 实际生效的档位：强制档位优先于自动档位 */
-export const selectEffectiveTier = (
-  s: ExperienceStore,
-): PerformanceTier => s.tierOverride ?? s.tier;
-
-/** 实际粒子数 = 档位上限 × density */
-export const selectParticleCount = (s: ExperienceStore): number =>
-  Math.round(
-    TIER_SPECS[selectEffectiveTier(s)].particleCount * s.params.density,
-  );

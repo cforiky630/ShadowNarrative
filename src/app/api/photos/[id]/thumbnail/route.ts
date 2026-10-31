@@ -1,6 +1,6 @@
 import { ApiError, failFrom } from "@/lib/apiResponse";
-import { readStoredFile } from "@/services/mediaService";
-import { getPhotoDetail } from "@/services/photoService";
+import { openStoredFile } from "@/services/mediaService";
+import { getPhotoFileRef } from "@/services/photoService";
 import { getLocalUserId } from "@/services/userService";
 
 /**
@@ -58,33 +58,40 @@ export async function GET(_request: Request, { params }: RouteParams) {
     const userId = await getLocalUserId();
 
     // ownership 校验合成在查询条件里，不做「先查出再判断」的两段式（08 §1）
-    const photo = await getPhotoDetail(userId, id);
+    const photo = await getPhotoFileRef(userId, id);
 
     // 找不到与不属于当前用户一律 404 —— 不泄露「这个资源存在」（08 §5）
     if (!photo) throw new ApiError("NOT_FOUND", "资源不存在");
 
     if (photo.thumbnailKey) {
-      const bytes = await readStoredFile(photo.thumbnailKey);
-      return new Response(new Uint8Array(bytes), {
+      const { body, size } = await openStoredFile(photo.thumbnailKey);
+      return new Response(body, {
         headers: {
           "Content-Type": thumbnailMimeType(photo.thumbnailKey),
-          "Cache-Control": "public, max-age=31536000, immutable",
+          "Content-Length": String(size),
+          // `private`：私人照片不进共享缓存（与 `/file` 同一条）
+          "Cache-Control": "private, max-age=31536000, immutable",
         },
       });
     }
 
     // 回落：原图直出。缓存头见文件头那一段
-    const bytes = await readStoredFile(photo.storageKey);
-    return new Response(new Uint8Array(bytes), {
+    const { body, size } = await openStoredFile(photo.storageKey);
+    return new Response(body, {
       headers: {
         "Content-Type": photo.mimeType,
+        "Content-Length": String(size),
         "Cache-Control": "private, no-cache",
       },
     });
   } catch (error) {
-    // 记录在库里但文件丢了 —— 属于数据不一致，同样按不存在处理
+    if (error instanceof ApiError) {
+      return failFrom(error, "api/photos/[id]/thumbnail");
+    }
+    // 同 `/file`：只有「文件没了」按 404，其余错误不能被伪装成不存在
+    const errno = (error as NodeJS.ErrnoException)?.code;
     return failFrom(
-      error instanceof ApiError ? error : new ApiError("NOT_FOUND", "资源不存在"),
+      errno === "ENOENT" ? new ApiError("NOT_FOUND", "资源不存在") : error,
       "api/photos/[id]/thumbnail",
     );
   }

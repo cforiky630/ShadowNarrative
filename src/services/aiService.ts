@@ -646,7 +646,7 @@ export async function runPhotoAnalysis(params: {
 const HISTORY_LIMIT = 20;
 
 /** 用户一条消息的长度上限。超了直接拒（`08 §5` 的 `INVALID_INPUT`） */
-export const MESSAGE_MAX_CHARS = 2000;
+const MESSAGE_MAX_CHARS = 2000;
 
 /**
  * 用户说了一句，让 AI 回一句（Round 8，`09 §9`–§11）。
@@ -669,6 +669,7 @@ export const MESSAGE_MAX_CHARS = 2000;
  * 发送范围见下面那段注释。
  */
 export async function runConversationReply(params: {
+  userId: string;
   photoId: string;
   content: string;
 }): Promise<ConversationMessage> {
@@ -678,8 +679,12 @@ export async function runConversationReply(params: {
     throw new ApiError("INVALID_INPUT", `一条最多 ${MESSAGE_MAX_CHARS} 个字`);
   }
 
-  const photo = await prisma.photo.findUnique({
-    where: { id: params.photoId },
+  /*
+   * ⚠️ **userId 一起进查询条件**（`08 §1`）。路由层已经校验过一次，
+   * 但服务层不能依赖「调用方记得先校验」—— 那是越权写入唯一的最后一道门。
+   */
+  const photo = await prisma.photo.findFirst({
+    where: { id: params.photoId, userId: params.userId },
     select: { id: true, storageKey: true, mimeType: true },
   });
   if (!photo) throw new ApiError("NOT_FOUND", "照片不存在");
@@ -695,7 +700,20 @@ export async function runConversationReply(params: {
   }
 
   const history = await listMessages(photo.id);
-  const recent = history.slice(-HISTORY_LIMIT);
+  /*
+   * ⚠️ **超长时丢最早的，但字幕要留着。** 它是这段对话的地基（模型在第一轮
+   * 之后看不到照片，靠的就是字幕与 `PhotoAnalysis`）。原先直接
+   * `slice(-HISTORY_LIMIT)` 会把第一条 —— 也就是字幕 —— 一起丢掉，
+   * 与上面 `HISTORY_LIMIT` 注释里写的「字幕那条留着」正好相反。
+   */
+  const subtitle = history.find((m) => m.isSubtitle);
+  const recent =
+    history.length > HISTORY_LIMIT
+      ? [
+          ...(subtitle ? [subtitle] : []),
+          ...history.slice(-(HISTORY_LIMIT - (subtitle ? 1 : 0))),
+        ]
+      : history;
 
   /*
    * 这一轮要不要把图片一起发出去。
@@ -941,10 +959,12 @@ const NOTE_MATERIAL_LIMIT = 100;
  * 就存在 `PhotoAnalysis.payload` 里（`09 §17`：只发当前这一张也不需要重复发）。
  */
 export async function runJournalNote(params: {
+  userId: string;
   photoId: string;
 }): Promise<JournalNote> {
-  const photo = await prisma.photo.findUnique({
-    where: { id: params.photoId },
+  // 与 `runConversationReply` 同一条：ownership 合成在查询条件里（`08 §1`）
+  const photo = await prisma.photo.findFirst({
+    where: { id: params.photoId, userId: params.userId },
     select: { id: true },
   });
   if (!photo) throw new ApiError("NOT_FOUND", "照片不存在");

@@ -43,7 +43,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       throw new ApiError("INVALID_INPUT", "content 必须是字符串");
     }
 
-    const reply = await runConversationReply({ photoId: id, content });
+    const reply = await runConversationReply({ userId, photoId: id, content });
 
     return ok(reply);
   } catch (error) {

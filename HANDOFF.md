@@ -347,7 +347,7 @@ AI：那这张照片，留的就是那晚。
   **设置面板**里，挨着「自动分析」的开关 —— 不是绕过去了，是没重复
 
 提示词在 **`src/services/aiPrompt.ts`**（2026-10-09 从 `aiService.ts` 抽出来的）。
-单独成文件是为了能脱离服务层试验 —— `scripts/try-subtitles.mjs` 直接 import 它，
+单独成文件是为了能脱离服务层试验 —— `scripts/dev/try-subtitles.mjs` 直接 import 它，
 所以「调试用的提示词」和「线上跑的」不会各改各的。
 
 **「永不沉默」不等于「可以说废话」。** 空话的特征是**对每张照片都成立**。
@@ -379,8 +379,8 @@ AI 可以说自己当下的反应（"这一下我笑了一下"、"我一时没�
 **改完 prompt 一定要跑样例**：
 
 ```bash
-node scripts/try-subtitles.mjs <图片...>      # 每张 6 条
-N=3 node scripts/try-subtitles.mjs <图片...>  # 每张 3 条
+node scripts/dev/try-subtitles.mjs <图片...>      # 每张 6 条
+N=3 node scripts/dev/try-subtitles.mjs <图片...>  # 每张 3 条
 ```
 
 语气这种东西没法靠读 prompt 判断，只能看输出。脚本直接 import
@@ -587,7 +587,7 @@ src/                     80 个源文件（ts/tsx/css）
 docs/                    docs/specs (19 份规格 + recon/) + docs/agents/
 prisma/                  schema + 六份迁移（init、day_theme、drop_auto_analyze、
                          journal_drop_title_status、memory_slim_to_album）
-scripts/                 setup.mjs + 环境脚本 + Hilbert 自检 + try-subtitles.mjs
+scripts/                 setup.mjs + 环境脚本 + scripts/dev/ (Hilbert 自检 + try-subtitles)
 .data/                   shadow-narrative.db + photos/（已 gitignore）
 ```
 
@@ -655,8 +655,8 @@ Back 的位置     从页头左边挪到左下那条 46px 的带 —— 出口�
 **自检脚本**：
 
 ```bash
-node scripts/verify-hilbert.mjs      # 验证 A→B 对应关系；改动 Hilbert 或采样后必须跑
-node scripts/try-subtitles.mjs 图…   # 试字幕提示词，会走真实 API 计费
+node scripts/dev/verify-hilbert.mjs      # 验证 A→B 对应关系；改动 Hilbert 或采样后必须跑
+node scripts/dev/try-subtitles.mjs 图…   # 试字幕提示词，会走真实 API 计费
 ```
 
 **凭据**：AI key **只有一处** —— `<数据目录>/secrets.json`（`17 §4`），

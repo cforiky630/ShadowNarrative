@@ -228,14 +228,33 @@ export async function addPhotos(
   const skip = new Set(already.map((row) => row.photoId));
   const toAdd = owned.filter((p) => !skip.has(p.id)).map((p) => p.id);
 
+  let added = toAdd.length;
+
   if (toAdd.length) {
-    await prisma.memoryPhoto.createMany({
-      data: toAdd.map((photoId) => ({ memoryId, photoId })),
-    });
+    try {
+      await prisma.memoryPhoto.createMany({
+        data: toAdd.map((photoId) => ({ memoryId, photoId })),
+      });
+    } catch (error) {
+      /*
+       * ⚠️ **并发双击的窗口。** 两个请求可能查出同一份差集，后到的那个撞
+       * `memory_photos` 的主键（P2002）。SQLite 的批量 INSERT 是原子的，
+       * 所以撞上就说明这一批已经被另一个请求写进去了 —— 那正是这次操作
+       * 想要的结果。按幂等处理，只把 `added` 归零，不往上抛。
+       */
+      if ((error as { code?: string }).code !== "P2002") throw error;
+      added = 0;
+    }
+    /*
+     * ⚠️ **关系表的写入不会碰 `Memory` 那一行**，而架子是按
+     * `Memory.updatedAt` 倒序排的（「最近动过的在前」）。不显式碰一下，
+     * 刚加过照片的那一册还停在旧位置 —— 与 schema 的注释相反。
+     */
+    await touchMemory(memoryId);
   }
 
   const count = await prisma.memoryPhoto.count({ where: { memoryId } });
-  return { added: toAdd.length, count };
+  return { added, count };
 }
 
 /** 把一张照片从这一册里移出。**照片本身一张不动** */
@@ -254,12 +273,27 @@ export async function removePhoto(
   const { count } = await prisma.memoryPhoto.deleteMany({
     where: { memoryId, photoId },
   });
+  // 移出同样是「动过这一册」—— 与 `addPhotos` 同一条（架子按 updatedAt 排）
+  if (count > 0) await touchMemory(memoryId);
   return count > 0;
 }
 
 // ---------------------------------------------------------------------------
 // 内部
 // ---------------------------------------------------------------------------
+
+/**
+ * 把「这一册刚被动过」写回 `Memory.updatedAt`。
+ *
+ * `@@updatedAt` 只在 `Memory` 自己那一行被 update 时触发；往 `MemoryPhoto`
+ * 里增删关系**不会**碰父行。而架子排序读的正是 `Memory.updatedAt`。
+ */
+async function touchMemory(memoryId: string): Promise<void> {
+  await prisma.memory.update({
+    where: { id: memoryId },
+    data: { updatedAt: new Date() },
+  });
+}
 
 /**
  * 架子只需要「哪张当封面」，所以这一层查询不把照片整行拉回来。

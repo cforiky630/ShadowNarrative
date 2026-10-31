@@ -13,7 +13,7 @@ import { formatDate } from "@/lib/formatDate";
 import { isImeKey } from "@/lib/keyboard";
 import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
-import { usePhotoDrop } from "@/lib/usePhotoDrop";
+import { usePhotoDrop } from "@/hooks/usePhotoDrop";
 import type { AiState, PhotoDetail } from "@/types";
 import { useExperience } from "@/store/experience";
 
@@ -409,7 +409,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
   /**
    * 拖入照片。
    *
-   * 监听挂在 `window` 上（`src/lib/usePhotoDrop.ts` 里，相册也共用那一份）。
+   * 监听挂在 `window` 上（`src/hooks/usePhotoDrop.ts` 里，相册也共用那一份）。
    * 不挂 `<main>` 是因为画布压在它之上（指针要穿透过去，否则拖拽旋转失效），
    * 文件拖到页面上时命中的是画布那一层 —— `main` 的 `onDragOver` / `onDrop`
    * 一次都不会触发，照片拖进去毫无反应（踩过）。
@@ -659,6 +659,13 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
             见 `PhotoDate`。
           */}
           <PhotoDate
+            /*
+             * ⚠️ `key` 让外部改了日期（`router.refresh()`）时这一格带着新值
+             * 重挂一次。它没有 props → state 的同步 effect，因为项目禁的是
+             * effect 里同步 setState（`react-hooks/set-state-in-effect`）——
+             * 重挂比一条会级联渲染的 effect 便宜，也不会留下半旧的本地值。
+             */
+            key={takenAt ?? "none"}
             photoId={photo.id}
             takenAt={takenAt}
             createdAt={photo.createdAt}
@@ -894,6 +901,16 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
         onPointerUp={armRevertTimer}
         onPointerCancel={armRevertTimer}
         className="pointer-events-auto text-micro absolute bottom-6 left-32 z-10 flex h-[46px] items-center gap-5"
+        /*
+         * ⚠️ 和文字层同一个拍子淡入。这一组在 `.sn-content` 里，而那一层
+         * 在飞行结束时会**瞬间**从 0 回到 1（`data-leaving` 一撤，过渡就没有
+         * 起点了）—— 不给它自己一条过渡，`删除` 会在交接那一帧凭空出现，
+         * 而日期与字幕是淡进来的。同一屏两种出现方式，读起来就是「割裂」。
+         */
+        style={{
+          opacity: entering ? 0 : 1,
+          transition: "opacity var(--duration-ui) var(--ease-enter)",
+        }}
       >
         {busy && (
           <span className="pointer-events-none text-text-primary/40">

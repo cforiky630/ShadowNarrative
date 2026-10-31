@@ -4,7 +4,7 @@
  * 这是全项目最关键的一个算法（06-PARTICLE_ENGINE.md §14），
  * A→B Morph 的质量完全取决于它，所以单独留一个可重复执行的验证脚本。
  *
- * 运行：node scripts/verify-hilbert.mjs
+ * 运行：node scripts/dev/verify-hilbert.mjs
  * 它直接 import TypeScript 源文件，依赖 Node 24 的原生类型剥离。
  */
 
@@ -14,7 +14,7 @@ import {
   quantize,
   hilbertOrder,
   windowedNearestNeighbor,
-} from "../src/engine/particle/HilbertSort.ts";
+} from "../../src/engine/particle/HilbertSort.ts";
 
 let failures = 0;
 const fail = (msg) => {

@@ -191,10 +191,17 @@ export function ConversationPanel({
        * 对账。**服务端在调模型之前就把用户那句话落库了** ——
        * 所以模型失败时，那句话其实已经在库里。只报错不重取的话，
        * 用户再点一次发送就会把同一句存两遍。
+       *
+       * 顺带决定输入框要不要把这句话还回去：重取之后最后一条用户消息
+       * 就是它 ⇒ 已经存下（只是 AI 没回上），不要再让用户重打；
+       * 否则还回去，让他直接按发送重试。
        */
-      await load().catch(() => {
-        // 连重取都失败，说明服务端整个不通；错误已经报出去了
-      });
+      const refreshed = await load().catch(() => null);
+      const lastUser = refreshed
+        ?.slice()
+        .reverse()
+        .find((m) => m.role === "user" && !m.isSubtitle);
+      if (!lastUser || lastUser.content !== text) setDraft(text);
     } finally {
       setSending(false);
       onReplyingChange?.(false);

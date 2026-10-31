@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
-import {
+import type {
+  DisplayMode,
+  EngineStats,
   ParticleSystem,
-  type DisplayMode,
-  type EngineStats,
 } from "@/engine/particle/ParticleSystem";
-import { selectEffectiveTier, useExperience } from "@/store/experience";
+import { useExperience } from "@/store/experience";
 import type { PerformanceTier } from "@/types";
 
 export interface ParticleCanvasHandle {
@@ -15,7 +15,7 @@ export interface ParticleCanvasHandle {
   /** 原图 ⇄ 粒子。见 `16-ALBUM_SPACE.md` §8 */
   setMode: (mode: DisplayMode, options?: { immediate?: boolean }) => void;
   /** 回到正视角。旋转是探索，但用户需要随时能回到「照片」。 */
-  resetView: () => void;
+  resetView: (options?: { immediate?: boolean }) => void;
   /**
    * 照片此刻在视口里的矩形。给「从时间线推入」算 FLIP 终点用。
    * 引擎还没装上图时为 null。
@@ -35,6 +35,13 @@ interface ParticleCanvasProps {
   onStats?: (s: EngineStats) => void;
   /** 视角在「正对」与「已旋转」之间切换时触发 */
   onViewChange?: (rotated: boolean) => void;
+  /**
+   * 引擎初始化完成（档位已定、可以 `photoScreenRect()`）。
+   *
+   * 外壳用它等「飞行终点的计算能力」—— 懒加载之后引擎不是同步存在的，
+   * 没就绪时 `photoScreenRect()` 返回 null，飞行会被直接跳过。
+   */
+  onReady?: () => void;
   /**
    * 停掉渲染循环。
    *
@@ -61,15 +68,25 @@ export function ParticleCanvas({
   onUnsupported,
   onStats,
   onViewChange,
+  onReady,
   paused = false,
 }: ParticleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<ParticleSystem | null>(null);
+  /*
+   * 引擎（连同 three）是按需加载的独立 chunk，不进首屏 JS。
+   * 加载完成之前，句柄上的异步方法（setImage / morphTo）要**排队**而不是
+   * 静默丢弃 —— 以前引擎是同步创建的，调用方（外壳、拖入照片）从没遇到过
+   * 「引擎还没有」的窗口，这里把这个窗口补成「等一下再执行」。
+   * 卸载或加载失败时 resolve 为 null。
+   */
+  const enginePromiseRef = useRef<Promise<ParticleSystem | null>>(
+    Promise.resolve(null),
+  );
   const [ready, setReady] = useState(false);
 
   const params = useExperience((s) => s.params);
-  const tier = useExperience(selectEffectiveTier);
-  const tierOverride = useExperience((s) => s.tierOverride);
+  const tier = useExperience((s) => s.tier);
   const reducedMotion = useExperience((s) => s.reducedMotion);
   const displayMode = useExperience((s) => s.displayMode);
   const setTier = useExperience((s) => s.setTier);
@@ -79,27 +96,39 @@ export function ParticleCanvas({
   const onStatsRef = useRef(onStats);
   const onUnsupportedRef = useRef(onUnsupported);
   const onViewChangeRef = useRef(onViewChange);
+  const onReadyRef = useRef(onReady);
   useEffect(() => {
     onStatsRef.current = onStats;
     onUnsupportedRef.current = onUnsupported;
     onViewChangeRef.current = onViewChange;
-  }, [onStats, onUnsupported, onViewChange]);
+    onReadyRef.current = onReady;
+  }, [onStats, onUnsupported, onViewChange, onReady]);
 
   useImperativeHandle(
     ref,
     () => ({
       setImage: async (bitmap: ImageBitmap) => {
-        await engineRef.current?.setImage(bitmap);
-        engineRef.current?.start();
+        const engine = await enginePromiseRef.current;
+        await engine?.setImage(bitmap);
+        engine?.start();
       },
       morphTo: async (bitmap: ImageBitmap) => {
-        await engineRef.current?.morphTo(bitmap);
+        const engine = await enginePromiseRef.current;
+        await engine?.morphTo(bitmap);
       },
       setMode: (mode, options) => {
-        engineRef.current?.setMode(mode, options);
+        if (engineRef.current) {
+          engineRef.current.setMode(mode, options);
+        } else {
+          void enginePromiseRef.current.then((e) => e?.setMode(mode, options));
+        }
       },
-      resetView: () => {
-        engineRef.current?.resetView();
+      resetView: (options) => {
+        if (engineRef.current) {
+          engineRef.current.resetView(options);
+        } else {
+          void enginePromiseRef.current.then((e) => e?.resetView(options));
+        }
       },
       photoScreenRect: () => engineRef.current?.photoScreenRect() ?? null,
     }),
@@ -112,41 +141,61 @@ export function ParticleCanvas({
     if (!canvas) return;
 
     let cancelled = false;
+    let engine: ParticleSystem | null = null;
 
-    const engine = new ParticleSystem({
-      canvas,
-      // 直接读 store 的当前值，不经过 ref —— 避免 init 时序依赖
-      params: useExperience.getState().params,
-      tierOverride: readTierOverride(),
-      fillHeight,
-      offsetY,
-      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-      onUnsupported: () => onUnsupportedRef.current?.(),
-      onStats: (s) => onStatsRef.current?.(s),
-      onViewChange: (r) => onViewChangeRef.current?.(r),
-      // 引擎自己降档时回报给 store，让 UI（debug overlay、控制面板）同步
-      onTierChange: (t) => setTier(t),
-    });
-    engineRef.current = engine;
+    const enginePromise = import("@/engine/particle/ParticleSystem")
+      .then(({ ParticleSystem }) => {
+        // 动态加载期间已经卸载（含 StrictMode 的首轮 effect）：不创建
+        if (cancelled) return null;
 
-    // 开发期把引擎挂到 window，方便在 devtools 里检查状态（06 §19 debug mode）
-    if (process.env.NODE_ENV !== "production") {
-      (window as unknown as { __snEngine?: ParticleSystem }).__snEngine = engine;
-    }
+        engine = new ParticleSystem({
+          canvas,
+          // 直接读 store 的当前值，不经过 ref —— 避免 init 时序依赖
+          params: useExperience.getState().params,
+          tierOverride: readTierOverride(),
+          fillHeight,
+          offsetY,
+          reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)")
+            .matches,
+          onUnsupported: () => onUnsupportedRef.current?.(),
+          onStats: (s) => onStatsRef.current?.(s),
+          onViewChange: (r) => onViewChangeRef.current?.(r),
+          // 引擎自己降档时回报给 store，让 UI（debug overlay、控制面板）同步
+          onTierChange: (t) => setTier(t),
+        });
+        engineRef.current = engine;
 
-    void engine.init().then((initialTier) => {
+        // 开发期把引擎挂到 window，方便在 devtools 里检查状态（06 §19 debug mode）
+        if (process.env.NODE_ENV !== "production") {
+          (window as unknown as { __snEngine?: ParticleSystem }).__snEngine =
+            engine;
+        }
+        return engine;
+      })
+      .catch(() => {
+        // chunk 加载失败：和设备不支持 WebGL 一样走静态降级（15 §7）
+        if (!cancelled) onUnsupportedRef.current?.();
+        return null;
+      });
+    enginePromiseRef.current = enginePromise;
+
+    void enginePromise.then(async (created) => {
+      if (!created) return;
+      const initialTier = await created.init();
       if (cancelled) {
-        engine.dispose();
+        created.dispose();
         return;
       }
       if (initialTier === null) return; // onUnsupported 已触发
       setReady(true);
+      onReadyRef.current?.();
     });
 
     return () => {
       cancelled = true;
-      engine.dispose();
+      engine?.dispose();
       engineRef.current = null;
+      enginePromiseRef.current = Promise.resolve(null);
     };
     // setTier 是 zustand 的稳定引用，不需要进依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,12 +206,12 @@ export function ParticleCanvas({
     engineRef.current?.setParams(params);
   }, [params]);
 
-  // --- 档位下发（用户手动选择或强制参数）---
+  // --- 档位下发（用户手动选择或自动降档）---
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine || !ready) return;
     if (engine.currentTier !== tier) engine.setTier(tier);
-  }, [tier, ready, tierOverride]);
+  }, [tier, ready]);
 
   // --- 模式下发（原图 ⇄ 粒子）---
   // 引擎自己会判重，模式没变就不播动画；所以初次挂载不会有多余的过渡。
@@ -182,9 +231,10 @@ export function ParticleCanvas({
   }, []);
 
   // --- 把 reduced-motion 的变化下发给引擎（只影响动效，不影响档位）---
+  // 引擎异步创建，`ready` 之后要再下发一次，保证加载期间的变化不丢
   useEffect(() => {
     engineRef.current?.setReducedMotion(reducedMotion);
-  }, [reducedMotion]);
+  }, [reducedMotion, ready]);
 
   // --- 尺寸 ---
   useEffect(() => {

@@ -8,7 +8,7 @@ import { OrganizePanel } from "@/components/OrganizePanel";
 import { PhotoCell } from "@/components/PhotoCell";
 import { isImeKey } from "@/lib/keyboard";
 import { PAGE_INNER, PAGE_SHELL } from "@/lib/layout";
-import { revealStyle, useReveal } from "@/lib/useReveal";
+import { revealStyle, useReveal } from "@/hooks/useReveal";
 import { useExperience } from "@/store/experience";
 import type { MemoryDetail } from "@/types";
 
@@ -87,7 +87,7 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
   const [organizing, setOrganizing] = useState(openOrganize);
 
   /**
-   * 进场的揭示 —— 与相册首屏、时间线、架子**同一份代码**（`lib/useReveal`）。
+   * 进场的揭示 —— 与相册首屏、时间线、架子**同一份代码**（`src/hooks/useReveal`）。
    *
    * 用户 2026-10-11：「进 memorys 页面也和其他页面一样做个效果吧」。
    * 分两处、差 120ms：先名字与那两颗图标，再是下面的照片。

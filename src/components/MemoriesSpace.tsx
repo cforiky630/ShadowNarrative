@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { isImeKey } from "@/lib/keyboard";
 import { PAGE_INNER, PAGE_SHELL } from "@/lib/layout";
-import { revealStyle, useReveal } from "@/lib/useReveal";
+import { revealStyle, useReveal } from "@/hooks/useReveal";
 import { useExperience } from "@/store/experience";
 import type { MemorySummary } from "@/types";
 
@@ -67,7 +67,7 @@ export function MemoriesSpace({ albums }: MemoriesSpaceProps) {
   }, [setStage]);
 
   /**
-   * 进场的揭示 —— 与相册首屏、时间线**同一份代码**（`lib/useReveal`）。
+   * 进场的揭示 —— 与相册首屏、时间线**同一份代码**（`src/hooks/useReveal`）。
    *
    * 用户 2026-10-11：「进 memorys 页面**也和其他页面一样做个效果**吧」。
    * 这两页（架子与一册）当时漏了，于是从顶栏切过来是「一下闪出来」，
@@ -158,6 +158,15 @@ export function MemoriesSpace({ albums }: MemoriesSpaceProps) {
                 setDraft("");
                 setCreating(true);
               }
+            }}
+            /*
+             * ⚠️ **点 × 不能让输入框先失焦。** 鼠标按下时浏览器先把焦点从
+             * input 挪走 —— 于是 `onBlur`（有字就提交）先跑，
+             * `onClick` 的「取消」后跑：那一册已经被建出来了。
+             * 按下时 `preventDefault` 留住焦点，取消才真的是取消。
+             */
+            onMouseDown={(e) => {
+              if (creating) e.preventDefault();
             }}
             aria-label={creating ? "取消" : "New Collection"}
             className="text-text-primary flex h-7 w-7 shrink-0 items-center justify-center opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"

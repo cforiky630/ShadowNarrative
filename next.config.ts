@@ -27,7 +27,7 @@ const nextConfig: NextConfig = {
    * `better-sqlite3` 本来就在 Next 的自动排除名单里（server-external-packages.jsonc），
    * 这里写出来是为了让它**显式**，不然哪天名单变了没人知道。
    */
-  serverExternalPackages: ["better-sqlite3", "@prisma/adapter-better-sqlite3"],
+  serverExternalPackages: ["better-sqlite3", "@prisma/adapter-better-sqlite3", "exifr"],
 
   /**
    * 开发指示器挪到右下角。

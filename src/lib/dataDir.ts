@@ -1,6 +1,5 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdir } from "node:fs/promises";
 
 /**
  * 数据目录 —— 应用与 Prisma CLI 的**唯一**来源。
@@ -73,9 +72,4 @@ export function resolveSecretsPath(): string {
  */
 export function resolveDatabaseUrl(): string {
   return `file:${resolveDatabasePath().replace(/\\/g, "/")}`;
-}
-
-/** 建立数据目录骨架。可重复调用。 */
-export async function ensureDataDirs(): Promise<void> {
-  await mkdir(resolvePhotosDir(), { recursive: true });
 }

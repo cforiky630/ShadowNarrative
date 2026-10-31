@@ -445,8 +445,12 @@ jpeg / png / webp / gif 四种，**这四种浏览器本来就都能解、也都
 GET /api/photos/:id/thumbnail
 ```
 
-- **有缩略图** → 送它，`Cache-Control: public, max-age=31536000, immutable`
+- **有缩略图** → 送它，`Cache-Control: private, max-age=31536000, immutable`
 - **没有** → **回落原图**，`Cache-Control: private, no-cache`
+
+> ⚠️ 2026-10-31：两段都从 `public` 改成 `private`。文件名是 UUID、内容不变，
+> 长期缓存仍然成立；但这是**私人照片**，不该被共享代理 / 中间缓存存下来。
+> `private` 只让用户自己的浏览器缓存，刷新与翻页的收益一点没少。
 
 回落而不是 404：让调用方永远只需要一个地址，不必在四个地方各写一遍判断。
 
@@ -664,7 +668,8 @@ EXIF 只用于两件事：
 
 ## 14. Caching
 
-- 原图与缩略图：文件名是 UUID，内容不变，可以 `immutable` 长期缓存
+- 原图与缩略图：文件名是 UUID，内容不变，可以 `immutable` 长期缓存。
+  一律 `private` —— 私人照片不进入共享缓存（§6「读缩略图」）
 - AI 响应：本项目是本地单人使用，不做响应缓存。同一条消息重复请求直接重新生成
 
 ## 15. Storage Layer

@@ -14,8 +14,9 @@ import { PhotoCell } from "@/components/PhotoCell";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { isImeKey } from "@/lib/keyboard";
 import { PAGE_INNER, PAGE_SHELL } from "@/lib/layout";
+import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
-import { revealStyle, useReveal } from "@/lib/useReveal";
+import { revealStyle, useReveal } from "@/hooks/useReveal";
 import { useExperience } from "@/store/experience";
 import type { Photo, TimelineDay } from "@/types";
 
@@ -125,7 +126,14 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
       setBusy(true);
       setNotice(null);
       try {
-        await uploadPhoto(file);
+        /*
+         * ⚠️ 上传要带缩略图（`08 §6`）。相册与照片页两条路都生成了，
+         * 只有这里漏了 —— 于是从时间线上传的照片永远是「原图直出」：
+         * 时间线的卡片、相册、影册封面全都在下载原图。
+         * 失败返回 null，上传照旧（`makeThumbnail` 自己吞掉错误）。
+         */
+        const thumbnail = await makeThumbnail(file);
+        await uploadPhoto(file, thumbnail);
         router.refresh();
       } catch (err) {
         setNotice(err instanceof Error ? err.message : "上传失败");
@@ -228,7 +236,17 @@ function NodeBody({ day, align }: { day: TimelineDay; align: "left" | "right" })
       <div className={`flex flex-col gap-5 ${onRight ? "items-end" : "items-start"}`}>
         <div className={onRight ? "text-right" : "text-left"}>
           <p className="text-meta text-text-primary/45">{formatDay(day.dayKey)}</p>
-          <ThemeName day={day} align={align} />
+          {/*
+            ⚠️ `key` 里带上服务端的标题：刷新带回新名字时重挂一次，
+            本地那张 `title/draft` 就跟着换新。用重挂而不是 props → state 的
+            effect —— 后者在 effect 里同步 setState，项目 lint 明令禁止
+            （`react-hooks/set-state-in-effect`），也确实会级联渲染。
+          */}
+          <ThemeName
+            key={`${day.dayKey}:${day.title ?? ""}:${day.titleSource ?? ""}`}
+            day={day}
+            align={align}
+          />
         </div>
 
         {/*
