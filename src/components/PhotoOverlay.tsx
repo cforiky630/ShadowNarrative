@@ -202,6 +202,50 @@ export function PhotoOverlay({
   }, []);
 
   /*
+   * 焦点陷阱。
+   *
+   * 这一层声明了 `aria-modal`，但底下的页面仍然在 DOM 里、仍然可聚焦 ——
+   * 不拦住 Tab，键盘用户会从浮层里一路 Tab 到画布背后的顶栏和左下胶囊，
+   * 而视觉上那些东西被遮罩盖着。所以 Tab 在首尾之间循环。
+   *
+   * 关掉时把焦点还给打开它的那颗按钮（字幕 / 随笔）——「焦点从哪来、
+   * 回哪去」是模态浮层的标准行为，和 `DockCard` 收回焦点是同一条。
+   */
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const previous = document.activeElement as HTMLElement | null;
+
+    const focusables = () =>
+      Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.getClientRects().length > 0);
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const els = focusables();
+      if (!els.length) return;
+      const first = els[0];
+      const last = els[els.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previous?.focus();
+    };
+  }, []);
+
+  /*
    * 内容到齐 / 换面之后把焦点落进这一面：对话面是输入框、随笔面是正文。
    * 放在 `loaded` 之后 —— 加载期间这一层里只有「读取中」，没有可聚焦的东西。
    */

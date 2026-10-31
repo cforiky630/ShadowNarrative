@@ -99,7 +99,7 @@ export function SettingsForm({ initial }: SettingsFormProps) {
           见 `07 §11.3`。
         */}
 
-        {/* --- API key --- */}
+        {/* API key */}
         <div className="mt-2 flex items-baseline justify-between gap-8">
           <span className="text-body text-text-primary/85">API key</span>
 

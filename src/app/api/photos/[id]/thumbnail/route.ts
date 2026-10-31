@@ -6,50 +6,43 @@ import { serveStoredFile, storedFileError } from "../serveStoredFile";
 /**
  * 缩略图（`08-DATA_API_SPEC.md` §6）。
  *
- * 相册、时间线、进入照片时的飞行图都取这个地址；**原图只有画布
- * 与 AI 用**（粒子要按像素采样，`16 §8.1` 要「清晰可辨认的原图」）。
- *
- * 降级策略（无缩略图时回退至原图）：
- *
- * 缩略图是**可选**的派生资源：非浏览器上传没有（`08 §6`）、
- * 老照片没有、将来回填之前也没有。让这里回落，调用方就永远只需要
- * 一个地址，不必在四个地方各写一遍判断。
- *
- * 这也是 `05 §7` 给 Python 服务定的那个姿态的同一条：
- * 派生资源不可用时降级为「原图直出」，不报错。
- *
- * 缓存策略说明：
- *
- * 缩略图的文件名是服务端生成的 UUID，内容永不改变 ⇒ `immutable`。
- *
- * 而回落分支覆盖的是**同一个 URL 现在给原图、将来可能给缩略图**
- * （回填那天）。用 `immutable` 会把那天永久挡在缓存外面 ——
- * 浏览器一年内都不会再来问一次。所以这一条走 `no-cache`，
- * 代价是没有缩略图的照片每次都要重下原图，那是眼下 2 张照片的规模。
- *
- * 不需要 `connection()`：动态段 `[id]` 本身就是请求数据，这条路由
- * 不会被预渲染（对比 `api/timeline` 那个没有参数的）。
+ * 缓存策略（规格 §14）：
+ * - **有缩略图时**：尺寸固定（小边 512px）、文件名是带尺寸后缀的 UUID
+ *   （如 `uuid_512.webp`）、内容不可变。返回：
+ *     `Cache-Control: private, max-age=31536000, immutable`
+ *   用 `private` 是因为这是私人照片，只能进用户自己的浏览器缓存，
+ *   不该被局域网代理 / 共享反代存下来。
+ * - **没有缩略图落到原图时**：原图可能在被异步缩略图生成器处理完之后
+ *   就「升级」为有缩略图。此时如果给 1 年 immutable，浏览器在升级后
+ *   很长时间内都不会再来问，用户界面就会一直加载原图。因此回落到原图时返回：
+ *     `Cache-Control: private, no-cache`
+ *   （每次都来向服务器验证 ETag / 状态；一旦有缩略图了，下次就切过去）。
  */
 
 type RouteParams = { params: Promise<{ id: string }> };
 
 /**
- * 缩略图的 Content-Type。
+ * 后缀到 Content-Type。
  *
- * **从扩展名推**，因为它没有单独一列存 mime —— 而扩展名是我们自己在
- * `saveThumbnailFile` 里按允许集合派生的（`.webp` / `.jpg` / `.png`），
- * 不是客户端给什么就用什么。加一列只为存这三个值里的一个，
- * 不值得动 schema（`18 §3` 的快照键名要跟着改）。
+ * Sharp 默认打成 WebP（`08 §6`、`lib/makeThumbnail.ts`），但如果
+ * 后面换成 AVIF 或保留原格式，只看后缀就能给出正确的媒体类型，
+ * 客户端按标准渲染即可。
  */
-const MIME_BY_EXT: Record<string, string> = {
-  webp: "image/webp",
-  jpg: "image/jpeg",
-  png: "image/png",
-};
-
-function thumbnailMimeType(storageKey: string): string {
-  const ext = storageKey.slice(storageKey.lastIndexOf(".") + 1).toLowerCase();
-  return MIME_BY_EXT[ext] ?? "application/octet-stream";
+function thumbnailMimeType(key: string): string {
+  const ext = key.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "webp":
+      return "image/webp";
+    case "avif":
+      return "image/avif";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 export async function GET(_request: Request, { params }: RouteParams) {
@@ -57,7 +50,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
     const { id } = await params;
     const userId = await getLocalUserId();
 
-    // ownership 校验合成在查询条件里，不做「先查出再判断」的两段式（08 §1）
+    // ownership 校验合成在查询条件里（08 §1）
     const photo = await getPhotoFileRef(userId, id);
 
     // 找不到与不属于当前用户一律 404 —— 不泄露「这个资源存在」（08 §5）

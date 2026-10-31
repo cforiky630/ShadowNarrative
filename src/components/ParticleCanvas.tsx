@@ -206,7 +206,7 @@ export function ParticleCanvas({
     engineRef.current?.setParams(params);
   }, [params]);
 
-  // 档位更新
+  // 档位下发（用户手动选择或自动降档）
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine || !ready) return;
@@ -230,7 +230,7 @@ export function ParticleCanvas({
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  // 下发 reduced-motion 标志
+  // 把 reduced-motion 的变化下发给引擎（只影响动效，不影响档位）
   // 引擎异步创建，`ready` 之后要再下发一次，保证加载期间的变化不丢
   useEffect(() => {
     engineRef.current?.setReducedMotion(reducedMotion);
