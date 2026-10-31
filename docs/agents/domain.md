@@ -40,7 +40,7 @@
 
 ## 本仓库
 
-本仓库是**单上下文**。除上面两份外，另有一套产品与规格文档在 `shadow-narrative-docs/`（19 篇编号文档 + `recon/environment.md`），根目录 `HANDOFF.md` 是交接说明。那套文档描述**要做成什么**；`GLOSSARY.md` 与 `docs/adr/` 记录**术语与已定决策**，两者不互相替代。
+本仓库是**单上下文**。除上面两份外，另有一套产品与规格文档在 `docs/specs/`（19 篇编号文档 + `recon/environment.md`），根目录 `HANDOFF.md` 是交接说明。那套文档描述**要做成什么**；`GLOSSARY.md` 与 `docs/adr/` 记录**术语与已定决策**，两者不互相替代。
 
 ## 用 glossary 的词汇
 

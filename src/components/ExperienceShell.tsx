@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useSyncExternalStore,
   useCallback,
   useContext,
   useEffect,
@@ -108,6 +109,13 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
 
   const stage = useExperience((s) => s.stage);
   const setStage = useExperience((s) => s.setStage);
+  const debugOpen = useExperience((s) => s.ui.debugOpen);
+  const hasDebugParam = useSyncExternalStore(
+    () => () => {},
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug"),
+    () => false,
+  );
+  const showDebug = debugOpen || hasDebugParam;
 
   const [stats, setStats] = useState<EngineStats | null>(null);
   /**
@@ -371,7 +379,7 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
           fillHeight={FILL_HEIGHT}
           offsetY={OFFSET_Y}
           onUnsupported={() => setStage({ unsupported: true })}
-          onStats={setStats}
+          onStats={showDebug ? setStats : undefined}
           onViewChange={(rotated) => setStage({ rotated })}
           // 时间线上画布只是藏着 —— 停掉循环，别让 15 万粒子在没人看的地方跑
           paused={!stage.canvasShown}
@@ -450,7 +458,7 @@ export function ExperienceShell({ children }: { children: ReactNode }) {
         调试面板跟着画布走：它报的是引擎的数，画布藏着的时候没有可看的。
         （外壳在 layout 里，不这么写它会在时间线上也飘着 —— 那是纯 DOM 的地方。）
       */}
-      {process.env.NODE_ENV !== "production" && stage.canvasShown && (
+      {process.env.NODE_ENV !== "production" && stage.canvasShown && showDebug && (
         <DebugOverlay stats={stats} />
       )}
     </StageContext.Provider>

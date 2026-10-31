@@ -86,7 +86,7 @@ shadow-narrative/
 │   ├── schema.prisma     # 数据库 schema
 │   └── migrations/       # 数据库迁移
 ├── public/               # 静态资源
-└── shadow-narrative-docs/ # 完整的产品与技术规格文档
+└── docs/                 # 完整规范与技术文档 (docs/specs/ 与 docs/agents/)
 ```
 
 ## 数据存储
@@ -137,7 +137,7 @@ npm run db:deploy
 
 ### 架构约束
 
-详见 `shadow-narrative-docs/05-TECH_ARCHITECTURE.md`：
+详见 `docs/specs/05-TECH_ARCHITECTURE.md`：
 
 - API 路由 → 服务层 → Prisma
 - 粒子引擎与 React 解耦
@@ -146,7 +146,7 @@ npm run db:deploy
 
 ## 文档
 
-完整的产品与技术文档位于 `shadow-narrative-docs/`：
+完整的产品与技术文档位于 `docs/specs/`：
 
 - `01-PRODUCT_SPEC.md` - 产品规格
 - `05-TECH_ARCHITECTURE.md` - 技术架构

@@ -35,13 +35,9 @@ export interface UserSettingsView {
 }
 
 /**
- * 读用户设置，没有就按默认值建一条。
+ * 读取用户设置，不存在时按默认值初始化（08-DATA_API_SPEC.md §3）。
  *
- * 用 upsert 而不是「先查再建」：并发请求下后者会撞唯一约束。
- *
- * ⚠️ 这里原本还有一个 `autoAnalyze`（上传后是否自动把照片发给模型）。
- * 2026-10-10 用户定了「自动分析只能开」，开关与那一列一起删了 ——
- * 所以 `08 §3` 的 `UserSettings` 现在只剩下面这几个字段。
+ * 采用 upsert 保证并发读写安全，避免并发请求时撞唯一约束。
  */
 export async function getSettings(userId: string): Promise<UserSettingsView> {
   const settings = await prisma.userSettings.upsert({

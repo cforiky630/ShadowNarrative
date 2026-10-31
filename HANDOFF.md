@@ -7,7 +7,7 @@
 > 选照片入口（「捉影」）。
 > 面向**新开窗口的 Claude**，目标是让新会话不必重新发现任何东西。
 >
-> 先读这份，再读 `shadow-narrative-docs/`。
+> 先读这份，再读 `docs/specs/`。
 
 ---
 
@@ -183,7 +183,7 @@ AI 单次调用实测 330–600ms（`effort: low`）。
 
 ## 4. 规格文档
 
-`shadow-narrative-docs/` 下 19 份，**必须按 `MANIFEST.md` 的顺序读**。
+`docs/specs/` 下 19 份，**必须按 `MANIFEST.md` 的顺序读**。
 最重要的是：
 
 | 文档 | 什么时候看 |
@@ -584,7 +584,7 @@ Prisma / DeepSeek / Python」，Route Handlers 就是后端；`18 §1` 还明确
 
 ```
 src/                     80 个源文件（ts/tsx/css）
-shadow-narrative-docs/   19 份规格 + recon/
+docs/                    docs/specs (19 份规格 + recon/) + docs/agents/
 prisma/                  schema + 六份迁移（init、day_theme、drop_auto_analyze、
                          journal_drop_title_status、memory_slim_to_album）
 scripts/                 setup.mjs + 环境脚本 + Hilbert 自检 + try-subtitles.mjs

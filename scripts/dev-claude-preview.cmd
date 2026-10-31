@@ -12,7 +12,7 @@ REM
 REM Pointing APPDATA at a plain directory works around it. This only changes
 REM where Next keeps its global config; the project itself is untouched.
 REM
-REM See shadow-narrative-docs/recon/environment.md section 6.1
+REM See docs/specs/recon/environment.md section 6.1
 REM
 REM NOTE: keep this file ASCII-only. cmd.exe reads .cmd in the OEM codepage
 REM (GBK on Chinese Windows), so UTF-8 comments get mis-parsed as commands.

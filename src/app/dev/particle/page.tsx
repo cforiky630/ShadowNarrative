@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import {
   ParticleCanvas,
   type ParticleCanvasHandle,
@@ -24,6 +24,11 @@ export default function ParticleDevPage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [stats, setStats] = useState<EngineStats | null>(null);
+  const showDebug = useSyncExternalStore(
+    () => () => {},
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug"),
+    () => false,
+  );
   const [unsupported, setUnsupported] = useState(false);
   const [hasImage, setHasImage] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -87,7 +92,7 @@ export default function ParticleDevPage() {
         ref={canvasRef}
         className="fixed inset-0 block h-full w-full"
         onUnsupported={() => setUnsupported(true)}
-        onStats={setStats}
+        onStats={showDebug ? setStats : undefined}
       />
 
       {/* 空态：极简提示，不做卡片（02-DESIGN_SYSTEM.md §15） */}
@@ -158,7 +163,7 @@ export default function ParticleDevPage() {
         与 `ExperienceShell` 里同一条判据（`06 §19`：生产隐藏）。
         这个页面是调参台，dev 里留着看引擎的数；打包成桌面 app 之后它不该露面。
       */}
-      {process.env.NODE_ENV !== "production" && <DebugOverlay stats={stats} />}
+      {process.env.NODE_ENV !== "production" && showDebug && <DebugOverlay stats={stats} />}
 
       <input
         ref={inputRef}

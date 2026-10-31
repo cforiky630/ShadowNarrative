@@ -88,7 +88,7 @@ Memory
 
 | 空间 | 作用 | 入口 |
 |---|---|---|
-| **Album** | 收藏的照片沿一条斜轴排布在 3D 空间里 | **第一屏** |
+| **Album** | 精选与收藏照片的手风琴画廊（Accordion Gallery，见 16 §2.2） | **第一屏** |
 | **Photo View** | 看一张照片。默认原图，可切换粒子 | 点相册里的照片 |
 | **Photo Particle** | 照片粒子化后的交互状态 | Photo View 里点「Into this moment」 |
 | **Conversation** | 字幕 + 对话 | 照片下方 |
@@ -188,11 +188,11 @@ Photo View —— 默认原图模式
 ### 找回没收藏的照片
 
 ```text
-左侧抽屉展开
+点顶栏「时间线」或相册下方「看全部」
     ↓
-按时间的纯文字列表（不是平铺网格）
+中央时间线按天浏览（照片扇形叠放 / 网格画廊）
     ↓
-点某一条 → Photo View
+点某一张 → 飞行过渡进入 Photo View
 ```
 
 ### 整理
@@ -215,9 +215,9 @@ AI 起草，用户定稿
 - 原图 ⇄ 粒子的双向切换
 - Photo → Particle / Particle Morph
 - Particle interaction
-- **斜轴相册**（收藏的照片）
+- **相册（Album）**（精选与收藏照片，手风琴画廊形态）
 - **Photo View**（默认原图模式）
-- 左侧抽屉 Library
+- **时间线（Timeline）**（按天组织，取代原计划的左侧抽屉 Library）
 - 字幕 + AI 对话
 - 随笔小记阅读与生成
 - 收藏

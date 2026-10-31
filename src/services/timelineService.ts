@@ -10,10 +10,11 @@ import {
 } from "./photoService";
 
 /**
- * Timeline —— 按天分组的照片（用户 2026-10-10 定的空间）。
+ * 时间线领域服务（Timeline Service）。
  *
- * 取代 `16-ALBUM_SPACE.md` §6 的 Library 抽屉，**不并存**。
- * ⚠️ 规格还没改：`16 §6`、`01 §5`、`07` 都还写着 Library。落地前要改。
+ * 规格：01-PRODUCT_SPEC.md §5、08-DATA_API_SPEC.md §17、16-ALBUM_SPACE.md §1
+ *
+ * 负责时间线数据的聚合与按天（日历日）组织，取代原设计的 Library 抽屉视图。
  */
 
 /**

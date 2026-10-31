@@ -111,27 +111,31 @@ engine/particle/
 
 ```text
 components/
-  ExperienceShell        ★ 画布的所有者，(experience) 路由组的 layout 挂它
-  ParticleCanvas
-  ParticleControls       粒子参数浮卡（左下，07 §3）
-  BottomDock             ★ 左下那颗胶囊：参数 | 设置 两格（07 §11.2）
-  DockCard               上面两张卡共用的外壳
-  SettingsPanel          设置浮卡（07 §11）
-  TopNavigation
-  MemorySpace            Photo View 的**文字层**，不含画布
-  TimelineSpace          时间线（取代 Library 抽屉，16 §6）
-  MemoryField
-  MemoryNode
-  MemoryTheater
-  MemoryScene
-  JournalReader
-  MemoryConversation
-  MemoryNavigation
-  PhotoPicker
-  CommandPanel
+  ExperienceShell        ★ 画布的唯一所有者，(experience) 路由组的 layout 挂载它
+  ParticleCanvas         WebGL 粒子与原图绘制画布
+  ParticleControls       粒子参数浮卡（左下胶囊呼出，07 §3）
+  BottomDock             ★ 左下角胶囊：参数 | 设置 两格（07 §11.2）
+  DockCard               左下角浮卡共用外壳
+  SettingsPanel          设置浮卡（包含 SettingsForm，07 §11）
+  SettingsForm           设置表单（AI key 状态与配置说明）
+  TopNavigation          顶栏导航（项目名 / 时间线 / 影册）
+  AlbumSpace             首屏相册空间（16 §2.2）
+  AccordionGallery       手风琴并排画廊展示组件
+  MemorySpace            Photo View 的文字与交互层（不含画布）
+  TimelineSpace          时间线空间（按天流式呈现，取代原计划的 Library 抽屉）
+  MemoriesSpace          影册架子空间（/memories，07 §12）
+  MemoryAlbum            某一册影册内容空间（/memories/<id>）
+  OrganizePanel          影册照片多选管理面板
+  ConversationPanel      AI 对话面板（全屏毛玻璃遮罩）
+  NotePanel              随笔小记阅读与编辑面板
+  PhotoOverlay           对话与随笔双面遮罩外壳
+  Subtitle               AI 字幕浮现组件
+  PhotoCell              照片缩略卡片单元
+  PhotoDate              照片拍摄日期与日历选择器
+  PhotoPicker            本地照片文件选择器
+  HoldButton             删除操作长按确认按钮
+  DebugOverlay           开发期性能与渲染监控浮层
 ```
-
-（上面这份清单里有一半还没建，是早期规划留下的；**下面这条规则是现行的**。）
 
 ### 6.1 画布归 ExperienceShell，不归任何一条路由
 

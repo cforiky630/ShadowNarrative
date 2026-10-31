@@ -2,27 +2,20 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolveDataDir, resolveSecretsPath } from "./dataDir";
 
 /**
- * 本机凭据。
+ * 本机凭据与密钥管理。
  *
  * 规格：17-SELF_HOSTING.md §3 §4、18-BACKUP_PROTOCOL.md §7、12-SECURITY_PRIVACY.md §10
  *
- * AI key 与备份令牌存在 `<数据目录>/secrets.json`，**不进数据库、不进日志**。
- * 这在本架构下是必然的：服务端就是用户的机器，不存在「平台替你付钱」的模式，
- * 也没有中间方能看到你的 key（17 §4）。
+ * AI 凭据与备份令牌持久化在 `<数据目录>/secrets.json`，严格不进入数据库与运行日志。
  *
- * ⚠️ **2026-10-10：环境变量那条回退删了。**
- *
- * 用户的原话是「apikey 那里不提供默认的，说一下存在哪就行」。原先
- * `secrets.json` 的非空值优先、其次读 `AI_API_KEY` / `AI_BASE_URL` /
- * `AI_MODEL` —— 那是开发期图省事留下的第二条路。
- *
- * 问题不在于多一条路，而在于**它让设置卡说不出真话**：key 可以从两个地方来，
- * 卡片就得回答「配没配」「是不是来自环境变量」「点清除为什么没用」三个问题，
- * 而这三个问题里没有一个和用户要做的事有关。现在只有一个来源，
- * 卡片只回答一件事：**配好了没有**。
- *
- * 所以 `05 §7` 那句「base URL 与模型名都从 `secrets.json` 读」
- * 从今天起是字面意义上的事实，不再有一条没写出来的旁路。
+ * ── 凭据管理原则 ──────────────────────────────────────────────────────
+ * 1. 单一凭据来源：
+ *    所有运行时 AI 凭据（API Key / Base URL / Model）统一来源于 `secrets.json`，
+ *    不设环境变量回退逻辑，确保 UI 状态与底层配置完全一致。
+ * 2. 最小权限文件存储：
+ *    `secrets.json` 写入时设置文件权限为 `0600`（仅当前系统用户可读写）。
+ * 3. 敏感信息防泄露：
+ *    对外 API（如设置面板读取接口）仅暴露「是否已配置」的布尔状态，绝不回传 Key 明文。
  */
 
 export interface Secrets {
@@ -74,14 +67,7 @@ export async function getAiCredentials(): Promise<AiCredentials | null> {
 }
 
 /**
- * 设置卡需要的 AI 信息：**只回答「配没配」，不回传 key 本身**。
- *
- * 不该拿到明文 —— 能显示就说明它出现在某个响应里过，那它就会进日志、
- * 进浏览器缓存、进任何一次抓包（12 §10）。
- *
- * ⚠️ 2026-10-10 删掉了 `fromEnv`。那个字段存在的唯一理由是「key 有两个
- * 来源，合成一个布尔值会让用户点『清除』时以为坏了」—— 现在只有一个来源，
- * 它就没有存在的意义了，见文件头。
+ * 设置卡读取的公共 AI 状态：仅返回配置状态，不泄露 Key 明文（12-SECURITY_PRIVACY.md §10）。
  */
 export async function getAiPublicInfo(): Promise<{
   configured: boolean;
