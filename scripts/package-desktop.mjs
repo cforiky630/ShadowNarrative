@@ -7,15 +7,14 @@
  * - docs/specs/17-SELF_HOSTING.md
  *
  * 用法：
- * - npm run build:desktop                           完整执行 Next 构建 + 封装 NSIS 安装包与便携 ZIP
- * - npm run build:desktop -- --out D:\CustomDir     指定自定义输出目录（支持 -o / --out / --out=...）
- * - npm run build:desktop:fast -- -o D:\CustomDir   快速免压缩验证并输出到指定目录
- * - node scripts/package-desktop.mjs --skip-build   复用已有 .next/standalone 快速封装
- * - node scripts/package-desktop.mjs --unpacked     仅生成免压缩的 win-unpacked 目录（秒级验证）
+ * - npm run build:desktop                           交互式确认版本号（回车自动 +1）并封装 .exe 与 .zip
+ * - npm run build:desktop -- -v 0.2.0               直接指定本次打包版本号
+ * - npm run build:desktop -- --out D:\CustomDir     指定自定义输出根目录（支持 -o / --out / --out=...）
+ * - npm run build:desktop:fast                      快速免压缩验证
  *
  * 输出：
- * - 默认输出目录：项目根目录下的 release/（即 F:\Project\shadow-narrative\release）
- * - 指定 -o / --out <dir> 时：输出到指定目录
+ * - 默认按版本号输出到 release/<version>/（即 F:\Project\shadow-narrative\release\<version>）
+ * - 指定 -o / --out <dir> 时：输出到 <dir>\<version>
  *   ├── Shadow Narrative-Setup-<version>.exe (NSIS 安装版，支持自定义路径与完整卸载)
  *   └── Shadow Narrative-<version>-win-x64.zip (免安装便携版，解压即用，数据默认存于同级 data/)
  */
@@ -32,6 +31,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,7 +45,7 @@ const args = new Set(rawArgs);
 const skipBuild = args.has("--skip-build");
 const unpackedOnly = args.has("--unpacked");
 
-function resolveOutputDir(argv) {
+function resolveBaseOutputDir(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--out" || arg === "-o" || arg === "--output") {
@@ -71,23 +71,94 @@ function resolveOutputDir(argv) {
   return path.join(projectRoot, "release");
 }
 
-const outputDir = resolveOutputDir(rawArgs);
-if (outputDir === projectRoot) {
+function bumpPatchVersion(ver) {
+  const match = String(ver || "0.1.0")
+    .trim()
+    .match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!match) return "0.1.1";
+  return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
+}
+
+function normalizeSemver(input) {
+  let clean = input.trim().replace(/^[vV]/, "");
+  if (/^\d+\.\d+$/.test(clean)) {
+    clean = `${clean}.0`;
+  }
+  if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(clean)) {
+    return null;
+  }
+  return clean;
+}
+
+function resolveCliVersion(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--version" || arg === "-v") {
+      const next = argv[i + 1];
+      if (!next || next.startsWith("-")) {
+        console.error(`错误: 参数 ${arg} 需要提供版本号（如 0.1.1）。`);
+        process.exit(1);
+      }
+      return next;
+    }
+    if (arg.startsWith("--version=")) {
+      return arg.slice("--version=".length).trim();
+    }
+  }
+  return process.env.SN_DESKTOP_VERSION || null;
+}
+
+async function promptOrResolveVersion(currentVersion, argv) {
+  const cliVer = resolveCliVersion(argv);
+  if (cliVer) {
+    const normalized = normalizeSemver(cliVer);
+    if (!normalized) {
+      console.error(
+        `错误: 版本号 "${cliVer}" 格式不合法，请使用 x.y.z 格式（如 0.1.1 或 0.2.0）。`,
+      );
+      process.exit(1);
+    }
+    return normalized;
+  }
+
+  const nextDefault = bumpPatchVersion(currentVersion);
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return nextDefault;
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    while (true) {
+      const answer = await rl.question(
+        `? 请输入本次打包版本号 (当前: ${currentVersion}，直接回车使用 ${nextDefault}): `,
+      );
+      if (!answer.trim()) {
+        return nextDefault;
+      }
+      const normalized = normalizeSemver(answer);
+      if (normalized) {
+        return normalized;
+      }
+      console.log("  ⚠️ 版本号格式需为 x.y.z（例如 0.1.1 或 0.2.0），请重新输入。");
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+const baseOutputDir = resolveBaseOutputDir(rawArgs);
+if (baseOutputDir === projectRoot) {
   console.error("错误: 输出目录不能为项目源码根目录本身。");
   process.exit(1);
 }
 const stagingDir = path.join(os.tmpdir(), `sn-desktop-staging-${Date.now()}`);
 
-const pkg = JSON.parse(
-  readFileSync(path.join(projectRoot, "package.json"), "utf8"),
-);
-const version = pkg.version || "0.1.0";
-
-console.log(`\n======================================================`);
-console.log(`Shadow Narrative 桌面端打包 — 版本 v${version}`);
-console.log(`目标输出目录: ${outputDir}`);
-console.log(`临时中转目录: ${stagingDir}`);
-console.log(`======================================================\n`);
+const pkgPath = path.join(projectRoot, "package.json");
+const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+const currentVersion = pkg.version || "0.1.0";
 
 function log(step, msg) {
   console.log(`[${step}] ${msg}`);
@@ -111,8 +182,25 @@ function resolveElectronBuilderCmd() {
 }
 
 async function main() {
-  // 1. 清理旧产物与准备输出目录（仅移除本应用的打包产物，避免误删用户指定目录中的其他文件）
-  log("1/7", "准备输出目录并清理历史构建产物...");
+  const version = await promptOrResolveVersion(currentVersion, rawArgs);
+  if (version !== currentVersion) {
+    pkg.version = version;
+    writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+  }
+
+  const outputDir =
+    path.basename(baseOutputDir) === version
+      ? baseOutputDir
+      : path.join(baseOutputDir, version);
+
+  console.log(`\n======================================================`);
+  console.log(`Shadow Narrative 桌面端打包 — 版本 v${version}`);
+  console.log(`目标输出目录: ${outputDir}`);
+  console.log(`临时中转目录: ${stagingDir}`);
+  console.log(`======================================================\n`);
+
+  // 1. 清理同版本旧产物与准备输出目录（按版本分文件夹存放，保留其他历史版本）
+  log("1/7", `准备版本输出目录 (${outputDir})...`);
   if (existsSync(outputDir)) {
     const stalePattern =
       /^(win-unpacked|builder-.*\.(yml|yaml)|latest\.yml|Shadow Narrative[- ].*\.(exe|zip|blockmap))$/i;
