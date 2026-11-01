@@ -272,7 +272,7 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
                   …
                 </span>
               ) : confirming ? (
-                "确认移除影册"
+                "Remove Collection"
               ) : (
                 <Trash2 size={16} strokeWidth={1.6} aria-hidden />
               )}

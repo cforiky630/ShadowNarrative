@@ -98,7 +98,7 @@ export function SettingsForm({ initial }: SettingsFormProps) {
                 onClick={() => setEditingKey(true)}
                 className="text-meta text-text-primary/45 underline-offset-4 hover:text-text-primary/85 hover:underline focus-visible:underline"
               >
-                {view.aiKeyConfigured ? "更换" : "配置"}
+                {view.aiKeyConfigured ? "Change" : "Configure"}
               </button>
             )}
 
@@ -108,7 +108,7 @@ export function SettingsForm({ initial }: SettingsFormProps) {
                 onClick={() => setConfirmClear(true)}
                 className="text-meta text-text-primary/45 underline-offset-4 hover:text-text-primary/85 hover:underline focus-visible:underline"
               >
-                清除
+                Clear
               </button>
             )}
 
@@ -120,7 +120,7 @@ export function SettingsForm({ initial }: SettingsFormProps) {
                 aria-live="polite"
                 className="text-meta text-text-primary/95 underline-offset-4 hover:underline disabled:opacity-40"
               >
-                确认清除
+                Confirm Clear
               </button>
             )}
           </span>
@@ -147,7 +147,7 @@ export function SettingsForm({ initial }: SettingsFormProps) {
                 disabled={busy || !keyDraft.trim()}
                 className="text-meta text-text-primary/85 underline-offset-4 hover:underline disabled:opacity-30"
               >
-                保存
+                Save
               </button>
               <button
                 type="button"
@@ -157,7 +157,7 @@ export function SettingsForm({ initial }: SettingsFormProps) {
                 }}
                 className="text-meta text-text-primary/45 underline-offset-4 hover:underline"
               >
-                取消
+                Cancel
               </button>
             </div>
           </div>

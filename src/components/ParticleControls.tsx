@@ -128,7 +128,7 @@ export function ParticleControls() {
           onClick={resetParams}
           className="text-micro mt-10 text-text-primary opacity-40 transition-opacity duration-[200ms] hover:opacity-85"
         >
-          恢复默认
+          Reset
         </button>
       </div>
     </DockCard>

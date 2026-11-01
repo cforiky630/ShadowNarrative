@@ -143,7 +143,7 @@ export function MemoriesSpace({ albums }: MemoriesSpaceProps) {
           className="sn-reveal mb-10 flex items-baseline justify-between gap-6"
         >
           <h1 className="text-micro tracking-[0.08em] text-text-primary/45">
-            影册
+            Memories
           </h1>
 
           {/*

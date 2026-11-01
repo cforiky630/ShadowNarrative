@@ -967,7 +967,7 @@ function PhotoGrid({
             className="text-meta shrink-0 text-text-primary/45 transition-colors duration-[350ms] underline-offset-4 hover:text-text-primary/85 hover:underline"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
-            关闭
+            Close
           </button>
         </div>
 

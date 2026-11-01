@@ -920,7 +920,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
               transition: CROSSFADE,
             }}
           >
-            返回
+            Return
           </span>
           </button>
 
@@ -1084,7 +1084,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
                 className="text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-85"
                 style={{ transitionTimingFunction: "var(--ease-enter)" }}
               >
-                复位视角
+                Reset
               </button>
             )}
 
@@ -1130,7 +1130,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
                 className="text-text-primary opacity-30 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85"
                 style={{ transitionTimingFunction: "var(--ease-enter)" }}
               >
-                随笔
+                Note
               </button>
             )}
 
@@ -1196,7 +1196,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
                   className="px-2 py-1"
                   style={{ opacity: 0.4 }}
                 >
-                  删除
+                  Delete
                 </button>
               </span>
 
@@ -1212,7 +1212,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
               >
                 <HoldButton
                   /*
-                   * ⚠️ **尺寸、字号、字体粗细全部压到和「删除」一样。**
+                   * ⚠️ **尺寸、字号、字体粗细全部压到和「Delete」一样。**
                    *
                    * 用户 2026-10-10：「你需要平衡一下点击删除前后的视觉差」。
                    * 第一版是 `size="sm"`（36px 高、13px 字、一层玻璃底色）——
@@ -1238,10 +1238,10 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
                   waveAmplitude={2}
                   glow={false}
                   resetAfter={0}
-                  doneLabel="删除中"
+                  doneLabel="Deleting…"
                   onHold={() => void handleDelete()}
                 >
-                  长按确认删除
+                  Hold to Delete
                 </HoldButton>
               </span>
             </div>

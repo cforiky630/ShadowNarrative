@@ -350,7 +350,7 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
             href="/timeline"
             className="text-micro text-text-primary/30 underline-offset-4 hover:text-text-primary/70 hover:underline"
           >
-            还有 {hidden} 张 · 看全部
+            +{hidden} · View All
           </Link>
         )}
       </div>
