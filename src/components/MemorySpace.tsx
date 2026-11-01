@@ -10,6 +10,7 @@ import HoldButton from "@/components/HoldButton";
 import { PhotoDate } from "@/components/PhotoDate";
 import { Subtitle } from "@/components/Subtitle";
 import { formatDate } from "@/lib/formatDate";
+import { isImeKey } from "@/lib/keyboard";
 import { makeThumbnail } from "@/lib/makeThumbnail";
 import { uploadPhoto } from "@/lib/photoUpload";
 import { usePhotoDrop } from "@/hooks/usePhotoDrop";
@@ -243,6 +244,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
    * 导入时间（`08 §3`），而回落值**不是**可编辑的那一个。
    */
   const [takenAt, setTakenAt] = useState(photo.takenAt);
+  const [createdAt, setCreatedAt] = useState(photo.createdAt);
 
   /** 上一次从服务端看到的照片 id。用来判断「服务端数据变了没有」。 */
   const serverIdRef = useRef<string | null>(photo.id);
@@ -264,6 +266,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     setFavorite(photo.favorite);
     setHasNote(photo.hasNote);
     setTakenAt(photo.takenAt);
+    setCreatedAt(photo.createdAt);
     setAwaiting(photo.aiState === "pending");
   }, [photo]);
 
@@ -385,12 +388,23 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
         // 画布上已经是这张图了（上面 morphTo 过）—— 告诉外壳别再取一次，
         // 否则它会 setImage 一遍，把用户刚调好的视角重置掉
         markLoaded(photo.id);
+        serverIdRef.current = photo.id;
         // 换照片 → 旧字幕必须立刻清掉，否则新照片下面挂着上一张的话
         setActiveId(photo.id);
+        setTakenAt(photo.takenAt);
+        setCreatedAt(photo.createdAt);
+        setFavorite(photo.favorite);
+        setHasNote(false);
         setSubtitle(null);
         setAiState("pending");
         // 上传总是触发分析（`08 §6` 第 9 步），所以这里总是开始等
         setAwaiting(true);
+
+        const prevSeq = useExperience.getState().stage.sequenceIds;
+        if (!prevSeq.includes(photo.id)) {
+          setStage({ sequenceIds: [photo.id, ...prevSeq] });
+        }
+        window.history.replaceState(null, "", `/?photo=${photo.id}`);
 
         // 让服务端把新的照片数据带回来（日期等元信息）
         router.refresh();
@@ -564,7 +578,146 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
     }
   }, [activeId, favorite]);
 
-  const date = formatDate(takenAt ?? photo.createdAt);
+  const sequenceIds = useExperience((s) => s.stage.sequenceIds);
+  const settingsOpen = useExperience((s) => s.ui.settingsOpen);
+  const roamingRef = useRef(false);
+
+  /**
+   * 若直接通过 `/?photo=<id>` 刷新或打开页面，上下文序列为空，
+   * 后台静默补齐近期照片序列，确保粒子态下方向键漫游随时可用。
+   */
+  useEffect(() => {
+    if (useExperience.getState().stage.sequenceIds.length > 0) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/photos?limit=50");
+        if (!res.ok) return;
+        const body = (await res.json()) as { data?: Array<{ id: string }> };
+        const ids = body.data?.map((p) => p.id) ?? [];
+        if (
+          !cancelled &&
+          ids.length > 0 &&
+          useExperience.getState().stage.sequenceIds.length === 0
+        ) {
+          setStage({ sequenceIds: ids });
+        }
+      } catch {
+        // 忽略静默预取错误
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setStage]);
+
+  /**
+   * 同境漫游（粒子态下按 `←` / `→`）：
+   * 不新增任何屏显按钮，直接让 22 万颗粒子沿 Hilbert 曲线最短路径重排（`morphTo`）为相邻记忆。
+   */
+  const roamTo = useCallback(
+    async (targetId: string) => {
+      if (roamingRef.current || busy || !targetId || targetId === activeId) {
+        return;
+      }
+      roamingRef.current = true;
+      setConfirmDelete(false);
+      setNotice(null);
+
+      try {
+        const [fileRes, detailRes] = await Promise.all([
+          fetch(`/api/photos/${targetId}/file`),
+          fetch(`/api/photos/${targetId}`, { cache: "no-store" }),
+        ]);
+        if (!fileRes.ok || !detailRes.ok) throw new Error("切换失败");
+
+        const [blob, detailBody] = await Promise.all([
+          fileRes.blob(),
+          detailRes.json() as Promise<{ data?: PhotoDetail }>,
+        ]);
+        const nextPhoto = detailBody.data;
+        if (!nextPhoto) throw new Error("切换失败");
+
+        const bitmap = await createImageBitmap(blob);
+
+        // 先告知外壳该图像素已由 morphTo 接管，避免 activeId 变更触发 setImage 重置视角与模式
+        markLoaded(nextPhoto.id);
+        serverIdRef.current = nextPhoto.id;
+        setActiveId(nextPhoto.id);
+        setTakenAt(nextPhoto.takenAt);
+        setCreatedAt(nextPhoto.createdAt);
+        setFavorite(nextPhoto.favorite);
+        setHasNote(nextPhoto.hasNote);
+        setSubtitle(nextPhoto.subtitle?.content ?? null);
+        setAiState(nextPhoto.aiState);
+        setAwaiting(nextPhoto.aiState === "pending");
+
+        window.history.replaceState(null, "", `/?photo=${nextPhoto.id}`);
+        await canvasRef.current?.morphTo(bitmap);
+      } catch {
+        // 偶发网络错误时保持当前画面安静，不打断沉浸态
+      } finally {
+        roamingRef.current = false;
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeId, busy, markLoaded],
+  );
+
+  useEffect(() => {
+    if (
+      !inParticle ||
+      overlayFace !== null ||
+      settingsOpen ||
+      confirmDelete ||
+      busy
+    ) {
+      return;
+    }
+    if (sequenceIds.length < 2 || !activeId) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isImeKey(e)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const idx = sequenceIds.indexOf(activeId);
+      if (idx === -1) return;
+
+      e.preventDefault();
+      const delta = e.key === "ArrowLeft" ? -1 : 1;
+      const nextIdx = (idx + delta + sequenceIds.length) % sequenceIds.length;
+      const nextId = sequenceIds[nextIdx];
+      if (nextId && nextId !== activeId) {
+        void roamTo(nextId);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    inParticle,
+    overlayFace,
+    settingsOpen,
+    confirmDelete,
+    busy,
+    sequenceIds,
+    activeId,
+    roamTo,
+  ]);
+
+  const date = formatDate(takenAt ?? createdAt);
 
   if (unsupported) {
     return (
@@ -660,10 +813,10 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
              * effect 里同步 setState（`react-hooks/set-state-in-effect`）——
              * 重挂比一条会级联渲染的 effect 便宜，也不会留下半旧的本地值。
              */
-            key={takenAt ?? "none"}
-            photoId={photo.id}
+            key={`${activeId ?? photo.id}:${takenAt ?? "none"}`}
+            photoId={activeId ?? photo.id}
             takenAt={takenAt}
-            createdAt={photo.createdAt}
+            createdAt={createdAt}
             onSaved={setTakenAt}
           />
 

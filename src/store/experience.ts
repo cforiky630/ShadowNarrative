@@ -73,6 +73,11 @@ export interface StageState {
   /** 画布上该是哪张照片。null = 还没有（相册、空态） */
   photoId: string | null;
   /**
+   * 当前所在上下文的照片序列 ID 列表（相册 / 时间线 / 影册）。
+   * 供粒子态下键盘 `←` / `→` 触发同境漫游（Hilbert `morphTo`）使用。
+   */
+  sequenceIds: string[];
+  /**
    * 进入动画的起点（视口坐标）。
    *
    * 非 null 有两个含义，它们是同一件事的两面：
@@ -195,6 +200,7 @@ export const useExperience = create<ExperienceState>((set, get) => ({
     canvasShown: false,
     unsupported: false,
     rotated: false,
+    sequenceIds: [],
   },
   setStage: (patch) =>
     set((s) => {

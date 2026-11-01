@@ -127,8 +127,12 @@ export function AlbumSpace({ photos, hidden }: AlbumSpaceProps) {
   // 声明这是相册空间：画布那一层在相册上是藏着的，引擎也不该跑
   // （`/` 同时也是照片页的 pathname，外壳分不出来，只能由这里说）
   useEffect(() => {
-    setStage({ space: "album", photoId: null });
-  }, [setStage]);
+    setStage({
+      space: "album",
+      photoId: null,
+      sequenceIds: all.map((p) => p.id),
+    });
+  }, [setStage, all]);
 
   /**
    * 每一格的图与标题。

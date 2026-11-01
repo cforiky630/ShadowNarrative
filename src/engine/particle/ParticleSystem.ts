@@ -600,6 +600,9 @@ export class ParticleSystem {
       return;
     }
 
+    // 若上一段 morph 尚未结束，先将其提升落定为新的起点 A，避免连续切换时丢失中间状态或泄漏 ImageBitmap
+    if (this.morphing) this.settleMorph();
+
     // 确保起点 A 的几何体与缓冲区已就绪
     this.ensureSampled();
     if (!this.geometry) return;
@@ -1204,6 +1207,11 @@ export class ParticleSystem {
     options?: { immediate?: boolean; keepView?: boolean },
   ): void {
     if (mode === this.mode && !options?.immediate) return;
+
+    // 若在粒子重排（morph）途中切回原图态，先将目标图 B 落定并同步到原图四边形，避免露出的原图仍是上一张
+    if (mode === "photo" && this.morphing) {
+      this.settleMorph();
+    }
 
     const from = this.mode;
     this.mode = mode;

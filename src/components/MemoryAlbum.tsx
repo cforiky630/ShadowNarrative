@@ -90,8 +90,12 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
 
   // 与架子同一句：每个空间都必须声明一次（`stage.space` 的注释里有理由）
   useEffect(() => {
-    setStage({ space: "memories", photoId: null });
-  }, [setStage]);
+    setStage({
+      space: "memories",
+      photoId: null,
+      sequenceIds: album.photos.map((p) => p.id),
+    });
+  }, [setStage, album.photos]);
 
   /*
    * 待确认是有寿命的。

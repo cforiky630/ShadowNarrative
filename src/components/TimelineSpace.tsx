@@ -101,8 +101,12 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
    * 因为 `/timeline` 上没人改这个值，外壳的显隐 effect 依赖它不变，就不会重跑。
    */
   useEffect(() => {
-    setStage({ space: "timeline", photoId: null });
-  }, [setStage]);
+    setStage({
+      space: "timeline",
+      photoId: null,
+      sequenceIds: days.flatMap((d) => d.photos.map((p) => p.id)),
+    });
+  }, [setStage, days]);
 
   /**
    * 空态里直接收一张。
