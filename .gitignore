@@ -56,11 +56,5 @@ yarn-error.log*
 # AI 工具本地状态（Claude Code 等）
 .claude/
 
-# 桌面端打包输出产物（默认输出在当前工作目录时忽略，不污染版本库）
-/Shadow Narrative-*.exe
-/Shadow Narrative-*.zip
-/Shadow Narrative-*.blockmap
-/builder-*.yml
-/builder-*.yaml
-/latest.yml
-/win-unpacked/
+# 桌面端打包输出目录
+/release/

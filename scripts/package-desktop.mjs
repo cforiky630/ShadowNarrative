@@ -14,8 +14,8 @@
  * - node scripts/package-desktop.mjs --unpacked     仅生成免压缩的 win-unpacked 目录（秒级验证）
  *
  * 输出：
- * - 指定 -o / --out <dir> 时：直接输出到该目录
- * - 未指定时：默认直接输出到当前运行终端命令所在的文件夹
+ * - 默认输出目录：项目根目录下的 release/（即 F:\Project\shadow-narrative\release）
+ * - 指定 -o / --out <dir> 时：输出到指定目录
  *   ├── Shadow Narrative-Setup-<version>.exe (NSIS 安装版，支持自定义路径与完整卸载)
  *   └── Shadow Narrative-<version>-win-x64.zip (免安装便携版，解压即用，数据默认存于同级 data/)
  */
@@ -36,7 +36,6 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
-// npm run 会将 process.cwd() 切到 package.json 所在目录，而 INIT_CWD 保留了用户在终端执行命令时的真实目录
 const callerCwd = process.env.INIT_CWD
   ? path.resolve(process.env.INIT_CWD)
   : process.cwd();
@@ -69,10 +68,14 @@ function resolveOutputDir(argv) {
   if (process.env.SN_DESKTOP_OUT) {
     return path.resolve(callerCwd, process.env.SN_DESKTOP_OUT);
   }
-  return callerCwd;
+  return path.join(projectRoot, "release");
 }
 
 const outputDir = resolveOutputDir(rawArgs);
+if (outputDir === projectRoot) {
+  console.error("错误: 输出目录不能为项目源码根目录本身。");
+  process.exit(1);
+}
 const stagingDir = path.join(os.tmpdir(), `sn-desktop-staging-${Date.now()}`);
 
 const pkg = JSON.parse(
