@@ -139,6 +139,8 @@ async function main() {
   mkdirSync(stagingDir, { recursive: true });
   mkdirSync(path.join(stagingDir, "bin"), { recursive: true });
   mkdirSync(path.join(stagingDir, "template-db"), { recursive: true });
+  // 预建空 node_modules 目录，阻止 electron-builder 在中转目录触发多余的 npm install --production
+  mkdirSync(path.join(stagingDir, "node_modules"), { recursive: true });
 
   // 复制独立的 node.exe 运行时（保证与 better-sqlite3 原生模块 ABI 100% 一致）
   const nodeSrc = process.execPath;
@@ -472,9 +474,11 @@ app.on('window-all-closed', () => {
       appId: "com.shadownarrative.desktop",
       productName: "Shadow Narrative",
       electronVersion: "34.0.0",
+      npmRebuild: false,
+      nodeGypRebuild: false,
+      buildDependenciesFromSource: false,
       directories: {
         output: outputDir,
-        app: stagingDir,
       },
       files: ["main.js", "preload.js", "package.json"],
       extraResources: [
@@ -534,16 +538,20 @@ app.on('window-all-closed', () => {
     `开始执行 electron-builder (${targetFlags})...`,
   );
 
+  const builderEnv = {
+    ...process.env,
+    ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/",
+    ELECTRON_BUILDER_BINARIES_MIRROR:
+      "https://npmmirror.com/mirrors/electron-builder-binaries/",
+  };
+  delete builderEnv.npm_config_allow_scripts;
+  delete builderEnv.NPM_CONFIG_ALLOW_SCRIPTS;
+
   execSync(`${builderCmdBase} ${targetFlags}`, {
     cwd: stagingDir,
     stdio: "inherit",
     shell: true,
-    env: {
-      ...process.env,
-      ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/",
-      ELECTRON_BUILDER_BINARIES_MIRROR:
-        "https://npmmirror.com/mirrors/electron-builder-binaries/",
-    },
+    env: builderEnv,
   });
 
   // 7. 清理中转临时工作区与 electron-builder 附属缓存文件（仅保留干净的 .exe 与 .zip）
