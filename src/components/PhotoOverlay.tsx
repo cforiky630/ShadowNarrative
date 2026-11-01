@@ -169,14 +169,14 @@ export function PhotoOverlay({
         setHasMaterial(journalRes.value.data.hasMaterial);
         setNoteIsStale(journalRes.value.data.noteIsStale);
       } else {
-        setError("读不到随笔小记");
+        setError("读取随笔失败");
       }
 
       if (convRes.status === "fulfilled") {
         setMessages(convRes.value.data);
         setInitialCount(convRes.value.data.length);
       } else if (initialFace === "conversation") {
-        setError("读不到对话");
+        setError("读取对话失败");
       }
 
       // 失败也要放行 —— 否则整层浮层是空的，用户连对话都进不去
@@ -281,7 +281,7 @@ export function PhotoOverlay({
         error?: { message?: string };
       } | null;
       if (!res.ok || !body?.data) {
-        throw new Error(body?.error?.message ?? "AI 没写出可用的东西");
+        throw new Error(body?.error?.message ?? "未能生成随笔");
       }
       setNote(body.data);
       // 刚写完的这一版比所有消息都新 —— 两颗笔都该收起来了
@@ -292,7 +292,7 @@ export function PhotoOverlay({
       setInitialCount(0);
       setFace("note");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "没能写出来");
+      setError(err instanceof Error ? err.message : "未能生成随笔");
     } finally {
       setGenerating(false);
     }

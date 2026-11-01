@@ -181,13 +181,13 @@ export function ConversationPanel({
         const body = (await res.json().catch(() => null)) as {
           error?: { message?: string };
         } | null;
-        throw new Error(body?.error?.message ?? "没能送出去");
+        throw new Error(body?.error?.message ?? "发送失败");
       }
 
       const body = (await res.json()) as { data: ConversationMessage };
       setMessages((prev) => [...prev, body.data]);
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : "没能送出去");
+      setFailed(err instanceof Error ? err.message : "发送失败");
       /*
        * 对账。**服务端在调模型之前就把用户那句话落库了** ——
        * 所以模型失败时，那句话其实已经在库里。只报错不重取的话，
@@ -296,7 +296,7 @@ export function ConversationPanel({
               if (e.key === "Enter" && isImeKey(e)) e.preventDefault();
             }}
             autoFocus
-            placeholder="说点什么"
+            placeholder="留下一句回应…"
             maxLength={MAX_CHARS}
             className="text-body flex-1 bg-transparent text-text-primary/90 outline-none placeholder:text-text-primary/20"
           />

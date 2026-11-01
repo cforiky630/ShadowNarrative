@@ -693,9 +693,9 @@ export async function runConversationReply(params: {
   content: string;
 }): Promise<ConversationMessage> {
   const content = params.content.trim();
-  if (!content) throw new ApiError("INVALID_INPUT", "说点什么");
+  if (!content) throw new ApiError("INVALID_INPUT", "请输入对话内容");
   if (content.length > MESSAGE_MAX_CHARS) {
-    throw new ApiError("INVALID_INPUT", `一条最多 ${MESSAGE_MAX_CHARS} 个字`);
+    throw new ApiError("INVALID_INPUT", `单条消息最多 ${MESSAGE_MAX_CHARS} 个字`);
   }
 
   /*
@@ -922,7 +922,7 @@ async function guardReply(
   // 4 句是硬上限（§11 说默认 1–3 句、最多 4 段），截断是兜底不是目标
   const cleaned = limitSentences(scrub(text), 4).trim();
   if (!cleaned) {
-    throw new ApiError("AI_UPSTREAM_FAILED", "AI 没说出什么，再试一次");
+    throw new ApiError("AI_UPSTREAM_FAILED", "未能生成回应，请稍后重试");
   }
   return cleaned;
 }
@@ -990,7 +990,7 @@ export async function runJournalNote(params: {
    * 那不是随笔小记，是伪造的记忆。
    */
   if (!messages.some((m) => m.role === "user")) {
-    throw new ApiError("INVALID_INPUT", "还没有什么可整理的 —— 先说两句");
+    throw new ApiError("INVALID_INPUT", "暂无可整理的对话内容");
   }
 
   const material = messages.slice(-NOTE_MATERIAL_LIMIT);
@@ -1117,11 +1117,11 @@ async function writeNoteFromModel(
 
     const saved = await saveNote({ photoId, content });
     // saveNote 在正文为空时返回 null，而上面已经挡掉空了 —— 这里的兜底只是防御
-    if (!saved) throw new ApiError("AI_UPSTREAM_FAILED", "没能把它存下来");
+    if (!saved) throw new ApiError("AI_UPSTREAM_FAILED", "随笔保存失败");
     return saved;
   }
 
-  throw new ApiError("AI_UPSTREAM_FAILED", "AI 没写出可用的东西");
+  throw new ApiError("AI_UPSTREAM_FAILED", "未能生成随笔，请稍后重试");
 }
 
 /**

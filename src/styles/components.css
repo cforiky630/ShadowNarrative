@@ -4,6 +4,15 @@
  */
 
 @layer components {
+  /* 桌面端无边框窗口拖拽区与交互豁免区 */
+  .sn-app-drag {
+    -webkit-app-region: drag;
+  }
+
+  .sn-app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
   /* 极简滑块。用原生 <input type="range">：零依赖、键盘可达、
      读屏器原生支持 —— 比自绘滑块更符合 04 §14 的无障碍要求。 */
   .sn-range {

@@ -104,12 +104,12 @@ const TITLE_MAX_CHARS = 60;
  */
 function cleanTitle(title: unknown): string {
   if (typeof title !== "string") {
-    throw new ApiError("INVALID_INPUT", "名字必须是字符串");
+    throw new ApiError("INVALID_INPUT", "名称必须是字符串");
   }
   const trimmed = title.trim();
-  if (!trimmed) throw new ApiError("INVALID_INPUT", "给它起个名字");
+  if (!trimmed) throw new ApiError("INVALID_INPUT", "请输入影册名称");
   if (trimmed.length > TITLE_MAX_CHARS) {
-    throw new ApiError("INVALID_INPUT", `名字最多 ${TITLE_MAX_CHARS} 个字`);
+    throw new ApiError("INVALID_INPUT", `名称最多 ${TITLE_MAX_CHARS} 个字`);
   }
   return trimmed;
 }

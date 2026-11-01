@@ -18,7 +18,7 @@ import type { AiState } from "@/types";
 interface SubtitleProps {
   content: string | null;
   state: AiState;
-  
+
   /** 重新请求一次分析。现在只剩**失败重试**这一个用途。 */
   onRequest?: () => void;
   /**
@@ -56,7 +56,7 @@ export function Subtitle({
           onClick={onRequest}
           className="pointer-events-auto underline-offset-4 hover:text-text-primary/60 hover:underline"
         >
-          没能看清这张照片。再看一次？
+          未能识读画面 · 点击重试
         </button>
       </p>
     );

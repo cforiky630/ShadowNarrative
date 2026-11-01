@@ -98,7 +98,7 @@ export function MemoriesSpace({ albums }: MemoriesSpaceProps) {
         error?: { message?: string };
       } | null;
       if (!res.ok || !body?.data) {
-        throw new Error(body?.error?.message ?? "没能建起来");
+        throw new Error(body?.error?.message ?? "创建失败");
       }
 
       setCreating(false);
@@ -112,7 +112,7 @@ export function MemoriesSpace({ albums }: MemoriesSpaceProps) {
        */
       router.push(`/memories/${body.data.id}?organize=1`);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "没能建起来");
+      setNotice(err instanceof Error ? err.message : "创建失败");
     } finally {
       setBusy(false);
     }
@@ -237,7 +237,7 @@ export function MemoriesSpace({ albums }: MemoriesSpaceProps) {
           className="sn-reveal"
         >
           {albums.length === 0 && !creating ? (
-            <p className="text-meta text-text-primary/35">还没有影册</p>
+            <p className="text-meta text-text-primary/35">尚无影册</p>
           ) : (
             <ul className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3">
               {albums.map((album) => (

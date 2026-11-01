@@ -48,7 +48,7 @@ export function SettingsPanel() {
     <DockCard label="设置" open={open} onClose={() => setOpen(false)}>
       {failed && (
         <p className="text-meta px-6 pb-6 text-text-primary/60">
-          读不到设置。关掉再开一次试试。
+          无法读取设置，请重新打开再试
         </p>
       )}
       {!failed && !view && (

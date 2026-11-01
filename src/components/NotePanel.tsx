@@ -87,7 +87,7 @@ export function NotePanel({ photoId, date, note, onSaved }: NotePanelProps) {
           onSaved(saved);
         } catch (err) {
           setState("idle");
-          setError(err instanceof Error ? err.message : "没能保存");
+          setError(err instanceof Error ? err.message : "保存失败");
         }
       })();
     }, SAVE_DEBOUNCE_MS);
@@ -164,7 +164,7 @@ export function NotePanel({ photoId, date, note, onSaved }: NotePanelProps) {
         // 免得一打开就跳出个光标像是要改它
         autoFocus={!note?.content}
         spellCheck={false}
-        placeholder="写点什么"
+        placeholder="记下此刻…"
         className="text-body sn-noscrollbar mt-5 min-h-0 flex-1 resize-none bg-transparent text-text-primary/90 outline-none placeholder:text-text-primary/20"
       />
 
@@ -211,6 +211,6 @@ async function patchNote(
     error?: { message?: string };
   } | null;
 
-  if (!res.ok) throw new Error(body?.error?.message ?? "没能保存");
+  if (!res.ok) throw new Error(body?.error?.message ?? "保存失败");
   return body?.data ?? null;
 }

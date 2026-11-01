@@ -103,13 +103,13 @@ export function PhotoDate({
           const body = (await res.json().catch(() => null)) as {
             error?: { message?: string };
           } | null;
-          throw new Error(body?.error?.message ?? "没能改");
+          throw new Error(body?.error?.message ?? "保存失败");
         }
 
         onSaved(iso);
         setOpen(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "没能改");
+        setError(err instanceof Error ? err.message : "保存失败");
       } finally {
         setSaving(false);
       }
@@ -133,7 +133,7 @@ export function PhotoDate({
         className="text-meta relative z-30 text-text-primary/55 underline-offset-4 transition-colors duration-[350ms] hover:text-text-primary/90 hover:underline focus-visible:text-text-primary/90 focus-visible:underline"
         style={{ transitionTimingFunction: "var(--ease-enter)" }}
       >
-        {formatDate(shown) ?? "没有时间"}
+        {formatDate(shown) ?? "未知日期"}
       </button>
 
       <AnimatePresence>
@@ -243,7 +243,7 @@ function Calendar({
 
       <m.div
         role="dialog"
-        aria-label="改这张照片的时间"
+        aria-label="修改拍摄日期"
         initial={{ opacity: 0, scale: 0.94, y: 6 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 6 }}

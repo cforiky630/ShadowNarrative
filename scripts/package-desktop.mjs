@@ -150,9 +150,30 @@ async function main() {
     }
   }
 
-  // 5. 生成桌面主进程 main.js
-  log("5/7", "生成 Electron 启动器 main.js...");
-  const mainScript = `const { app, BrowserWindow, dialog, shell } = require('electron');
+  // 5. 生成桌面主进程 main.js 与安全桥接 preload.js
+  log("5/7", "生成 Electron 无边框启动器 main.js 与 preload.js...");
+  const preloadScript = `const { contextBridge, ipcRenderer } = require('electron');
+
+const desktopApi = {
+  isDesktop: true,
+  minimize: () => ipcRenderer.invoke('sn-window:minimize'),
+  toggleMaximize: () => ipcRenderer.invoke('sn-window:toggle-maximize'),
+  close: () => ipcRenderer.invoke('sn-window:close'),
+  isMaximized: () => ipcRenderer.invoke('sn-window:is-maximized'),
+  onMaximizedChange: (callback) => {
+    const listener = (_event, maximized) => callback(Boolean(maximized));
+    ipcRenderer.on('sn-window:maximized-change', listener);
+    return () => ipcRenderer.removeListener('sn-window:maximized-change', listener);
+  }
+};
+
+contextBridge.exposeInMainWorld('snDesktop', desktopApi);
+contextBridge.exposeInMainWorld('electronAPI', desktopApi);
+`;
+
+  writeFileSync(path.join(stagingDir, "preload.js"), preloadScript, "utf8");
+
+  const mainScript = `const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
@@ -162,6 +183,25 @@ const http = require('http');
 let mainWindow = null;
 let serverProcess = null;
 let lastServerOutput = [];
+
+ipcMain.handle('sn-window:minimize', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize();
+});
+
+ipcMain.handle('sn-window:toggle-maximize', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
+  return mainWindow.isMaximized();
+});
+
+ipcMain.handle('sn-window:close', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+});
+
+ipcMain.handle('sn-window:is-maximized', () => {
+  return Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isMaximized());
+});
 
 // 单实例锁：防止多开导致 SQLite 文件锁冲突或端口争抢
 const gotTheLock = app.requestSingleInstanceLock();
@@ -311,13 +351,27 @@ async function startApp() {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
+    frame: false,
     show: false,
     backgroundColor: '#050505',
     autoHideMenuBar: true,
     title: 'Shadow Narrative',
     webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true
+    }
+  });
+
+  mainWindow.on('maximize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sn-window:maximized-change', true);
+    }
+  });
+
+  mainWindow.on('unmaximize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sn-window:maximized-change', false);
     }
   });
 
@@ -379,7 +433,7 @@ app.on('window-all-closed', () => {
         output: outputDir,
         app: stagingDir,
       },
-      files: ["main.js", "package.json"],
+      files: ["main.js", "preload.js", "package.json"],
       extraResources: [
         {
           from: "standalone",

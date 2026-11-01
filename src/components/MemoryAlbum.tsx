@@ -149,7 +149,7 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
         const body = (await res.json().catch(() => null)) as {
           error?: { message?: string };
         } | null;
-        throw new Error(body?.error?.message ?? "没能改名");
+        throw new Error(body?.error?.message ?? "重命名失败");
       }
       setTitle(next);
       setDraft(next);
@@ -158,7 +158,7 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
       router.refresh();
     } catch (err) {
       // 保存失败就停在编辑态 —— 用户的输入不能丢
-      setNotice(err instanceof Error ? err.message : "没能改名");
+      setNotice(err instanceof Error ? err.message : "重命名失败");
     } finally {
       setSaving(false);
     }
@@ -176,7 +176,7 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
         const body = (await res.json().catch(() => null)) as {
           error?: { message?: string };
         } | null;
-        throw new Error(body?.error?.message ?? "没能删掉");
+        throw new Error(body?.error?.message ?? "移除失败");
       }
       // 回架子去。这一册已经不存在了，留在原地只会是一个 404
       router.push("/memories");
@@ -184,7 +184,7 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
     } catch (err) {
       setDeleting(false);
       setConfirming(false);
-      setNotice(err instanceof Error ? err.message : "没能删掉");
+      setNotice(err instanceof Error ? err.message : "移除失败");
     }
   }, [deleting, album.id, router]);
 
@@ -259,10 +259,10 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
                 if (confirming) void removeAlbum();
                 else setConfirming(true);
               }}
-              aria-label="删除这一册"
+              aria-label="移除影册"
               className={
                 confirming
-                  ? "text-micro text-text-primary whitespace-nowrap opacity-70 transition-opacity duration-[350ms] hover:opacity-100 focus-visible:opacity-100"
+                  ? "text-micro text-text-primary whitespace-nowrap opacity-75 transition-opacity duration-[350ms] hover:opacity-100 focus-visible:opacity-100"
                   : "text-text-primary flex h-7 w-7 items-center justify-center opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85 disabled:opacity-30"
               }
               style={{ transitionTimingFunction: "var(--ease-enter)" }}
@@ -272,7 +272,7 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
                   …
                 </span>
               ) : confirming ? (
-                "只删这一册"
+                "确认移除影册"
               ) : (
                 <Trash2 size={16} strokeWidth={1.6} aria-hidden />
               )}
@@ -292,7 +292,7 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
           className="sn-reveal"
         >
           {album.photos.length === 0 ? (
-            <p className="text-meta text-text-primary/35">空</p>
+            <p className="text-meta text-text-primary/35">尚无照片</p>
           ) : (
             <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4">
               {album.photos.map((photo) => (

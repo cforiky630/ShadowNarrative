@@ -575,7 +575,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
       if (!res.ok) throw new Error(String(res.status));
     } catch {
       setFavorite(!next);
-      setNotice("收藏没保存上");
+      setNotice("收藏状态未保存");
     }
   }, [activeId, favorite]);
 
@@ -1241,7 +1241,7 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
                   doneLabel="删除中"
                   onHold={() => void handleDelete()}
                 >
-                  长按以确认删除
+                  长按确认删除
                 </HoldButton>
               </span>
             </div>

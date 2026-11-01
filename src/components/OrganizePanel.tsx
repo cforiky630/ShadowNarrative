@@ -115,7 +115,7 @@ export function OrganizePanel({
         const page = await fetchPhotoPage(null);
         if (!cancelled) applyPage(page);
       } catch {
-        if (!cancelled) setError("读不到照片");
+        if (!cancelled) setError("读取照片失败");
       }
     })();
     return () => {
@@ -135,7 +135,7 @@ export function OrganizePanel({
     try {
       applyPage(await fetchPhotoPage(cursor));
     } catch {
-      setError("读不到照片");
+      setError("读取照片失败");
     } finally {
       setLoading(false);
     }
@@ -191,7 +191,7 @@ export function OrganizePanel({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ photoIds: [...add] }),
         });
-        if (!res.ok) throw new Error("没能加进去");
+        if (!res.ok) throw new Error("添加失败");
       }
 
       // 一张一张移。移出是幂等的单张操作（`08 §9`），
@@ -201,14 +201,14 @@ export function OrganizePanel({
           `/api/memories/${albumId}/photos/${photoId}`,
           { method: "DELETE" },
         );
-        if (!res.ok) throw new Error("没能移出来");
+        if (!res.ok) throw new Error("移出失败");
       }
 
       onClose();
       router.refresh();
     } catch (err) {
       setSaving(false);
-      setError(err instanceof Error ? err.message : "没能保存");
+      setError(err instanceof Error ? err.message : "保存失败");
     }
   }, [saving, add, remove, albumId, onClose, router]);
 
@@ -284,11 +284,11 @@ export function OrganizePanel({
                   aria-label={
                     owned
                       ? picked
-                        ? "移出这一张"
-                        : "这张已在册，点一下移出"
+                        ? "取消移出"
+                        : "已在册，点击移出"
                       : picked
                         ? "取消选中"
-                        : "选中这一张"
+                        : "加入影册"
                   }
                   className="relative block w-full cursor-pointer overflow-hidden rounded-sm"
                   style={{
@@ -362,7 +362,7 @@ export function OrganizePanel({
         )}
         {end && !photos.length && !error && (
           <p className="text-meta text-center text-text-primary/35">
-            还没有照片。
+            尚无照片
           </p>
         )}
       </m.div>
