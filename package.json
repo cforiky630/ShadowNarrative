@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "setup": "node scripts/setup.mjs",
     "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy"
+    "db:deploy": "prisma migrate deploy",
+    "build:desktop": "node scripts/package-desktop.mjs",
+    "build:desktop:fast": "node scripts/package-desktop.mjs --skip-build --unpacked"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.10.0",
