@@ -7,11 +7,13 @@
  * - docs/specs/17-SELF_HOSTING.md
  *
  * 用法：
- * - npm run build:desktop                 完整执行 Next 构建 + 封装 NSIS 安装包与便携 ZIP
+ * - npm run build:desktop                           完整执行 Next 构建 + 封装 NSIS 安装包与便携 ZIP
+ * - npm run build:desktop -- --out D:\CustomDir     指定自定义输出目录（支持 -o / --out / --out=...）
+ * - npm run build:desktop:fast -- -o D:\CustomDir   快速免压缩验证并输出到指定目录
  * - node scripts/package-desktop.mjs --skip-build   复用已有 .next/standalone 快速封装
  * - node scripts/package-desktop.mjs --unpacked     仅生成免压缩的 win-unpacked 目录（秒级验证）
  *
- * 输出：
+ * 输出（默认）：
  * - F:\Project\shadow-narrative-desktop
  *   ├── Shadow Narrative-Setup-<version>.exe (NSIS 安装版，支持自定义路径与完整卸载)
  *   └── Shadow Narrative-<version>-win-x64.zip (免安装便携版，解压即用，数据默认存于同级 data/)
@@ -33,14 +35,44 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
-const outputDir = path.resolve(
-  process.env.SN_DESKTOP_OUT || path.join(projectRoot, "..", "shadow-narrative-desktop"),
-);
-const stagingDir = path.join(os.tmpdir(), `sn-desktop-staging-${Date.now()}`);
 
-const args = new Set(process.argv.slice(2));
+const rawArgs = process.argv.slice(2);
+const args = new Set(rawArgs);
 const skipBuild = args.has("--skip-build");
 const unpackedOnly = args.has("--unpacked");
+
+function resolveOutputDir(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--out" || arg === "-o" || arg === "--output") {
+      const next = argv[i + 1];
+      if (!next || next.startsWith("-")) {
+        console.error(`错误: 参数 ${arg} 需要提供目标输出路径。`);
+        process.exit(1);
+      }
+      return path.resolve(process.cwd(), next);
+    }
+    if (arg.startsWith("--out=") || arg.startsWith("--output=")) {
+      const val = arg.slice(arg.indexOf("=") + 1).trim();
+      if (!val) {
+        console.error(`错误: 参数 ${arg} 需要提供目标输出路径。`);
+        process.exit(1);
+      }
+      return path.resolve(process.cwd(), val);
+    }
+  }
+  if (process.env.SN_DESKTOP_OUT) {
+    return path.resolve(process.cwd(), process.env.SN_DESKTOP_OUT);
+  }
+  return path.resolve(projectRoot, "..", "shadow-narrative-desktop");
+}
+
+const outputDir = resolveOutputDir(rawArgs);
+if (outputDir === projectRoot) {
+  console.error("错误: 输出目录不能为项目源码根目录本身。");
+  process.exit(1);
+}
+const stagingDir = path.join(os.tmpdir(), `sn-desktop-staging-${Date.now()}`);
 
 const pkg = JSON.parse(
   readFileSync(path.join(projectRoot, "package.json"), "utf8"),
@@ -75,12 +107,19 @@ function resolveElectronBuilderCmd() {
 }
 
 async function main() {
-  // 1. 清理旧产物与输出目录
-  log("1/7", "清理旧的封装输出目录...");
+  // 1. 清理旧产物与准备输出目录（仅移除本应用的打包产物，避免误删用户指定目录中的其他文件）
+  log("1/7", "准备输出目录并清理历史构建产物...");
   if (existsSync(outputDir)) {
-    rmSync(outputDir, { recursive: true, force: true });
+    const stalePattern =
+      /^(win-unpacked|builder-.*\.(yml|yaml)|latest\.yml|Shadow Narrative[- ].*\.(exe|zip|blockmap))$/i;
+    for (const entry of readdirSync(outputDir)) {
+      if (stalePattern.test(entry)) {
+        rmSync(path.join(outputDir, entry), { recursive: true, force: true });
+      }
+    }
+  } else {
+    mkdirSync(outputDir, { recursive: true });
   }
-  mkdirSync(outputDir, { recursive: true });
 
   // 2. 构建最新 Next.js Standalone 产物（除非显式传 --skip-build）
   const standaloneDir = path.join(projectRoot, ".next", "standalone");
