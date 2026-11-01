@@ -94,13 +94,7 @@ export interface AccordionGalleryProps {
   onActivate?: (index: number) => void;
 }
 
-const DEFAULT_ITEMS: AccordionGalleryItem[] = [
-  { image: "https://picsum.photos/id/1015/900/1200", label: "Canyon" },
-  { image: "https://picsum.photos/id/1018/900/1200", label: "Ridgeline" },
-  { image: "https://picsum.photos/id/1039/900/1200", label: "Falls" },
-  { image: "https://picsum.photos/id/1043/900/1200", label: "Harbour" },
-  { image: "https://picsum.photos/id/1044/900/1200", label: "Skyline" },
-];
+const DEFAULT_ITEMS: AccordionGalleryItem[] = [];
 
 export default function AccordionGallery({
   items = DEFAULT_ITEMS,

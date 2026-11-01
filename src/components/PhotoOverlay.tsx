@@ -202,13 +202,22 @@ export function PhotoOverlay({
   }, []);
 
   /*
-   * 内容到齐 / 换面之后把焦点落进这一面：对话面是输入框、随笔面是正文。
+   * 内容到齐 / 换面之后把焦点落进这一面：对话面是输入框、随笔面是空正文。
    * 放在 `loaded` 之后 —— 加载期间这一层里只有「读取中」，没有可聚焦的东西。
+   * 随笔已有内容时不抢焦点（与 NotePanel 的 `autoFocus={!note?.content}` 一致），
+   * 免得打开阅读时直接跳出输入光标。
    */
   useEffect(() => {
     if (!loaded) return;
     const root = rootRef.current;
-    root?.querySelector<HTMLElement>("input, textarea")?.focus();
+    if (face === "conversation") {
+      root?.querySelector<HTMLInputElement>("input")?.focus();
+    } else {
+      const textarea = root?.querySelector<HTMLTextAreaElement>("textarea");
+      if (textarea && !textarea.value.trim()) {
+        textarea.focus();
+      }
+    }
   }, [loaded, face]);
 
   /**
