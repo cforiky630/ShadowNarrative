@@ -435,6 +435,7 @@ export interface AnalyzeResult {
 export async function analyzeImage(params: {
   bytes: Buffer;
   mimeType: string;
+  strippedExif?: boolean;
 }): Promise<AnalyzeResult> {
   // 凭据来自 secrets.json（回退环境变量）。没配就明确失败，
   // 而不是拿空 key 去撞上游（17 §4）
@@ -452,8 +453,10 @@ export async function analyzeImage(params: {
     subtitle: parsed.subtitle,
     sourceRefs: parsed.sourceRefs,
     model: credentials.model,
-    // 09 §17：不把 EXIF/GPS 塞进 prompt。这里如实记录到底发出去了什么
-    sentSummary: `原图字节（${params.mimeType}，detail=${DETAIL}），未附带 EXIF / GPS / 历史记录`,
+    // 09 §17：不把 EXIF/GPS 塞进 prompt。优先发已重编码脱敏的缩略图字节
+    sentSummary: params.strippedExif
+      ? `脱敏缩略图字节（${params.mimeType}，detail=${DETAIL}），二进制级已剥离 EXIF / GPS / 历史记录`
+      : `原图字节（${params.mimeType}，detail=${DETAIL}），未附带 EXIF / GPS / 历史记录`,
   };
 }
 
@@ -564,16 +567,46 @@ export async function runPhotoAnalysis(params: {
 }): Promise<void> {
   const photo = await prisma.photo.findFirst({
     where: { id: params.photoId, userId: params.userId },
-    select: { id: true, storageKey: true, mimeType: true },
+    select: { id: true, storageKey: true, thumbnailKey: true, mimeType: true },
   });
 
   if (!photo) return;
 
   try {
-    const bytes = await readStoredFile(photo.storageKey);
+    /*
+     * 优先使用客户端 OffscreenCanvas 重编码生成的 1024px 缩略图：
+     * 1. 隐私更严密：Canvas 重编码已在二进制层面彻底剥离原图内嵌的 EXIF / GPS 元数据段；
+     * 2. 传输更轻快：detail=low 模型端只需 512×512，1024px 缩略图（~100KB）比直接 Base64
+     *    最高 25MB 的原图缩减约 99% 上行体积，避免大图触发上游 413 或超时。
+     * 无缩略图或读取失败时无缝回退原图。
+     */
+    let bytes: Buffer | null = null;
+    let mimeType = photo.mimeType;
+    let strippedExif = false;
+
+    if (photo.thumbnailKey) {
+      try {
+        bytes = await readStoredFile(photo.thumbnailKey);
+        const ext = photo.thumbnailKey.split(".").pop()?.toLowerCase();
+        if (ext === "webp") mimeType = "image/webp";
+        else if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
+        else if (ext === "png") mimeType = "image/png";
+        strippedExif = true;
+      } catch {
+        bytes = null;
+      }
+    }
+
+    if (!bytes) {
+      bytes = await readStoredFile(photo.storageKey);
+      mimeType = photo.mimeType;
+      strippedExif = false;
+    }
+
     const result = await analyzeImage({
       bytes,
-      mimeType: photo.mimeType,
+      mimeType,
+      strippedExif,
     });
 
     await prisma.photoAnalysis.upsert({
