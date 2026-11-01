@@ -134,6 +134,11 @@ void main() {
 
   // B 略实一点，让「落定」这一步有收束感
   vAlpha = uOpacity * appear * (0.72 + 0.28 * m);
+  if (vAlpha <= 0.001) {
+    gl_PointSize = 0.0;
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    return;
+  }
 
   float size = mix(aSizeA, aSizeB, m);
   gl_PointSize = uSize * uDpr * size;
@@ -148,6 +153,8 @@ varying vec3  vColor;
 varying float vAlpha;
 
 void main() {
+  if (vAlpha <= 0.001) discard;
+
   // 圆形软边点。方点会让整张照片看起来像马赛克。
   vec2  c = gl_PointCoord - vec2(0.5);
   float d = length(c);

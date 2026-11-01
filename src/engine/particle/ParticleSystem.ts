@@ -372,6 +372,7 @@ export class ParticleSystem {
     rnd.needsUpdate = true;
 
     const mat = buildMaterial();
+    mat.uniforms.uDissolve.value = 1;
     mat.uniforms.uSize.value = this.params.size;
     mat.uniforms.uDpr.value = 1;
     mat.uniforms.uMotion.value = this.params.motion;
@@ -523,6 +524,12 @@ export class ParticleSystem {
   async morphTo(bitmap: ImageBitmap): Promise<void> {
     await this.initPromise;
     if (this.disposed || !this.renderer || !this.geometry) return;
+
+    // 原图态下无粒子可见，直接更新图像与四边形（满足「上传后立刻看到原图」）
+    if (this.mode === "photo" && !this.modeTween) {
+      await this.setImage(bitmap);
+      return;
+    }
 
     /*
      * ⚠️ **B 也按容量采样**（不是 `activeCount()`）：A 与 B 是按**秩**配对的
@@ -777,7 +784,7 @@ export class ParticleSystem {
     // 页面不可见时不采样：隐藏标签页里 rAF 被节流，帧时间会被拉得很大，
     // L3 会把它误判成性能不足而错误降档（实测过：切走一会儿再回来，
     // 档位已经从 medium 掉到 low）。
-    if (this.monitor && !this.tierOverride && !document.hidden) {
+    if (this.monitor && !this.tierOverride && !document.hidden && this.points?.visible) {
       if (this.monitor.push(frameMs, now)) {
         const idx = TIER_ORDER.indexOf(this.tier);
         if (idx >= 0 && idx < TIER_ORDER.length - 1) {
@@ -1180,12 +1187,14 @@ export class ParticleSystem {
         this.camera.position.copy(target).add(dir);
       }
       if (this.quad) this.quad.visible = proxy.dissolve < 0.999;
+      if (this.points) this.points.visible = proxy.dissolve > 0.001;
       return;
     }
 
     // 四边形在 dissolve=1 时全部被 discard，那时才有必要摘出渲染。
     // 反方向一启动就要重新挂上。
     if (this.quad) this.quad.visible = true;
+    if (this.points) this.points.visible = true;
 
     // 相机：
     //   去粒子 → 专注模式，沿视线推近一点
@@ -1205,6 +1214,7 @@ export class ParticleSystem {
       onUpdate: apply,
       onComplete: () => {
         if (this.quad) this.quad.visible = proxy.dissolve < 0.999;
+      if (this.points) this.points.visible = proxy.dissolve > 0.001;
       },
     });
   }
