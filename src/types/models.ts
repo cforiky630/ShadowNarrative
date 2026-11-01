@@ -161,4 +161,6 @@ export interface TimelineDay {
   titleSource: "ai" | "user" | null;
   /** 这天最晚的拍摄时间，倒序排列用 */
   photos: Photo[];
+  /** 聚合检索文本（含日期、主题、AI 字幕、随笔与视觉关键词，供时间线微光检索匹配） */
+  searchText?: string;
 }

@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -91,22 +92,86 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const spineContainerRef = useRef<HTMLDivElement>(null);
+
+  const activeQuery = query.trim();
 
   /**
-   * 声明这是时间线空间。
+   * 声明这是时间线空间，并将当前可见（或微光检索命中）的照片序列同步给舞台，
+   * 使进入照片粒子态后按 `←` / `→` 可直接漫游检索结果。
    *
    * ⚠️ **每个空间都必须声明一次**（`stage.space` 的注释里有完整理由）。
    * 时间线这条一度漏了，症状是：从照片页点顶栏过来，画布那一层不会收起来
    * —— 它不透明度还是 1、还压在最上面，一层实心黑盖住整条时间线。
    * 因为 `/timeline` 上没人改这个值，外壳的显隐 effect 依赖它不变，就不会重跑。
    */
+  const sequenceIds = useMemo(() => {
+    const matched = activeQuery
+      ? days.filter((d) => matchesDay(d, activeQuery))
+      : days;
+    const source = matched.length > 0 ? matched : days;
+    return source.flatMap((d) => d.photos.map((p) => p.id));
+  }, [days, activeQuery]);
+
   useEffect(() => {
     setStage({
       space: "timeline",
       photoId: null,
-      sequenceIds: days.flatMap((d) => d.photos.map((p) => p.id)),
+      sequenceIds,
     });
-  }, [setStage, days]);
+  }, [setStage, sequenceIds]);
+
+  /**
+   * 记忆寻踪（按 `/` 或 `Cmd/Ctrl + K` 唤醒）。
+   *
+   * 平时零常驻搜索框、零放大镜图标；仅在按键唤醒时于时间线顶端浮现一行无边框底线输入，
+   * 失焦且内容为空时自动隐去，不留视觉负担。
+   */
+  useEffect(() => {
+    if (days.length === 0) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isImeKey(e)) return;
+
+      const isCmdK =
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === "k";
+      const isSlash =
+        !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key === "/";
+
+      if (!isCmdK && !isSlash) return;
+
+      // 若展开网格画廊或设置浮卡等模态层正开着，不抢按键
+      if (document.querySelector('[role="dialog"]')) return;
+
+      const target = e.target as HTMLElement | null;
+      if (
+        isSlash &&
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      e.preventDefault();
+      setSearchOpen(true);
+      requestAnimationFrame(() => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      });
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [days.length]);
 
   /**
    * 空态里直接收一张。
@@ -180,7 +245,42 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
 
   return (
     <main className={PAGE_SHELL}>
-      <div className={`relative ${PAGE_INNER}`}>
+      {(searchOpen || activeQuery.length > 0) && (
+        <div className="mx-auto mb-10 flex max-w-[1040px] justify-center">
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={query}
+            placeholder="寻踪…"
+            aria-label="寻踪记忆"
+            onChange={(e) => setQuery(e.target.value)}
+            onBlur={() => {
+              if (!query.trim()) setSearchOpen(false);
+            }}
+            onKeyDown={(e) => {
+              if (isImeKey(e)) return;
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setQuery("");
+                setSearchOpen(false);
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                const firstMatch = spineContainerRef.current?.querySelector(
+                  '[data-day-matched="true"]',
+                );
+                firstMatch?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "center",
+                });
+                e.currentTarget.blur();
+              }
+            }}
+            className="text-meta w-[24ch] border-0 border-b border-border-subtle bg-transparent pb-1.5 text-center text-text-primary/85 outline-none transition-colors placeholder:text-text-primary/25 focus:border-text-primary/40"
+          />
+        </div>
+      )}
+
+      <div ref={spineContainerRef} className={`relative ${PAGE_INNER}`}>
         {/* 中央脊柱。低存在感 —— 它是参照物，不是主体。 */}
         <div
           aria-hidden
@@ -193,6 +293,7 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
             key={day.dayKey}
             day={day}
             side={index % 2 === 0 ? "left" : "right"}
+            query={activeQuery}
           />
         ))}
       </div>
@@ -202,27 +303,87 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
 
 /** 单日节点组件 */
 
-function DayNode({ day, side }: { day: TimelineDay; side: "left" | "right" }) {
-  const { ref, revealed } = useReveal<HTMLElement>();
-  const onLeft = side === "left";
+function matchesDay(
+  day: TimelineDay,
+  rawQuery: string,
+  overrideTitle?: string | null,
+): boolean {
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return true;
+  const span = daySpan(day.photos) ?? "";
+  const haystack = [
+    day.searchText ?? "",
+    day.dayKey,
+    formatDay(day.dayKey),
+    overrideTitle !== undefined ? (overrideTitle ?? "") : (day.title ?? ""),
+    span,
+  ]
+    .join(" ")
+    .toLowerCase();
+  const tokens = q.split(/\s+/).filter(Boolean);
+  return tokens.every((tok) => haystack.includes(tok));
+}
 
-  const body = <NodeBody day={day} align={onLeft ? "right" : "left"} />;
+function DayNode({
+  day,
+  side,
+  query,
+}: {
+  day: TimelineDay;
+  side: "left" | "right";
+  query: string;
+}) {
+  const { ref, revealed } = useReveal<HTMLElement>();
+  const [liveTitle, setLiveTitle] = useState<string | null | undefined>(
+    undefined,
+  );
+  const onLeft = side === "left";
+  const matched = matchesDay(day, query, liveTitle);
+  const dimmed = query.length > 0 && !matched;
+
+  const body = (
+    <NodeBody
+      day={day}
+      align={onLeft ? "right" : "left"}
+      onTitleSaved={setLiveTitle}
+    />
+  );
+
+  const dimStyle: CSSProperties = {
+    opacity: dimmed ? 0.14 : 1,
+    filter: dimmed ? "blur(2.5px)" : "blur(0px)",
+    transition:
+      "opacity var(--duration-ui) var(--ease-enter), filter var(--duration-ui) var(--ease-enter)",
+  };
 
   return (
     <section
       ref={ref}
+      data-day-matched={matched ? "true" : "false"}
       style={revealStyle(revealed)}
       // sn-reveal 是 reduced-motion 的钩子：那条媒体查询在 components.css 里，
       // 用 !important 压过这里的内联样式（见 useReveal.ts 的说明）
       className="sn-reveal relative grid min-h-[300px] grid-cols-2 items-center gap-20"
     >
-      <div className={onLeft ? "flex justify-end" : ""}>{onLeft && body}</div>
-      <div className={!onLeft ? "flex justify-start" : ""}>{!onLeft && body}</div>
+      <div className={onLeft ? "flex justify-end" : ""} style={dimStyle}>
+        {onLeft && body}
+      </div>
+      <div className={!onLeft ? "flex justify-start" : ""} style={dimStyle}>
+        {!onLeft && body}
+      </div>
     </section>
   );
 }
 
-function NodeBody({ day, align }: { day: TimelineDay; align: "left" | "right" }) {
+function NodeBody({
+  day,
+  align,
+  onTitleSaved,
+}: {
+  day: TimelineDay;
+  align: "left" | "right";
+  onTitleSaved?: (title: string | null) => void;
+}) {
   const onRight = align === "right";
   const [gridOpen, setGridOpen] = useState(false);
 
@@ -241,6 +402,7 @@ function NodeBody({ day, align }: { day: TimelineDay; align: "left" | "right" })
             key={`${day.dayKey}:${day.title ?? ""}:${day.titleSource ?? ""}`}
             day={day}
             align={align}
+            onSaved={onTitleSaved}
           />
         </div>
 
@@ -346,7 +508,15 @@ function partOfDay(hour: number): string {
  *      实测过：只有两张照片时，模型只能把某一张的描述压成一个词
  *      （「仰头的布偶猫」）—— 那是照片里的东西，不是这一天。
  */
-function ThemeName({ day, align }: { day: TimelineDay; align: "left" | "right" }) {
+function ThemeName({
+  day,
+  align,
+  onSaved,
+}: {
+  day: TimelineDay;
+  align: "left" | "right";
+  onSaved?: (title: string | null) => void;
+}) {
   const [title, setTitle] = useState(day.title);
   const [source, setSource] = useState(day.titleSource);
   const [draft, setDraft] = useState(day.title ?? "");
@@ -390,6 +560,7 @@ function ThemeName({ day, align }: { day: TimelineDay; align: "left" | "right" }
       setSource(body.data.titleSource);
       setDraft(body.data.title ?? "");
       setEditing(false);
+      onSaved?.(body.data.title);
     } catch {
       // 保存失败就停在编辑态，用户的输入不能丢
     } finally {

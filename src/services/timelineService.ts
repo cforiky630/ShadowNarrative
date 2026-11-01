@@ -51,6 +51,80 @@ export interface GetTimelineOptions {
   photoLimit?: number;
 }
 
+const TIMELINE_PHOTO_SELECT = {
+  ...PHOTO_SELECT,
+  journal: { select: { content: true } },
+  analysis: { select: { payload: true } },
+  conversation: {
+    select: {
+      messages: {
+        where: { isSubtitle: true },
+        orderBy: { createdAt: "asc" as const },
+        take: 1,
+        select: { content: true },
+      },
+    },
+  },
+} as const;
+
+type TimelinePhotoRow = PhotoRow & {
+  journal: { content: string } | null;
+  analysis: { payload: string } | null;
+  conversation: { messages: Array<{ content: string }> } | null;
+};
+
+function extractAnalysisTokens(raw: string | null | undefined): string {
+  if (!raw) return "";
+  try {
+    const parsed = JSON.parse(raw) as {
+      description?: unknown;
+      people?: unknown;
+      objects?: unknown;
+      events?: unknown;
+      visualKeywords?: unknown;
+      location?: { value?: unknown } | null;
+    };
+    const tokens: string[] = [];
+    if (typeof parsed.description === "string") tokens.push(parsed.description);
+    if (typeof parsed.location?.value === "string") {
+      tokens.push(parsed.location.value);
+    }
+    for (const arr of [
+      parsed.people,
+      parsed.objects,
+      parsed.events,
+      parsed.visualKeywords,
+    ]) {
+      if (Array.isArray(arr)) {
+        for (const item of arr) {
+          if (typeof item === "string") tokens.push(item);
+        }
+      }
+    }
+    return tokens.join(" ");
+  } catch {
+    return "";
+  }
+}
+
+function buildDaySearchText(
+  dayKey: string,
+  title: string | null,
+  rows: TimelinePhotoRow[],
+): string {
+  const parts: string[] = [dayKey, dayKey.replace(/-/g, " · ")];
+  if (title) parts.push(title);
+  for (const r of rows) {
+    if (r.caption) parts.push(r.caption);
+    if (r.journal?.content) parts.push(r.journal.content);
+    const sub = r.conversation?.messages[0]?.content;
+    if (sub) parts.push(sub);
+    const analysisText = extractAnalysisTokens(r.analysis?.payload);
+    if (analysisText) parts.push(analysisText);
+  }
+  return parts.join(" ").toLowerCase();
+}
+
 /**
  * 取时间轴。天按倒序（新的在前），天内照片也按倒序。
  *
@@ -64,7 +138,7 @@ export async function getTimeline(
 ): Promise<TimelineDay[]> {
   const rows = await prisma.photo.findMany({
     where: { userId },
-    select: PHOTO_SELECT,
+    select: TIMELINE_PHOTO_SELECT,
     /*
      * ⚠️ **必须有 orderBy。** `take` 没有排序时，SQLite 返回哪 400 行是
      * 不保证的（通常按 rowid，但那是实现细节）。照片超过上限后，
@@ -76,7 +150,7 @@ export async function getTimeline(
 
   const sorted = [...rows].sort(byPhotoTimeDesc);
 
-  const byDay = new Map<string, PhotoRow[]>();
+  const byDay = new Map<string, TimelinePhotoRow[]>();
   for (const row of sorted) {
     // ⚠️ 分组与排序走**同一个函数**（先 `photoTime` 再转日期）——
     // 这里直接写 `row.takenAt ?? row.createdAt` 看着一样，但那是第二份
@@ -98,11 +172,13 @@ export async function getTimeline(
     .sort(([a], [b]) => (a < b ? 1 : -1)) // 天倒序：字符串比较对 YYYY-MM-DD 就是日期比较
     .map(([dayKey, photos]) => {
       const theme = themeByDay.get(dayKey);
+      const title = theme?.title ?? null;
       return {
         dayKey,
-        title: theme?.title ?? null,
+        title,
         titleSource: theme ? (theme.source === "user" ? "user" : "ai") : null,
         photos: photos.map(toPhoto),
+        searchText: buildDaySearchText(dayKey, title, photos),
       };
     });
 }
