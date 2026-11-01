@@ -13,8 +13,9 @@
  * - node scripts/package-desktop.mjs --skip-build   复用已有 .next/standalone 快速封装
  * - node scripts/package-desktop.mjs --unpacked     仅生成免压缩的 win-unpacked 目录（秒级验证）
  *
- * 输出（默认）：
- * - F:\Project\shadow-narrative-desktop
+ * 输出：
+ * - 指定 -o / --out <dir> 时：直接输出到该目录
+ * - 未指定时：默认直接输出到当前运行终端命令所在的文件夹
  *   ├── Shadow Narrative-Setup-<version>.exe (NSIS 安装版，支持自定义路径与完整卸载)
  *   └── Shadow Narrative-<version>-win-x64.zip (免安装便携版，解压即用，数据默认存于同级 data/)
  */
@@ -35,6 +36,10 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
+// npm run 会将 process.cwd() 切到 package.json 所在目录，而 INIT_CWD 保留了用户在终端执行命令时的真实目录
+const callerCwd = process.env.INIT_CWD
+  ? path.resolve(process.env.INIT_CWD)
+  : process.cwd();
 
 const rawArgs = process.argv.slice(2);
 const args = new Set(rawArgs);
@@ -50,7 +55,7 @@ function resolveOutputDir(argv) {
         console.error(`错误: 参数 ${arg} 需要提供目标输出路径。`);
         process.exit(1);
       }
-      return path.resolve(process.cwd(), next);
+      return path.resolve(callerCwd, next);
     }
     if (arg.startsWith("--out=") || arg.startsWith("--output=")) {
       const val = arg.slice(arg.indexOf("=") + 1).trim();
@@ -58,20 +63,16 @@ function resolveOutputDir(argv) {
         console.error(`错误: 参数 ${arg} 需要提供目标输出路径。`);
         process.exit(1);
       }
-      return path.resolve(process.cwd(), val);
+      return path.resolve(callerCwd, val);
     }
   }
   if (process.env.SN_DESKTOP_OUT) {
-    return path.resolve(process.cwd(), process.env.SN_DESKTOP_OUT);
+    return path.resolve(callerCwd, process.env.SN_DESKTOP_OUT);
   }
-  return path.resolve(projectRoot, "..", "shadow-narrative-desktop");
+  return callerCwd;
 }
 
 const outputDir = resolveOutputDir(rawArgs);
-if (outputDir === projectRoot) {
-  console.error("错误: 输出目录不能为项目源码根目录本身。");
-  process.exit(1);
-}
 const stagingDir = path.join(os.tmpdir(), `sn-desktop-staging-${Date.now()}`);
 
 const pkg = JSON.parse(
@@ -542,8 +543,8 @@ app.on('window-all-closed', () => {
     },
   });
 
-  // 7. 清理中转临时工作区（保证原项目仓库与输出目录整洁干净）
-  log("7/7", "清理中转临时文件与解压缓存...");
+  // 7. 清理中转临时工作区与 electron-builder 附属缓存文件（仅保留干净的 .exe 与 .zip）
+  log("7/7", "清理中转临时文件与构建附属缓存...");
   try {
     rmSync(stagingDir, { recursive: true, force: true });
     if (!unpackedOnly) {
@@ -552,9 +553,12 @@ app.on('window-all-closed', () => {
         rmSync(unpackedDir, { recursive: true, force: true });
       }
     }
-    const debugYml = path.join(outputDir, "builder-debug.yml");
-    if (existsSync(debugYml)) {
-      rmSync(debugYml, { force: true });
+    const auxPattern =
+      /^(builder-.*\.(yml|yaml)|latest\.yml|Shadow Narrative[- ].*\.blockmap)$/i;
+    for (const entry of readdirSync(outputDir)) {
+      if (auxPattern.test(entry)) {
+        rmSync(path.join(outputDir, entry), { force: true });
+      }
     }
   } catch (e) {
     console.warn("清理提示:", e.message);
