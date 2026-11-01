@@ -21,6 +21,19 @@ const nextConfig: NextConfig = {
   output: "standalone",
 
   /**
+   * 禁用 next/image 服务端像素优化器，并从 standalone 追踪产物中排除 sharp / @img。
+   *
+   * 本项目全量使用原生 <img> + 客户端 OffscreenCanvas 缩略图（08 §6、10 Round 13），
+   * 不使用 next/image；排除后避免 standalone 产物携带多余的原生二进制依赖。
+   */
+  images: {
+    unoptimized: true,
+  },
+  outputFileTracingExcludes: {
+    "*": ["./node_modules/sharp/**/*", "./node_modules/@img/**/*"],
+  },
+
+  /**
    * 原生模块不能被打进 bundle —— 打进就意味着在构建机上编译一次二进制，
    * 用户机器上 ABI 一旦不匹配就 `ERR_DLOPEN_FAILED`。
    *
