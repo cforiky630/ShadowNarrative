@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ImagePlus, Trash2 } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import { OrganizePanel } from "@/components/OrganizePanel";
 import { PhotoCell } from "@/components/PhotoCell";
 import { isImeKey } from "@/lib/keyboard";
@@ -349,19 +350,21 @@ export function MemoryAlbum({ album, openOrganize }: MemoryAlbumProps) {
         Back
       </Link>
 
-      {organizing && (
-        <OrganizePanel
-          albumId={album.id}
-          albumTitle={title}
-          /*
-           * ⚠️ 传 `key`：换一册时要把面板的选择状态整个重来。
-           * 带着上一册的勾选进新一册，是一眼看不出来的脏状态。
-           */
-          key={album.id}
-          initialInAlbum={album.photos.map((p) => p.id)}
-          onClose={closeOrganize}
-        />
-      )}
+      <AnimatePresence>
+        {organizing && (
+          <OrganizePanel
+            albumId={album.id}
+            albumTitle={title}
+            /*
+             * ⚠️ 传 `key`：换一册时要把面板的选择状态整个重来。
+             * 带着上一册的勾选进新一册，是一眼看不出来的脏状态。
+             */
+            key={album.id}
+            initialInAlbum={album.photos.map((p) => p.id)}
+            onClose={closeOrganize}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }

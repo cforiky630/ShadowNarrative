@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Star } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import { useStage } from "@/components/ExperienceShell";
 import { PhotoOverlay } from "@/components/PhotoOverlay";
 import HoldButton from "@/components/HoldButton";
@@ -808,12 +809,10 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
           */}
           <PhotoDate
             /*
-             * ⚠️ `key` 让外部改了日期（`router.refresh()`）时这一格带着新值
-             * 重挂一次。它没有 props → state 的同步 effect，因为项目禁的是
-             * effect 里同步 setState（`react-hooks/set-state-in-effect`）——
-             * 重挂比一条会级联渲染的 effect 便宜，也不会留下半旧的本地值。
+             * ⚠️ `key` 只按照片 id 重挂：`PhotoDate` 直接读取受控 `takenAt` prop，
+             * 保存日期更新 `takenAt` 时不会因重挂而掐断日历弹窗的退场动画。
              */
-            key={`${activeId ?? photo.id}:${takenAt ?? "none"}`}
+            key={activeId ?? photo.id}
             photoId={activeId ?? photo.id}
             takenAt={takenAt}
             createdAt={createdAt}
@@ -1269,18 +1268,21 @@ export function MemorySpace({ photo }: MemorySpaceProps) {
         字幕那条线进得来对话，左下角那个本子进得来随笔小记。两面在遮罩里
         **换内容**而不是叠两层 —— 见 `PhotoOverlay` 的说明。
       */}
-      {overlayFace && activeId && (
-        <PhotoOverlay
-          photoId={activeId}
-          date={date}
-          initialFace={overlayFace}
-          // 对话只能从粒子界面进（16 硬约束 #10）—— 随笔小记那一面的
-          // 「回到对话」也照这条来：原图态下不给那个出口
-          canChat={inParticle}
-          onClose={() => setOverlayFace(null)}
-          onNoteChange={setHasNote}
-        />
-      )}
+      <AnimatePresence>
+        {overlayFace && activeId && (
+          <PhotoOverlay
+            key={activeId}
+            photoId={activeId}
+            date={date}
+            initialFace={overlayFace}
+            // 对话只能从粒子界面进（16 硬约束 #10）—— 随笔小记那一面的
+            // 「回到对话」也照这条来：原图态下不给那个出口
+            canChat={inParticle}
+            onClose={() => setOverlayFace(null)}
+            onNoteChange={setHasNote}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }

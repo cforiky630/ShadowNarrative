@@ -10,6 +10,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, m } from "motion/react";
 import { useStage } from "@/components/ExperienceShell";
 import { PhotoCell } from "@/components/PhotoCell";
 import { PhotoPicker } from "@/components/PhotoPicker";
@@ -28,30 +29,29 @@ import type { Photo, TimelineDay } from "@/types";
  * 用户 2026-10-10 拍板：取代 `16-ALBUM_SPACE.md` §6 的 Library 抽屉，**不并存**。
  * 规格已同步（`01 §5`、`16 §1` 与 §6、`07`、`10`）。
  *
- * 形态决定（同日）：
+ * 形态决定：
  *   - 叠放用**扇形**（参数取自 images_swiper，见下）
- *   - 展开点「N 张」开**网格画廊** —— 源码里那就是个 SliverGrid。
- *     **不做**一次一张的翻页器，那不可能是 iMessage 的行为
- *   - 叠放本身**只负责左右滑动**，点它什么都不做（与源码一致）
+ *   - 展开点「N 张」或直接轻点叠放卡片（未发生横向拖拽时）开**网格画廊** ——
+ *     源码里那就是个 SliverGrid。**不做**一次一张的翻页器
+ *   - 叠放支持横向拖拽翻动预览，轻点（未拖动）或回车直接展开当天照片网格
  *   - 主题名**由用户自己写，不做 AI 提炼**（理由见 `ThemeName` 上方）
  *
  * 卡片堆叠交互模型：
- *   1 张       单张
- *   2–3 张     松散叠放（Apple 叫 "collage"）
- *   4 张以上   堆叠 + 「X 张」标签
+ *   1 张       单张（点击直接飞入照片页）
+ *   2–3 张     松散叠放（可左右拖滑，点击展开网格画廊）
+ *   4 张以上   堆叠 + 「X 张」标签（可左右拖滑，点击卡片或标签均展开网格画廊）
  */
 
 /** 堆叠卡片几何常量与交互算法 */
 //
 // 来源：https://github.com/imWalsh/images_swiper/blob/main/lib/src/swiper.dart
-// （2026-10-10 读完整份源码 + 逐帧看过它附带的演示动画）
 //
 // 从动画里读出来的三条事实，它们决定了这个组件的形态：
 //   1. **前一张永远满尺寸居中，其余永远露着细边** —— 没有"其余照片消失"
 //      这个状态。所以**不做**"展开成单张大图"。
 //   2. **滑动是连续的**：卡片跟着手指走，中途明显倾斜（源码里 fraction=0.5
 //      时旋转约 19°，不是稳态的 2.9°）。
-//   3. **点「N张图片」标签打开的是网格画廊**（GalleryPage 里是 SliverGrid），
+//   3. **点「N张图片」标签或轻点叠放卡片打开的是网格画廊**（GalleryPage 里是 SliverGrid），
 //      不是翻页器。叠放本身始终可滑。
 
 /** 卡片高度。参考实现是 300（整屏选择器），时间线里一个节点放不下，按比例缩。 */
@@ -80,6 +80,12 @@ const SCALE_LERP_FROM = 0.7;
 
 /** 源码里的 `_calcXxx` 都用这个（Dart 的 lerpDouble） */
 const lerp = (from: number, to: number, t: number) => from + (to - from) * t;
+
+const GRID_SPRING = {
+  type: "spring",
+  stiffness: 280,
+  damping: 28,
+} as const;
 
 /** 时间线主体页面 */
 
@@ -245,40 +251,49 @@ export function TimelineSpace({ days }: TimelineSpaceProps) {
 
   return (
     <main className={PAGE_SHELL}>
-      {(searchOpen || activeQuery.length > 0) && (
-        <div className="mx-auto mb-10 flex max-w-[1040px] justify-center">
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={query}
-            placeholder="寻踪…"
-            aria-label="寻踪记忆"
-            onChange={(e) => setQuery(e.target.value)}
-            onBlur={() => {
-              if (!query.trim()) setSearchOpen(false);
-            }}
-            onKeyDown={(e) => {
-              if (isImeKey(e)) return;
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setQuery("");
-                setSearchOpen(false);
-              } else if (e.key === "Enter") {
-                e.preventDefault();
-                const firstMatch = spineContainerRef.current?.querySelector(
-                  '[data-day-matched="true"]',
-                );
-                firstMatch?.scrollIntoView({
-                  behavior: "smooth",
-                  block: "center",
-                });
-                e.currentTarget.blur();
-              }
-            }}
-            className="text-meta w-[24ch] border-0 border-b border-border-subtle bg-transparent pb-1.5 text-center text-text-primary/85 outline-none transition-colors placeholder:text-text-primary/25 focus:border-text-primary/40"
-          />
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {(searchOpen || activeQuery.length > 0) && (
+          <m.div
+            key="timeline-search"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.22 }}
+            className="mx-auto mb-10 flex max-w-[1040px] justify-center"
+          >
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              placeholder="寻踪…"
+              aria-label="寻踪记忆"
+              onChange={(e) => setQuery(e.target.value)}
+              onBlur={() => {
+                if (!query.trim()) setSearchOpen(false);
+              }}
+              onKeyDown={(e) => {
+                if (isImeKey(e)) return;
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setQuery("");
+                  setSearchOpen(false);
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  const firstMatch = spineContainerRef.current?.querySelector(
+                    '[data-day-matched="true"]',
+                  );
+                  firstMatch?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                  });
+                  e.currentTarget.blur();
+                }
+              }}
+              className="text-meta w-[24ch] border-0 border-b border-border-subtle bg-transparent pb-1.5 text-center text-text-primary/85 outline-none transition-colors placeholder:text-text-primary/25 focus:border-text-primary/40"
+            />
+          </m.div>
+        )}
+      </AnimatePresence>
 
       <div ref={spineContainerRef} className={`relative ${PAGE_INNER}`}>
         {/* 中央脊柱。低存在感 —— 它是参照物，不是主体。 */}
@@ -344,6 +359,7 @@ function DayNode({
   const body = (
     <NodeBody
       day={day}
+      liveTitle={liveTitle}
       align={onLeft ? "right" : "left"}
       onTitleSaved={setLiveTitle}
     />
@@ -377,15 +393,21 @@ function DayNode({
 
 function NodeBody({
   day,
+  liveTitle,
   align,
   onTitleSaved,
 }: {
   day: TimelineDay;
+  liveTitle?: string | null;
   align: "left" | "right";
   onTitleSaved?: (title: string | null) => void;
 }) {
   const onRight = align === "right";
   const [gridOpen, setGridOpen] = useState(false);
+  const openGrid = useCallback(() => setGridOpen(true), []);
+  const closeGrid = useCallback(() => setGridOpen(false), []);
+
+  const currentTitle = liveTitle !== undefined ? liveTitle : day.title;
 
   return (
     <>
@@ -414,15 +436,23 @@ function NodeBody({
           <CountLabel
             count={day.photos.length}
             align={align}
-            onOpen={() => setGridOpen(true)}
+            onOpen={openGrid}
           />
-          <PhotoStack photos={day.photos} />
+          <PhotoStack photos={day.photos} onOpen={openGrid} />
         </div>
       </div>
 
-      {gridOpen && (
-        <PhotoGrid photos={day.photos} onClose={() => setGridOpen(false)} />
-      )}
+      <AnimatePresence>
+        {gridOpen && (
+          <PhotoGrid
+            key={`grid-${day.dayKey}`}
+            dateLabel={formatDay(day.dayKey)}
+            title={currentTitle}
+            photos={day.photos}
+            onClose={closeGrid}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -435,8 +465,7 @@ function formatDay(dayKey: string): string {
 /**
  * 「N 张」标签。
  *
- * 源码里它是个 `TextButton`，点开的是**网格画廊** —— 所以它**是入口**，不是装饰。
- * 叠放本身只负责滑动，不负责"展开"。
+ * 点它与轻点下方堆叠照片组一样，都会展开当天的**网格画廊**。
  */
 function CountLabel({
   count,
@@ -453,8 +482,8 @@ function CountLabel({
     <button
       type="button"
       onClick={onOpen}
-      className="text-meta shrink-0 text-text-primary/35 underline-offset-4 hover:text-text-primary/70 hover:underline"
-      style={{ textAlign: align }}
+      className="text-meta shrink-0 text-text-primary/35 transition-colors duration-[350ms] underline-offset-4 hover:text-text-primary/75 hover:underline"
+      style={{ textAlign: align, transitionTimingFunction: "var(--ease-enter)" }}
     >
       {count} 张
     </button>
@@ -659,7 +688,13 @@ function calcOffset(index: number, fraction: number, currentPage: number): numbe
   return tooFar ? 0 : fraction * K;
 }
 
-function PhotoStack({ photos }: { photos: Photo[] }) {
+function PhotoStack({
+  photos,
+  onOpen,
+}: {
+  photos: Photo[];
+  onOpen?: () => void;
+}) {
   const n = photos.length;
   const { enter } = useStage();
 
@@ -670,7 +705,7 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
    * 向后用 ceil，免得在 0.5 附近来回翻。这里按方向推导，效果一致。
    */
   const [direction, setDirection] = useState<1 | -1>(1);
-  /** 拖拽中。必须是 state —— 它影响渲染（拖拽时不能有过渡，否则拽不动） */
+  /** 实际横向拖拽中。只在越过位移阈值后置 true，免得轻点时关掉卡片过渡 */
   const [dragging, setDragging] = useState(false);
 
   const drag = useRef<{ x: number; page: number; moved: boolean } | null>(null);
@@ -680,8 +715,8 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (n < 2) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     drag.current = { x: e.clientX, page, moved: false };
-    setDragging(true);
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
@@ -689,7 +724,10 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
     const d = drag.current;
     if (!d) return;
     const dx = e.clientX - d.x;
-    if (Math.abs(dx) > 3) d.moved = true;
+    if (!d.moved && Math.abs(dx) > 4) {
+      d.moved = true;
+      setDragging(true);
+    }
     if (!d.moved) return;
     if (dx !== 0) setDirection(dx < 0 ? 1 : -1);
     setPage(clamp(d.page - dx / M));
@@ -698,8 +736,13 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
   const endDrag = () => {
     const d = drag.current;
     drag.current = null;
+    if (!d) return;
+    if (!d.moved) {
+      // 轻点（未发生横向拖拽）⇒ 直接展开当天的多照片网格画廊
+      onOpen?.();
+      return;
+    }
     setDragging(false);
-    if (!d?.moved) return;
     setPage((p) => Math.round(clamp(p))); // 吸附到最近的一张
   };
 
@@ -710,21 +753,12 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
 
   return (
     /*
-     * 是 div 不是 button —— **叠放只负责左右滑动，点它什么都不做**。
+     * 多张叠放同时支持两种自然手势：
+     * 1. **左右拖拽**（位移 > 4px）：连续翻动叠放卡片，松手吸附最近一张；
+     * 2. **轻点卡片**（位移 ≤ 4px）或按回车/空格：直接展开当天的照片网格画廊，
+     *    无需专门去寻找上方小小的「N 张」文字入口。
      *
-     * 用户 2026-10-10：「堆叠状态只能左右滑，展开后点击图片进去」。
-     * 这也是源码的做法（叠放那层的 `onTap` 是注释掉的）。
-     *
-     * 附带好处：**没有 click 处理，浏览器在拖拽结束后补发的那个 click
-     * 就没有东西可以触发** —— 不需要再单独写一套"吞掉它"的机制。
-     * （上一版就是因为漏了那套机制，导致手指一松就跳进照片页。）
-     *
-     * ⚠️ **只有一张时是例外** —— 那时卡片本身是个 `<Link>`（见下面那段）。
-     * 「点它什么都不做」是为了让「拖」和「点」不打架，而一张时没有可拖的，
-     * 那条理由不存在；不这么做的话那一天的照片**根本没有入口**
-     * （「N 张」标签在 `count < 2` 时不渲染）。
-     *
-     * tabIndex + 方向键是给键盘用户的：没有点击不代表没有交互。
+     * ⚠️ **只有一张时是例外** —— 那时卡片本身是个 `<Link>`，点击直接飞入照片页。
      */
     <div
       role="group"
@@ -737,6 +771,9 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
         } else if (e.key === "ArrowRight") {
           e.preventDefault();
           setPage((p) => clamp(Math.round(p) + 1));
+        } else if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen?.();
         }
       }}
       onPointerDown={onPointerDown}
@@ -744,13 +781,18 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
       onPointerUp={endDrag}
       onPointerCancel={() => {
         drag.current = null;
+        setDragging(false);
       }}
-      aria-label={n > 1 ? `这一天的 ${n} 张照片，可左右拖动` : undefined}
-      className="relative touch-pan-y outline-none"
+      aria-label={
+        n > 1
+          ? `这一天的 ${n} 张照片，点击展开网格，左右拖动翻看`
+          : undefined
+      }
+      className="relative select-none touch-pan-y outline-none"
       style={{
         width: deckW,
         height: deckH,
-        cursor: n > 1 ? "grab" : "default",
+        cursor: n > 1 ? (dragging ? "grabbing" : "pointer") : "default",
       }}
     >
       {photos.map((photo, i) => {
@@ -806,18 +848,7 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
         );
 
         /*
-          ⚠️ **只有一张时，卡片本身要能点开。**
-
-          用户 2026-10-10：「时间线页面有问题，单张照片居然点不开」。
-
-          这一格原本是**死的**：叠放「只负责左右滑动、点它什么都不做」
-          （源码如此），而进照片的唯一入口是上面那个「N 张」标签 ——
-          它在 `count < 2` 时返回 `null`。于是**一天只有一张照片时两条路都没有**，
-          那张照片永远打不开。
-
-          一张的时候本来也没有歧义：没有别的东西可滑，点它只能是「打开这张」。
-          （≥2 张时仍旧按源码：点它不做事，「N 张」开网格画廊。
-          卡片跟着手指走，再叠一个点击会分不清是拖还是点。）
+          ⚠️ **只有一张时，卡片本身直接进照片页。**
         */
         if (n === 1) {
           return (
@@ -859,12 +890,24 @@ function PhotoStack({ photos }: { photos: Photo[] }) {
 /** 展开网格画廊 */
 
 /**
- * 「N张图片」标签点开的就是这个。
+ * 轻点多照片叠放或「N 张」标签打开的当天照片网格画廊。
  *
- * 源码里 `gallery_page.dart` 是个 `SliverGrid`（三列、padding 15）。
- * **不做**成一次一张的翻页器 —— 那不是 iMessage 的行为。
+ * 支持三种自然退出方式：
+ * 1. 按 `Esc`
+ * 2. 点击网格外围留白区域
+ * 3. 点击网格顶栏右侧的「关闭」
  */
-function PhotoGrid({ photos, onClose }: { photos: Photo[]; onClose: () => void }) {
+function PhotoGrid({
+  dateLabel,
+  title,
+  photos,
+  onClose,
+}: {
+  dateLabel: string;
+  title?: string | null;
+  photos: Photo[];
+  onClose: () => void;
+}) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -876,34 +919,65 @@ function PhotoGrid({ photos, onClose }: { photos: Photo[]; onClose: () => void }
   useEscape(true, onClose);
 
   return (
-    <div
+    <m.div
       ref={panelRef}
       role="dialog"
       aria-modal="true"
       aria-label="这一天的照片"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.26 }}
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       // tabIndex + sn-noscrollbar 是一对：滚动条藏起来了，
       // 滚动本身必须留着，而且键盘要够得到
       tabIndex={-1}
-      className="sn-noscrollbar fixed inset-0 z-40 overflow-y-auto px-6 py-20 outline-none"
+      className="sn-noscrollbar fixed inset-0 z-40 overflow-y-auto px-6 py-24 outline-none"
       // 实心，不做半透明。94% 会让底下的时间线透出来 ——
       // 在全屏的阅读层上那读起来像渲染瑕疵，不像氛围
       style={{ background: "var(--background)" }}
     >
-      <button
-        type="button"
-        onClick={onClose}
-        className="text-meta fixed top-24 right-12 text-text-primary/45 underline-offset-4 hover:text-text-primary/85 hover:underline"
+      <m.div
+        initial={{ opacity: 0, y: 12, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 8, scale: 0.985 }}
+        transition={GRID_SPRING}
+        className="mx-auto max-w-[880px]"
       >
-        关闭
-      </button>
+        <div className="mb-8 flex items-baseline justify-between gap-6">
+          <div className="flex items-baseline gap-4 min-w-0">
+            <span className="text-meta shrink-0 text-text-primary/55">
+              {dateLabel}
+            </span>
+            {title && (
+              <span className="text-body truncate text-text-primary/90">
+                {title}
+              </span>
+            )}
+            <span className="text-micro shrink-0 text-text-primary/30">
+              {photos.length} 张
+            </span>
+          </div>
 
-      <div className="mx-auto grid max-w-[880px] grid-cols-3 gap-3">
-        {photos.map((photo) => (
-          /* 格子本身在 `PhotoCell` 里 —— 影册的网格共用同一个 */
-          <PhotoCell key={photo.id} photo={photo} />
-        ))}
-      </div>
-    </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-meta shrink-0 text-text-primary/45 transition-colors duration-[350ms] underline-offset-4 hover:text-text-primary/85 hover:underline"
+            style={{ transitionTimingFunction: "var(--ease-enter)" }}
+          >
+            关闭
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          {photos.map((photo) => (
+            /* 格子本身在 `PhotoCell` 里 —— 影册的网格共用同一个 */
+            <PhotoCell key={photo.id} photo={photo} />
+          ))}
+        </div>
+      </m.div>
+    </m.div>
   );
 }
-

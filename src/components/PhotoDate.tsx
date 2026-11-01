@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
 import {
   useDatePicker,
   type DPDay,
@@ -56,18 +57,23 @@ interface PhotoDateProps {
   onSaved: (takenAt: string | null) => void;
 }
 
+const POPOVER_SPRING = {
+  type: "spring",
+  stiffness: 340,
+  damping: 28,
+} as const;
+
 export function PhotoDate({
   photoId,
   takenAt,
   createdAt,
   onSaved,
 }: PhotoDateProps) {
-  const [value, setValue] = useState<string | null>(takenAt);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const shown = value ?? createdAt;
+  const shown = takenAt ?? createdAt;
 
   const save = useCallback(
     async (day: Date | null) => {
@@ -77,7 +83,7 @@ export function PhotoDate({
       try {
         let iso: string | null = null;
         if (day) {
-          const base = value ? new Date(value) : null;
+          const base = takenAt ? new Date(takenAt) : null;
           const next = new Date(day);
           next.setHours(
             base ? base.getHours() : 12,
@@ -100,7 +106,6 @@ export function PhotoDate({
           throw new Error(body?.error?.message ?? "没能改");
         }
 
-        setValue(iso);
         onSaved(iso);
         setOpen(false);
       } catch (err) {
@@ -109,7 +114,7 @@ export function PhotoDate({
         setSaving(false);
       }
     },
-    [saving, value, photoId, onSaved],
+    [saving, takenAt, photoId, onSaved],
   );
 
   // Esc 收起。输入法组字中的 Esc 由 hook 里的 `isImeKey` 挡掉（`lib/keyboard.ts`）
@@ -119,34 +124,29 @@ export function PhotoDate({
     <span className="pointer-events-auto relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setError(null);
+          setOpen((v) => !v);
+        }}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="text-meta text-text-primary/55 underline-offset-4 transition-colors duration-[350ms] hover:text-text-primary/90 hover:underline focus-visible:text-text-primary/90 focus-visible:underline"
+        className="text-meta relative z-30 text-text-primary/55 underline-offset-4 transition-colors duration-[350ms] hover:text-text-primary/90 hover:underline focus-visible:text-text-primary/90 focus-visible:underline"
         style={{ transitionTimingFunction: "var(--ease-enter)" }}
       >
         {formatDate(shown) ?? "没有时间"}
       </button>
 
-      {open && (
-        <>
-          {/*
-            点别处收起。是**这一层里**的一块透明盖子 —— 不挡顶栏、也不挡
-            对话浮层（它们在别的层叠上下文里，各自该收到什么就收到什么）。
-          */}
-          <span
-            aria-hidden
-            onClick={() => setOpen(false)}
-            className="fixed inset-0 z-20 block"
-          />
-
+      <AnimatePresence>
+        {open && (
           <Calendar
-            value={value}
+            key="calendar-popover"
+            value={takenAt}
             fallback={createdAt}
             busy={saving}
             error={error}
+            onClose={() => setOpen(false)}
             /*
-             * ⚠️ **挑一天不写库**，要按 `Save` 才写。
+             * ⚠️ **挑一天不直接写库**，按 `Save`、回车或双击某一天才写。
              *
              * 用户 2026-10-11：「为什么有一个 clear，**右边再来个 save 多好**，
              * clear 回到上次 save 的时间」。第一版是「点一天 = 立刻存」，
@@ -155,8 +155,8 @@ export function PhotoDate({
              */
             onSave={(day) => void save(day)}
           />
-        </>
-      )}
+        )}
+      </AnimatePresence>
     </span>
   );
 }
@@ -166,15 +166,11 @@ export function PhotoDate({
  *
  * 状态呈现规范：
  *
- * 挑一天只动**选中**（`draft`），按 `Save` 才写库。所以：
+ * 单击挑一天只动**选中**（`draft`），按 `Save`（或双击日期 / 按 Enter）才写库。所以：
  *
  * - `Save` 只在两者不同时才可按（没什么可存的时候它该是暗的）
  * - `Clear` 把选中**退回已保存的那一天** —— 它是「放弃这次改动」，
  *   不是「把拍摄时间清掉」（用户 2026-10-11：「clear 回到上次 save 的时间」）
- *
- * ⚠️ **这一版没有「把拍摄时间清成空」的入口了。** 要的话得另找地方 ——
- * 那个动作的语义是「这张没有拍摄时间」，和「放弃这次改动」是两件事，
- * 混在同一个按钮上正是第一版的毛病。
  *
  * 版式上只做一件事：**让它看起来像这个产品的一行字**，而不是一个控件。
  * 没有强调色（`02 §3`），选中靠 `--text-primary` 的实心圆，今天靠一圈发丝。
@@ -184,13 +180,15 @@ function Calendar({
   fallback,
   busy,
   error,
+  onClose,
   onSave,
 }: {
   value: string | null;
   fallback: string;
   busy: boolean;
   error: string | null;
-  /** 按了 `Save` 才走到这儿 */
+  onClose: () => void;
+  /** 按了 `Save` / 双击日期 / 按 Enter 走到这儿 */
   onSave: (day: Date | null) => void;
 }) {
   const anchor = new Date(value ?? fallback);
@@ -210,7 +208,16 @@ function Calendar({
     // 选中的是**没存下去的那一天** —— 挑完要看得见自己挑了哪儿
     selectedDates: draft ? [draft] : [],
     onDatesChange: (dates) => {
-      if (dates[0]) setDraft(dates[0]);
+      const picked = dates[0];
+      if (!picked) return;
+      setDraft(picked);
+      // 若点了上/下个月露出的灰字日期，日历月份顺势跟过去
+      if (
+        picked.getFullYear() !== offset.getFullYear() ||
+        picked.getMonth() !== offset.getMonth()
+      ) {
+        setOffset(picked);
+      }
     },
     offsetDate: offset,
     onOffsetChange: setOffset,
@@ -223,164 +230,209 @@ function Calendar({
   const days = calendar?.days ?? [];
 
   return (
-    <div
-      role="dialog"
-      aria-label="改这张照片的时间"
-      /*
-        ⚠️ **宽度必须写死。** 这一层是 `absolute`，而它的包含块是外面那个
-        `relative` 的 span —— 也就是日期那几个字那么宽（约 100px）。
-        不写宽度的话它会**收缩到那个宽度**，七列的格子各剩 15px，日历挤成一条。
-
-        256 = 7 × 32 的格子 + 左右各 16 的内边距。
-      */
-      className="border-border-faint absolute bottom-full left-1/2 z-30 mb-4 w-[256px] -translate-x-1/2 rounded-2xl border p-4 shadow-2xl backdrop-blur-2xl"
-      style={{ backgroundColor: "var(--glass-strong)" }}
-    >
+    <>
       {/*
-        // 头一行：日子那一屏显示「2026 · 10」，年月那一屏显示「2026」
-
-        用户 2026-10-11：「**年月怎么调**」。原先只有一对 ‹ › 走月份，
-        想看三年前的照片得点三十六下 —— 老照片是这个产品里的大多数。
-
-        所以头上那一行本身**是个按钮**：点它翻到年月那一屏（12 个月，一年一屏），
-        在那儿再点一个月回来。这也是日历控件的通用做法，不必我发明。
-
-        ⚠️ 月份字串用**自己的格式**（`2026 · 10`），不用库给的 `year` / `month`：
-        那两个字串是 `Intl` 按 locale 拼的，zh-CN 下会带上「年」「月」，
-        而这一行要和产品里其它日期长得一样（`02 §4`）。数字也照用户那句
-        「**日期不要加日直接数字就好**」。
+        点别处收起。是**这一层里**的一块透明盖子 —— 不挡顶栏、也不挡
+        对话浮层（它们在别的层叠上下文里，各自该收到什么就收到什么）。
       */}
-      <div className="mb-3 flex items-center justify-between gap-6">
-        {view === "days" ? (
+      <span
+        aria-hidden
+        onClick={onClose}
+        className="fixed inset-0 z-20 block"
+      />
+
+      <m.div
+        role="dialog"
+        aria-label="改这张照片的时间"
+        initial={{ opacity: 0, scale: 0.94, y: 6 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 6 }}
+        transition={POPOVER_SPRING}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && dirty && !busy) {
+            e.preventDefault();
+            onSave(draft);
+          }
+        }}
+        /*
+          ⚠️ **宽度必须写死。** 这一层是 `absolute`，而它的包含块是外面那个
+          `relative` 的 span —— 也就是日期那几个字那么宽（约 100px）。
+          不写宽度的话它会**收缩到那个宽度**，七列的格子各剩 15px，日历挤成一条。
+
+          256 = 7 × 32 的格子 + 左右各 16 的内边距。
+        */
+        className="border-border-faint absolute bottom-full left-1/2 z-30 mb-4 w-[256px] -translate-x-1/2 origin-bottom rounded-2xl border p-4 shadow-2xl backdrop-blur-2xl"
+        style={{ backgroundColor: "var(--glass-strong)" }}
+      >
+        {/*
+          头一行：日子那一屏显示「2026 · 10」，年月那一屏显示「2026」。
+          两屏的标题都是可点按钮，点一下在「日子 ⇄ 年月」之间来回切换。
+
+          ⚠️ 两屏的主体区域高度恒定为 `h-[240px]`：因为弹窗是 `bottom-full` 朝上锚定的，
+          如果年月视图比日子视图矮，点一下标题整个弹窗顶部会往下塌陷 80px，
+          标题和翻页箭头直接从鼠标指针底下逃开。固定高度后切换零跳变。
+        */}
+        <div className="mb-3 flex items-center justify-between gap-6">
           <button
             type="button"
-            onClick={() => setView("months")}
+            onClick={() => setView((v) => (v === "days" ? "months" : "days"))}
             className="text-micro tracking-[0.08em] text-text-primary/70 underline-offset-4 transition-colors duration-[350ms] hover:text-text-primary/95 hover:underline focus-visible:text-text-primary/95"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
-            {formatMonth(offset)}
+            {view === "days" ? formatMonth(offset) : offset.getFullYear()}
           </button>
-        ) : (
-          <span className="text-micro tracking-[0.08em] text-text-primary/70">
-            {offset.getFullYear()}
+
+          <span className="flex items-center gap-2">
+            {view === "days" ? (
+              <>
+                <NavButton
+                  label="上个月"
+                  {...propGetters.subtractOffset({ months: 1 })}
+                >
+                  <ChevronLeft size={14} strokeWidth={1.6} aria-hidden />
+                </NavButton>
+                <NavButton
+                  label="下个月"
+                  {...propGetters.addOffset({ months: 1 })}
+                >
+                  <ChevronRight size={14} strokeWidth={1.6} aria-hidden />
+                </NavButton>
+              </>
+            ) : (
+              <>
+                <NavButton
+                  label="上一年"
+                  {...propGetters.subtractOffset({ years: 1 })}
+                >
+                  <ChevronLeft size={14} strokeWidth={1.6} aria-hidden />
+                </NavButton>
+                <NavButton
+                  label="下一年"
+                  {...propGetters.addOffset({ years: 1 })}
+                >
+                  <ChevronRight size={14} strokeWidth={1.6} aria-hidden />
+                </NavButton>
+              </>
+            )}
           </span>
-        )}
-
-        <span className="flex items-center gap-2">
-          {view === "days" ? (
-            <>
-              <NavButton label="上个月" {...propGetters.subtractOffset({ months: 1 })}>
-                <ChevronLeft size={14} strokeWidth={1.6} aria-hidden />
-              </NavButton>
-              <NavButton label="下个月" {...propGetters.addOffset({ months: 1 })}>
-                <ChevronRight size={14} strokeWidth={1.6} aria-hidden />
-              </NavButton>
-            </>
-          ) : (
-            <>
-              <NavButton label="上一年" {...propGetters.subtractOffset({ years: 1 })}>
-                <ChevronLeft size={14} strokeWidth={1.6} aria-hidden />
-              </NavButton>
-              <NavButton label="下一年" {...propGetters.addOffset({ years: 1 })}>
-                <ChevronRight size={14} strokeWidth={1.6} aria-hidden />
-              </NavButton>
-            </>
-          )}
-        </span>
-      </div>
-
-      {view === "days" ? (
-        <DayGrid
-          weekDays={data.weekDays}
-          days={days}
-          busy={busy}
-          dayButton={propGetters.dayButton}
-        />
-      ) : (
-        <div className="grid grid-cols-3 gap-1">
-          {data.months.map((m) => {
-            const { onClick, ...rest } = propGetters.monthButton(m);
-            const active = m.$date.getMonth() === offset.getMonth();
-            return (
-              <button
-                key={m.$date.toISOString()}
-                {...rest}
-                // 选完月份回到日子那一屏 —— 自己接一层，不去猜库给的 onClick
-                // 是替换还是并列
-                onClick={(e) => {
-                  onClick?.(e);
-                  setView("days");
-                }}
-                disabled={busy}
-                className={`text-meta flex h-9 items-center justify-center rounded-lg transition-colors duration-[350ms] ${
-                  active
-                    ? ""
-                    : "text-text-primary/75 hover:text-text-primary"
-                }`}
-                style={{
-                  transitionTimingFunction: "var(--ease-enter)",
-                  // 现在看着的那个月用**实心**（与日子那一屏选中的那天同一套：
-                  // 状态靠填充，这个产品没有强调色可用）
-                  ...(active
-                    ? {
-                        backgroundColor: "var(--text-primary)",
-                        color: "var(--background)",
-                      }
-                    : {}),
-                }}
-              >
-                {m.$date.getMonth() + 1}
-              </button>
-            );
-          })}
         </div>
-      )}
 
-      {/*
-        底下这一条：左 `Clear`、右 `Save`。
+        <div className="relative h-[240px]">
+          <AnimatePresence mode="wait" initial={false}>
+            {view === "days" ? (
+              <m.div
+                key="days"
+                initial={{ opacity: 0, y: 3 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -3 }}
+                transition={{ duration: 0.16 }}
+                className="h-full"
+              >
+                <DayGrid
+                  weekDays={data.weekDays}
+                  days={days}
+                  busy={busy}
+                  dayButton={propGetters.dayButton}
+                  onQuickSave={onSave}
+                />
+              </m.div>
+            ) : (
+              <m.div
+                key="months"
+                initial={{ opacity: 0, y: -3 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 3 }}
+                transition={{ duration: 0.16 }}
+                className="grid h-full grid-cols-3 grid-rows-4 items-center gap-1.5"
+              >
+                {data.months.map((monthItem) => {
+                  const { onClick, ...rest } =
+                    propGetters.monthButton(monthItem);
+                  const active =
+                    monthItem.$date.getMonth() === offset.getMonth();
+                  return (
+                    <button
+                      key={monthItem.$date.toISOString()}
+                      {...rest}
+                      // 选完月份回到日子那一屏 —— 自己接一层，不去猜库给的 onClick
+                      // 是替换还是并列
+                      onClick={(e) => {
+                        onClick?.(e);
+                        setView("days");
+                      }}
+                      disabled={busy}
+                      className={`text-meta flex h-11 items-center justify-center rounded-lg transition-colors duration-[350ms] ${
+                        active
+                          ? ""
+                          : "text-text-primary/75 hover:text-text-primary"
+                      }`}
+                      style={{
+                        transitionTimingFunction: "var(--ease-enter)",
+                        // 现在看着的那个月用**实心**（与日子那一屏选中的那天同一套：
+                        // 状态靠填充，这个产品没有强调色可用）
+                        ...(active
+                          ? {
+                              backgroundColor: "var(--text-primary)",
+                              color: "var(--background)",
+                            }
+                          : {}),
+                      }}
+                    >
+                      {monthItem.$date.getMonth() + 1}
+                    </button>
+                  );
+                })}
+              </m.div>
+            )}
+          </AnimatePresence>
+        </div>
 
-        - `Clear` = **放弃这次改动**，回到上次保存的那一天。只在改动过时出现
-          （没改动时它没有事可做，摆着只是一个点不动的词）
-        - `Save` = 存下去。**只在改动过时才可按** —— 没什么可存的时候它该是暗的
+        {/*
+          底下这一条：左 `Clear`、右 `Save`。
 
-        ⚠️ 关掉面板（Esc / 点别处）**不保存**，改动丢掉。这是这一版刻意选的：
-        用户要的就是「挑完再按一下保存」这一步。
-      */}
-      <div className="mt-3 flex items-baseline justify-between gap-4">
-        {error ? (
-          <span className="text-micro text-text-primary/60" role="status">
-            {error}
-          </span>
-        ) : dirty ? (
+          - `Clear` = **放弃这次改动**，回到上次保存的那一天。只在改动过时出现
+            （没改动时它没有事可做，摆着只是一个点不动的词）
+          - `Save` = 存下去。**只在改动过时才可按** —— 没什么可存的时候它该是暗的
+
+          ⚠️ 关掉面板（Esc / 点别处）**不保存**，改动丢掉。这是这一版刻意选的：
+          用户要的就是「挑完再按一下保存」这一步（双击某一天则是快捷保存）。
+        */}
+        <div className="mt-3 flex items-baseline justify-between gap-4">
+          {error ? (
+            <span className="text-micro text-text-primary/60" role="status">
+              {error}
+            </span>
+          ) : dirty ? (
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(savedDay);
+                // 退回那一天，视图也跟着回到那个月 —— 否则选中在别处看不见
+                if (savedDay) setOffset(savedDay);
+                setView("days");
+              }}
+              disabled={busy}
+              className="text-micro text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85 disabled:opacity-40"
+              style={{ transitionTimingFunction: "var(--ease-enter)" }}
+            >
+              Clear
+            </button>
+          ) : (
+            <span />
+          )}
+
           <button
             type="button"
-            onClick={() => {
-              setDraft(savedDay);
-              // 退回那一天，视图也跟着回到那个月 —— 否则选中在别处看不见
-              if (savedDay) setOffset(savedDay);
-              setView("days");
-            }}
-            disabled={busy}
-            className="text-micro text-text-primary opacity-40 transition-opacity duration-[350ms] hover:opacity-85 focus-visible:opacity-85 disabled:opacity-40"
+            onClick={() => onSave(draft)}
+            disabled={busy || !dirty}
+            className="text-micro text-text-primary opacity-70 underline-offset-4 transition-opacity duration-[350ms] hover:opacity-100 focus-visible:opacity-100 disabled:opacity-25"
             style={{ transitionTimingFunction: "var(--ease-enter)" }}
           >
-            Clear
+            {busy ? "…" : "Save"}
           </button>
-        ) : (
-          <span />
-        )}
-
-        <button
-          type="button"
-          onClick={() => onSave(draft)}
-          disabled={busy || !dirty}
-          className="text-micro text-text-primary opacity-70 underline-offset-4 transition-opacity duration-[350ms] hover:opacity-100 focus-visible:opacity-100 disabled:opacity-25"
-          style={{ transitionTimingFunction: "var(--ease-enter)" }}
-        >
-          {busy ? "…" : "Save"}
-        </button>
-      </div>
-    </div>
+        </div>
+      </m.div>
+    </>
   );
 }
 
@@ -397,11 +449,13 @@ function DayGrid({
   days,
   busy,
   dayButton,
+  onQuickSave,
 }: {
   weekDays: string[];
   days: DPDay[];
   busy: boolean;
   dayButton: (day: DPDay, config?: DPPropsGetterConfig) => DPPropGetter;
+  onQuickSave: (day: Date) => void;
 }) {
   return (
     <div className="grid grid-cols-7 gap-y-1">
@@ -418,10 +472,14 @@ function DayGrid({
       {days.map((day) => {
         const selected = day.selected;
         const today = day.now && !selected;
+        const btnProps = dayButton(day);
         return (
           <button
             key={day.$date.toISOString()}
-            {...dayButton(day)}
+            {...btnProps}
+            onDoubleClick={() => {
+              if (!busy) onQuickSave(day.$date);
+            }}
             disabled={busy}
             className={`text-meta flex h-8 w-8 items-center justify-center rounded-full transition-colors duration-[350ms] ${
               selected

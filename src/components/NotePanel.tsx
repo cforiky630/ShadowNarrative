@@ -36,6 +36,12 @@ import type { JournalNote } from "@/types";
 /** 打字停下多久就存。太短会在输入法组字时反复发请求，太长会丢掉最后一口气 */
 const SAVE_DEBOUNCE_MS = 700;
 
+const PANEL_SPRING = {
+  type: "spring",
+  stiffness: 260,
+  damping: 28,
+} as const;
+
 interface NotePanelProps {
   photoId: string;
   /** `2025 · 09 · 28`（`02 §4` 的日期格式）。null = 这张照片没有时间 */
@@ -128,9 +134,11 @@ export function NotePanel({ photoId, date, note, onSaved }: NotePanelProps) {
 
   return (
     <m.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ type: "spring", stiffness: 180, damping: 26 }}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={PANEL_SPRING}
+      onPointerDown={(e) => e.stopPropagation()}
       /*
         ⚠️ **`min-h-[50dvh]` 是必须的，不是留白。**
         `<textarea>` 默认只有 **2 行**高，而这一列的高度是内容撑起来的 ——

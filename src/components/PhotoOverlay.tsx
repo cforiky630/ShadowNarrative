@@ -1,11 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { MessageCircle, NotebookText, PenLine } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { MessageCircle, NotebookText, PenLine, X } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
 import { ConversationPanel } from "@/components/ConversationPanel";
 import { NotePanel } from "@/components/NotePanel";
 import { useEscape } from "@/hooks/useEscape";
-import type { JournalNote } from "@/types";
+import type { ConversationMessage, JournalNote } from "@/types";
 
 /**
  * 照片页的浮层 —— **一层遮罩，两面**。
@@ -29,8 +36,10 @@ import type { JournalNote } from "@/types";
  * ```text
  * 对话那一面     还没有笔记 → 笔（起稿）
  *                有笔记了   → 本子（进随笔小记去读、去改）
- * 随笔小记那一面  回到对话（粒子态才给，16 硬约束 #10）
- *                笔记比最后一轮对话旧 → 笔（润色），加在「回到对话」上面
+ *                最底固定   → ×（关闭浮层）
+ * 随笔小记那一面  笔记比最后一轮对话旧 → 笔（润色）
+ *                回到对话（粒子态才给，16 硬约束 #10）
+ *                最底固定   → ×（关闭浮层）
  * 两颗笔共同      这一轮回答还没落地 → 都先不出现（用户 2026-10-10）
  * ```
  *
@@ -41,14 +50,13 @@ import type { JournalNote } from "@/types";
  * 「新聊到的有没有补进去」，而这篇正文就在眼前 —— 按了它，改的就是你正在读的
  * 这一篇，不必先切回去。对话那一面在有笔记之后换成入口，两处不重复。
  *
- * ⚠️ **出口在最下。** 随笔小记那一面可能是两颗图标（润色 + 回到对话），
- * 顺序不能让它们互相让位：`回到对话` 压在底下，润色那颗加在它上面 ——
- * 这样笔出现或消失时，出口不动（与 `16 §7.2` 里 `Back` 始终在那一行最后
- * 是同一条：**出口在边上，不随状态挪**）。
+ * ⚠️ **出口在最下。** 右侧槽位最下方常驻关闭（`×`），其上是 `回到对话`、
+ * 最上是 `笔` —— 这样笔出现或消失时，底部出口始终不动（与 `16 §7.2` 里
+ * `Back` 始终在那一行最后是同一条：**出口在边上，不随状态挪**）。
  *
- * ⚠️ **状态都在这儿**（消息在 `ConversationPanel` 自己那儿，笔记和那两个事实
- * 在这儿）。「哪颗笔该出现」要同时看笔记和对话，分散到两个组件各算各的，
- * 刚生成完那边就还是旧状态。
+ * ⚠️ **状态都在这儿**（对话消息与笔记在挂载时并行预取并缓存在这儿）。
+ * 一方面避免先等 `/journal` 再等 `/conversation` 的串行瀑布闪烁与输入框跳动，
+ * 另一方面在「对话 ⇄ 随笔小记」之间翻面时无需重新请求或重播入场错开。
  *
  * ⚠️ **根元素 `pointer-events-auto` 是必须的。** 照片页的 `<main>` 是
  * `pointer-events: none`（指针要穿透到画布，否则拖拽旋转失效），而这个属性
@@ -83,6 +91,12 @@ interface PhotoOverlayProps {
   onNoteChange: (exists: boolean) => void;
 }
 
+const COLUMN_SPRING = {
+  type: "spring",
+  stiffness: 260,
+  damping: 28,
+} as const;
+
 export function PhotoOverlay({
   photoId,
   date,
@@ -93,6 +107,8 @@ export function PhotoOverlay({
 }: PhotoOverlayProps) {
   const [face, setFace] = useState<Face>(initialFace);
   const [note, setNote] = useState<JournalNote | null>(null);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [initialCount, setInitialCount] = useState(0);
   /** 用户说过话吗。**服务端给的两个事实之一** —— 见路由的说明 */
   const [hasMaterial, setHasMaterial] = useState(false);
   /** 笔记比最后一轮对话旧吗。同上 */
@@ -125,33 +141,51 @@ export function PhotoOverlay({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      try {
-        const res = await fetch(`/api/photos/${photoId}/journal`, {
+      const [journalRes, convRes] = await Promise.allSettled([
+        fetch(`/api/photos/${photoId}/journal`, { cache: "no-store" }).then(
+          async (r) => {
+            if (!r.ok) throw new Error(String(r.status));
+            return (await r.json()) as {
+              data: {
+                note: JournalNote | null;
+                hasMaterial: boolean;
+                noteIsStale: boolean;
+              };
+            };
+          },
+        ),
+        fetch(`/api/photos/${photoId}/conversation`, {
           cache: "no-store",
-        });
-        if (!res.ok) throw new Error(String(res.status));
-        const body = (await res.json()) as {
-          data: {
-            note: JournalNote | null;
-            hasMaterial: boolean;
-            noteIsStale: boolean;
-          };
-        };
-        if (cancelled) return;
-        setNote(body.data.note);
-        setHasMaterial(body.data.hasMaterial);
-        setNoteIsStale(body.data.noteIsStale);
-      } catch {
-        if (!cancelled) setError("读不到随笔小记");
-      } finally {
-        // 失败也要放行 —— 否则整层浮层是空的，用户连对话都进不去
-        if (!cancelled) setLoaded(true);
+        }).then(async (r) => {
+          if (!r.ok) throw new Error(String(r.status));
+          return (await r.json()) as { data: ConversationMessage[] };
+        }),
+      ]);
+
+      if (cancelled) return;
+
+      if (journalRes.status === "fulfilled") {
+        setNote(journalRes.value.data.note);
+        setHasMaterial(journalRes.value.data.hasMaterial);
+        setNoteIsStale(journalRes.value.data.noteIsStale);
+      } else {
+        setError("读不到随笔小记");
       }
+
+      if (convRes.status === "fulfilled") {
+        setMessages(convRes.value.data);
+        setInitialCount(convRes.value.data.length);
+      } else if (initialFace === "conversation") {
+        setError("读不到对话");
+      }
+
+      // 失败也要放行 —— 否则整层浮层是空的，用户连对话都进不去
+      setLoaded(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [photoId]);
+  }, [photoId, initialFace]);
 
   // Esc 关掉整层（`04 §7` 的退出顺序第一层）。**两面共用一个** ——
   // 叠两层的话同一个按键会触发两个监听。输入法组字中的 Esc 由 hook 挡掉。
@@ -203,7 +237,7 @@ export function PhotoOverlay({
 
   /*
    * 内容到齐 / 换面之后把焦点落进这一面：对话面是输入框、随笔面是空正文。
-   * 放在 `loaded` 之后 —— 加载期间这一层里只有「读取中」，没有可聚焦的东西。
+   * 放在 `loaded` 之后 —— 加载期间这一层里还没有可聚焦的正文区。
    * 随笔已有内容时不抢焦点（与 NotePanel 的 `autoFocus={!note?.content}` 一致），
    * 免得打开阅读时直接跳出输入光标。
    */
@@ -219,6 +253,16 @@ export function PhotoOverlay({
       }
     }
   }, [loaded, face]);
+
+  const switchToNote = useCallback(() => {
+    setInitialCount(0);
+    setFace("note");
+  }, []);
+
+  const switchToConversation = useCallback(() => {
+    setInitialCount(0);
+    setFace("conversation");
+  }, []);
 
   /**
    * 那颗笔按下去：**起稿或润色**。服务端看有没有现存那一行自己判断是哪种，
@@ -245,6 +289,7 @@ export function PhotoOverlay({
       setNoteIsStale(false);
       onNoteChange(true);
       // 刚起的那一稿就在随笔小记那一面里，直接翻过去让他改
+      setInitialCount(0);
       setFace("note");
     } catch (err) {
       setError(err instanceof Error ? err.message : "没能写出来");
@@ -271,11 +316,15 @@ export function PhotoOverlay({
   const showPolish = note !== null && (noteIsStale || spoke) && !replying;
 
   return (
-    <div
+    <m.div
       ref={rootRef}
       role="dialog"
       aria-modal="true"
       aria-label={face === "conversation" ? "与这张照片对话" : "随笔小记"}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.28 }}
       className="pointer-events-auto fixed inset-0 z-[15] flex items-center justify-center px-12"
       style={{
         /*
@@ -296,105 +345,121 @@ export function PhotoOverlay({
        *
        * 用 `click` 有个会「打断对话」的洞：**按下在列里、松开在列外**时，
        * 浏览器把 `click` 派发给两者**最近的共同祖先** —— 也就是这一层
-       * 根节点，于是 `target === currentTarget` 成立、整层关掉。
-       * 用鼠标选一段字、手一抖拖出去就中招（实测过）。
+       * 根节点，于是整层关掉。用鼠标选一段字、手一抖拖出去就中招。
        *
-       * `pointerdown` 没有这个问题：「按下时指针在哪」是明确的，
-       * 从列里按下去的那一下根本不会到这里。
-       *
-       * 这也和其余两处收起（`DockCard`、删除的待确认）同一条 ——
-       * 它们的注释里写着「按下就该有反应，等到抬起已经慢了一拍」。
+       * `pointerdown` 没有这个问题：内容列与右侧操作栏各自 `stopPropagation()`，
+       * 凡是冒泡到根遮罩的按下一定落在空白处，顺畅收起浮层。
        */
-      onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}    >
+      onPointerDown={onClose}
+    >
       {/* 外层 580 = 窄栏 520 + 间距 20 + 右边那一格 ~28，窄屏靠 min-w-0 把栏让出来 */}
-      <div className="flex w-full max-w-[580px] flex-col gap-6">
-        <div className="flex items-end gap-5">
-          {loaded &&
-            (face === "conversation" ? (
-              <ConversationPanel
-                photoId={photoId}
-                /*
-                 * 刚说过一句。不写这一笔的话，那颗笔要等下次打开才出现 ——
-                 * 而「首次生成只能在对话那里」（用户定的），说话与起稿
-                 * 本该是紧接着的两下。
-                 */
-                onUserMessaged={() => setSpoke(true)}
-                /*
-                 * ⚠️ **直接传 `setReplying`，不要包一层箭头。**
-                 * 它会被 `send` 的闭包一直握到请求结束 —— 那时候这一面
-                 * 可能已经卸载了（用户翻去随笔小记），而这一句仍然要能
-                 * 把「回答落地了」报回来。`setState` 本身是稳定的。
-                 */
-                onReplyingChange={setReplying}
-              />
-            ) : (
-              <NotePanel
-                photoId={photoId}
-                date={date}
-                note={note}
-                onSaved={handleSaved}
-              />
-            ))}
-
-          {/*
-            右边那一格。两种动作**不并排**：同一格里任何时刻只显示得下一个动作
-            （`16 §8.6` 的做法，原图 ⇄ 粒子那一格也是这么办的）——
-            只有随笔小记那一面在「笔记旧了」时才多一颗润色，而那两颗是竖排，
-            出口照旧在最下（见文件头）。
-          */}
-          <div className="mb-0.5 flex shrink-0 flex-col items-center gap-3">
-            {face === "conversation" ? (
-              note ? (
-                <SlotButton
-                  label="随笔小记"
-                  onClick={() => setFace("note")}
-                >
-                  <NotebookText size={16} strokeWidth={1.6} aria-hidden />
-                </SlotButton>
+      <m.div
+        initial={{ opacity: 0, y: 12, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 8, scale: 0.985 }}
+        transition={COLUMN_SPRING}
+        className="flex w-full max-w-[580px] flex-col gap-6"
+      >
+        {loaded && (
+          <div className="flex items-end gap-5">
+            <AnimatePresence mode="wait" initial={false}>
+              {face === "conversation" ? (
+                <ConversationPanel
+                  key="conversation"
+                  photoId={photoId}
+                  messages={messages}
+                  setMessages={setMessages}
+                  initialCount={initialCount}
+                  /*
+                   * 刚说过一句。不写这一笔的话，那颗笔要等下次打开才出现 ——
+                   * 而「首次生成只能在对话那里」（用户定的），说话与起稿
+                   * 本该是紧接着的两下。
+                   */
+                  onUserMessaged={() => setSpoke(true)}
+                  /*
+                   * ⚠️ **直接传 `setReplying`，不要包一层箭头。**
+                   * 它会被 `send` 的闭包一直握到请求结束 —— 那时候这一面
+                   * 可能已经卸载了（用户翻去随笔小记），而这一句仍然要能
+                   * 把「回答落地了」报回来。`setState` 本身是稳定的。
+                   */
+                  onReplyingChange={setReplying}
+                />
               ) : (
-                showDraft && (
-                  <SlotButton
-                    label="整理成随笔小记"
-                    disabled={generating}
-                    onClick={() => void generate()}
-                  >
-                    <PenButtonContent generating={generating} />
+                <NotePanel
+                  key="note"
+                  photoId={photoId}
+                  date={date}
+                  note={note}
+                  onSaved={handleSaved}
+                />
+              )}
+            </AnimatePresence>
+
+            {/*
+              右边那一格。
+              竖排顺序：起稿/润色在最上，翻面在中间，关闭（×）固定压在最下 ——
+              出口位置恒定，不随上方按钮出现或消失而跳动。
+            */}
+            <div
+              onPointerDown={(e) => e.stopPropagation()}
+              className="mb-0.5 flex shrink-0 flex-col items-center gap-3"
+            >
+              {face === "conversation" ? (
+                note ? (
+                  <SlotButton label="随笔小记" onClick={switchToNote}>
+                    <NotebookText size={16} strokeWidth={1.6} aria-hidden />
                   </SlotButton>
+                ) : (
+                  showDraft && (
+                    <SlotButton
+                      label="整理成随笔小记"
+                      disabled={generating}
+                      onClick={() => void generate()}
+                    >
+                      <PenButtonContent generating={generating} />
+                    </SlotButton>
+                  )
                 )
-              )
-            ) : (
-              <>
-                {showPolish && (
-                  <SlotButton
-                    label="让 AI 润色"
-                    disabled={generating}
-                    onClick={() => void generate()}
-                  >
-                    <PenButtonContent generating={generating} />
-                  </SlotButton>
-                )}
-                {canChat && (
-                  <SlotButton
-                    label="回到对话"
-                    onClick={() => setFace("conversation")}
-                  >
-                    <MessageCircle size={16} strokeWidth={1.6} aria-hidden />
-                  </SlotButton>
-                )}
-              </>
-            )}
+              ) : (
+                <>
+                  {showPolish && (
+                    <SlotButton
+                      label="让 AI 润色"
+                      disabled={generating}
+                      onClick={() => void generate()}
+                    >
+                      <PenButtonContent generating={generating} />
+                    </SlotButton>
+                  )}
+                  {canChat && (
+                    <SlotButton
+                      label="回到对话"
+                      onClick={switchToConversation}
+                    >
+                      <MessageCircle size={16} strokeWidth={1.6} aria-hidden />
+                    </SlotButton>
+                  )}
+                </>
+              )}
+
+              <SlotButton label="关闭" onClick={onClose}>
+                <X size={16} strokeWidth={1.6} aria-hidden />
+              </SlotButton>
+            </div>
           </div>
-        </div>
+        )}
 
         {error && (
-          <p className="text-meta text-text-primary/60" role="status">
+          <p
+            onPointerDown={(e) => e.stopPropagation()}
+            className="text-meta text-text-primary/60"
+            role="status"
+          >
             {error}
           </p>
         )}
-      </div>
-    </div>
+      </m.div>
+    </m.div>
   );
 }
 

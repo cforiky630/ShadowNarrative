@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Minus, X } from "lucide-react";
+import { m } from "motion/react";
 import { useEscape } from "@/hooks/useEscape";
 import { PAGE_INNER, PAGE_PAD } from "@/lib/layout";
 import type { Photo } from "@/types";
@@ -36,6 +37,12 @@ import type { Photo } from "@/types";
 
 /** 一次取多少张。60 大约是一屏半，够触发下一次预取 */
 const PAGE_SIZE = 60;
+
+const PANEL_SPRING = {
+  type: "spring",
+  stiffness: 280,
+  damping: 28,
+} as const;
 
 /**
  * 取一页 —— **纯函数，不碰 state**。
@@ -220,40 +227,49 @@ export function OrganizePanel({
     .join("  ");
 
   return (
-    <div
+    <m.div
       ref={scrollRef}
       role="dialog"
       aria-modal="true"
       aria-label={`整理「${albumTitle}」的照片`}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.26 }}
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className={`sn-noscrollbar fixed inset-0 z-40 overflow-y-auto overscroll-contain ${PAGE_PAD}`}
       // 实心，不做半透明 —— 与时间线那个网格同一条：在全屏的阅读层上，
       // 底下透出来读起来像渲染瑕疵，不像氛围
       style={{ background: "var(--background)" }}
     >
-      {/*
-        ⚠️ **这一层盖住了整张页面，包括顶栏** —— 所以它是这里**唯一**的出口
-        （除 Esc 与底下的 `Done`）。因此它的亮度比产品里其余图标键高一档
-        （0.6 而不是 0.4）：在 1528px 宽的窗口里，它离内容栏有一大截空，
-        0.4 的 16px 图标是真的会看不见。用户 2026-10-11 报的
-        「进入影册以后出不来了」就有它一份。
-      */}
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="关闭"
-        className="text-text-primary fixed top-24 right-12 flex h-7 w-7 items-center justify-center opacity-60 transition-opacity duration-[350ms] hover:opacity-100 focus-visible:opacity-100"
-        style={{ transitionTimingFunction: "var(--ease-enter)" }}
+      <m.div
+        initial={{ opacity: 0, y: 12, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 8, scale: 0.985 }}
+        transition={PANEL_SPRING}
+        className={PAGE_INNER}
       >
-        <X size={18} strokeWidth={1.6} aria-hidden />
-      </button>
-
-      <div className={PAGE_INNER}>
         {/*
-          这一屏只留一个身份标识，不留解释性的话
-          （用户 2026-10-11：「所有的文字都不要太白话了」）。
-          两种状态各有自己的样子 —— 压暗 + 「已在册」 + 环 —— 用不着写说明书。
+          顶栏把影册名与关闭按钮对齐在同一条内容宽度上，
+          既免去宽屏下鼠标跑到视口极右上角寻找出口，也与底层影册页头位置严丝合缝。
         */}
-        <p className="text-micro mb-6 text-text-primary/45">{albumTitle}</p>
+        <div className="mb-8 flex items-center justify-between gap-6">
+          <p className="text-micro truncate text-text-primary/45">
+            {albumTitle}
+          </p>
+
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭"
+            className="text-text-primary flex h-7 w-7 shrink-0 items-center justify-center opacity-50 transition-opacity duration-[350ms] hover:opacity-100 focus-visible:opacity-100"
+            style={{ transitionTimingFunction: "var(--ease-enter)" }}
+          >
+            <X size={16} strokeWidth={1.6} aria-hidden />
+          </button>
+        </div>
 
         <ul className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 md:grid-cols-6">
           {photos.map((photo) => {
@@ -349,7 +365,7 @@ export function OrganizePanel({
             还没有照片。
           </p>
         )}
-      </div>
+      </m.div>
 
       {/*
         底部那条。**只在有改动时才是实心的** —— 没选任何东西时 `Done`
@@ -378,6 +394,6 @@ export function OrganizePanel({
           </button>
         </div>
       </div>
-    </div>
+    </m.div>
   );
 }

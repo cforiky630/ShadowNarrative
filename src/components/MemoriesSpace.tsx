@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
 import { isImeKey } from "@/lib/keyboard";
 import { PAGE_INNER, PAGE_SHELL } from "@/lib/layout";
 import { revealStyle, useReveal } from "@/hooks/useReveal";
@@ -180,35 +181,44 @@ export function MemoriesSpace({ albums }: MemoriesSpaceProps) {
           </button>
         </header>
 
-        {creating && (
-          <div className="mb-10">
-            <input
-              // 点了「新建」就是为了起名，自动聚焦是对的
-              autoFocus
-              value={draft}
-              placeholder="New Collection"
-              disabled={busy}
-              maxLength={60}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => {
-                // 空着走开 = 算了。有字才提交（失焦提交与 Enter 同一条路）
-                if (draft.trim()) void create();
-                else cancelCreate();
-              }}
-              onKeyDown={(e) => {
-                // 组字中的 Enter / Esc 是输入法的，不是你的（`lib/keyboard.ts`）
-                if (isImeKey(e)) return;
-                if (e.key === "Enter") {
-                  // 空着按 Enter 与空着走开是同一条 —— 别把输入框留在原地
+        <AnimatePresence initial={false}>
+          {creating && (
+            <m.div
+              key="new-collection-input"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.22 }}
+              className="mb-10"
+            >
+              <input
+                // 点了「新建」就是为了起名，自动聚焦是对的
+                autoFocus
+                value={draft}
+                placeholder="New Collection"
+                disabled={busy}
+                maxLength={60}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => {
+                  // 空着走开 = 算了。有字才提交（失焦提交与 Enter 同一条路）
                   if (draft.trim()) void create();
                   else cancelCreate();
-                }
-                if (e.key === "Escape") cancelCreate();
-              }}
-              className="text-body w-full border-0 border-b border-border-subtle bg-transparent pb-2 text-text-primary/95 outline-none placeholder:text-text-primary/25 focus:border-text-primary/40"
-            />
-          </div>
-        )}
+                }}
+                onKeyDown={(e) => {
+                  // 组字中的 Enter / Esc 是输入法的，不是你的（`lib/keyboard.ts`）
+                  if (isImeKey(e)) return;
+                  if (e.key === "Enter") {
+                    // 空着按 Enter 与空着走开是同一条 —— 别把输入框留在原地
+                    if (draft.trim()) void create();
+                    else cancelCreate();
+                  }
+                  if (e.key === "Escape") cancelCreate();
+                }}
+                className="text-body w-full border-0 border-b border-border-subtle bg-transparent pb-2 text-text-primary/95 outline-none placeholder:text-text-primary/25 focus:border-text-primary/40"
+              />
+            </m.div>
+          )}
+        </AnimatePresence>
 
         {notice && (
           <p className="text-meta mb-6 text-text-primary/60" role="status">
@@ -221,7 +231,11 @@ export function MemoriesSpace({ albums }: MemoriesSpaceProps) {
           空态那句和那一堆册子是互斥的两个分支，各包一层的话，从空态
           新建完一册切过去时会重新触发一次揭示（那一下是「闪」）。
         */}
-        <div ref={listRef} style={revealStyle(listRevealed, 120)} className="sn-reveal">
+        <div
+          ref={listRef}
+          style={revealStyle(listRevealed, 120)}
+          className="sn-reveal"
+        >
           {albums.length === 0 && !creating ? (
             <p className="text-meta text-text-primary/35">还没有影册</p>
           ) : (
