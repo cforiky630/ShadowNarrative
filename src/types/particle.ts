@@ -106,48 +106,51 @@ export const PARTICLE_PRESETS: Readonly<
   Record<ParticlePresetName, Partial<ParticleParams>>
 > = {
   /**
-   * 预设矩阵：
-   * 各预设沿 density × size² 曲线分布，平衡颗粒质地与覆盖密度：
-   * - focus: 细腻高密
-   * - calm: 平衡温和
-   * - breeze: 舒缓流动
-   * - drift: 悬浮漂移（系统默认）
+   * 预设矩阵（与控制面板 `Calm · Breeze · Focus · Drift` 顺序一致）：
+   * - calm（默认首选，排第一位）：静谧微光。高密细腻、呼吸悠长温润，兼顾主体清晰度与沙粒生命感
+   * - breeze：晚风拂沙。连贯的空间波浪流场成片起伏，展现微风拂过画面的流动韵律
+   * - focus：凝视显影。满密度、细颗粒、极低扰动，如银盐相纸般凝聚五官与光影细节
+   * - drift：梦境星尘。颗粒疏朗温润、3D 悬浮与色彩微光更丰盈，如在记忆深处失重漂浮
    */
-  focus: {
-    density: 1.0,
-    size: 1.5,
-    motion: 0.15,
-    turbulence: 0.05,
-    mouseRadius: 0.16,
-    mouseForce: 0.22,
-    noiseSpeed: 0.6,
-  },
   calm: {
-    density: 0.95,
-    size: 1.8,
-    motion: 0.35,
+    density: 0.96,
+    size: 1.75,
+    motion: 0.32,
     turbulence: 0.12,
-    mouseRadius: 0.22,
-    mouseForce: 0.35,
-    noiseSpeed: 1.0,
+    mouseRadius: 0.25,
+    mouseForce: 0.32,
+    noiseSpeed: 0.85,
+    colorVariation: 0.04,
   },
   breeze: {
-    density: 0.88,
-    size: 1.95,
-    motion: 0.62,
-    turbulence: 0.22,
-    mouseRadius: 0.3,
-    mouseForce: 0.45,
-    noiseSpeed: 1.45,
+    density: 0.9,
+    size: 1.85,
+    motion: 0.48,
+    turbulence: 0.34,
+    mouseRadius: 0.32,
+    mouseForce: 0.42,
+    noiseSpeed: 1.25,
+    colorVariation: 0.08,
+  },
+  focus: {
+    density: 1.0,
+    size: 1.55,
+    motion: 0.14,
+    turbulence: 0.04,
+    mouseRadius: 0.18,
+    mouseForce: 0.2,
+    noiseSpeed: 0.55,
+    colorVariation: 0.0,
   },
   drift: {
-    density: 0.8,
-    size: 2.1,
-    motion: 0.82,
-    turbulence: 0.32,
-    mouseRadius: 0.34,
-    mouseForce: 0.3,
-    noiseSpeed: 1.8,
+    density: 0.78,
+    size: 2.05,
+    motion: 0.76,
+    turbulence: 0.46,
+    mouseRadius: 0.38,
+    mouseForce: 0.48,
+    noiseSpeed: 1.55,
+    colorVariation: 0.18,
   },
 };
 
@@ -155,20 +158,20 @@ export const PARTICLE_PRESETS: Readonly<
  * 四个预设的起手值 —— 预设没写到的字段就落在这里。
  */
 const NEUTRAL_PARAMS: ParticleParams = {
-  density: 1.0,
-  size: 1.8,
-  motion: 0.35,
+  density: 0.96,
+  size: 1.75,
+  motion: 0.32,
   turbulence: 0.12,
-  mouseRadius: 0.22,
-  mouseForce: 0.35,
-  noiseSpeed: 1.0,
-  colorVariation: 0.0,
+  mouseRadius: 0.25,
+  mouseForce: 0.32,
+  noiseSpeed: 0.85,
+  colorVariation: 0.04,
 };
 
 /**
- * 出厂是哪一档 —— 只有这一个地方说。默认 drift。
+ * 出厂是哪一档 —— 只有这一个地方说。默认 calm（排在预设列表第一位）。
  */
-export const DEFAULT_PRESET: ParticlePresetName = "drift";
+export const DEFAULT_PRESET: ParticlePresetName = "calm";
 
 /**
  * 默认参数。由 DEFAULT_PRESET 推出来（起手值 + 那一档的覆盖）。

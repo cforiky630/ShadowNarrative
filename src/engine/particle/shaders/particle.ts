@@ -117,27 +117,39 @@ void main() {
   vec2  sandDrift  = (outwardDir + jitter.xy * 0.55) * outerBand * outerBand * (0.015 + 0.038 * aRandom);
   pos.xy += sandDrift * settle;
 
-  // 呼吸（06 §7）—— 随 settle 渐入，原图交接瞬间保持像素级对齐
-  float ph = aRandom * 6.2831853;
-  pos += vec3(
-    sin(uTime * 0.35 * uNoiseSpeed + ph),
-    cos(uTime * 0.29 * uNoiseSpeed + ph * 1.7),
-    sin(uTime * 0.21 * uNoiseSpeed + ph * 0.6)
-  ) * (0.0045 * uMotion * settle);
+  // 记录未加扰动前的基准平面位置，供流场空间相位使用
+  vec2 baseXY = pos.xy;
 
-  // 湍流
-  pos.xy += vec2(
-    sin(uTime * 1.10 * uNoiseSpeed + pos.y * 4.0 + ph),
-    cos(uTime * 0.90 * uNoiseSpeed + pos.x * 4.0 + ph)
-  ) * (uTurbulence * 0.012 * settle);
+  // 呼吸（06 §7）—— 个体微浮与立体呼吸，随 settle 渐入
+  float ph = aRandom * 6.2831853;
+  float breatheTime = uTime * (0.42 * uNoiseSpeed);
+  pos += vec3(
+    sin(breatheTime + ph) + 0.45 * cos(breatheTime * 0.63 + baseXY.y * 2.5 + ph),
+    cos(breatheTime * 0.84 + ph * 1.7) + 0.45 * sin(breatheTime * 0.57 + baseXY.x * 2.5 + ph),
+    sin(breatheTime * 0.61 + ph * 0.6) * 1.6
+  ) * (0.0052 * uMotion * settle);
+
+  // 连贯流场（湍流 / 微风）：
+  // 不加整周随机乱相（仅保留 0.15 微差避免机械同步），让相邻粒子顺着同一股气流的波峰波谷成片起伏
+  float waveTime = uTime * (0.68 * uNoiseSpeed);
+  float waveSeed = ph * 0.15;
+  vec2 flowWave = vec2(
+    sin(waveTime + baseXY.y * 3.0 + cos(baseXY.x * 2.2 + waveTime * 0.6) + waveSeed),
+    cos(waveTime * 0.86 - baseXY.x * 3.0 + sin(baseXY.y * 2.2 + waveTime * 0.5) + waveSeed)
+  );
+  pos.xy += flowWave * (uTurbulence * 0.024 * settle);
+  pos.z  += sin(waveTime * 0.92 + baseXY.x * 2.6 + baseXY.y * 2.2 + waveSeed) * (uTurbulence * 0.055 * settle);
 
   // 指针场（06 §8）
-  // 无状态：位移只是当前位置与指针的函数。指针连续移动时粒子平滑进退，
-  // 移开后 falloff 自然回落到 0，不需要额外的恢复积分。
+  // 柔钟形衰减 + 轻微切向旋流 + Z 轴托起，使指针拂过如指尖划过细沙而非顶出死板圆洞
   vec2  d       = pos.xy - uPointer;
   float r       = length(d);
   float falloff = 1.0 - smoothstep(0.0, uMouseRadius, r);
-  pos.xy += normalize(d + vec2(1e-6)) * uMouseForce * falloff * 0.16 * settle;
+  float softFalloff = falloff * falloff * (0.72 + 0.56 * aRandom);
+  vec2  radialDir = normalize(d + vec2(1e-6));
+  vec2  swirlDir  = vec2(-radialDir.y, radialDir.x);
+  pos.xy += (radialDir + swirlDir * 0.24) * uMouseForce * softFalloff * 0.14 * settle;
+  pos.z  += uMouseForce * softFalloff * 0.075 * settle;
 
   // 输出
   vColor = mix(aColorA, aColorB, m);
@@ -151,8 +163,12 @@ void main() {
   );
   vColor = clamp(vColor + chroma * uColorVariation * 0.12 * settle, 0.0, 1.0);
 
+  // 颗粒天然粗细微差与微弱呼吸明暗，赋予细沙与微尘的真实光学层次
+  float grainSize = mix(1.0, 0.86 + 0.28 * fract(aRandom * 17.3), settle);
+  float shimmer   = 1.0 + sin(uTime * 1.35 * uNoiseSpeed + ph * 2.3) * (0.08 * uMotion * settle);
+
   // m=0 与 m=1 两端保持相同的不透明度基准，消除 settleMorph 重置 uProgress 时的亮度跳变
-  vAlpha = uOpacity * appear * edgeAlpha * (1.0 - 0.10 * lift);
+  vAlpha = clamp(uOpacity * appear * edgeAlpha * shimmer * (1.0 - 0.10 * lift), 0.0, 1.0);
   if (vAlpha <= 0.001) {
     gl_PointSize = 0.0;
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -160,7 +176,7 @@ void main() {
   }
 
   float size = mix(aSizeA, aSizeB, m);
-  gl_PointSize = uSize * uDpr * size * edgeSize;
+  gl_PointSize = uSize * uDpr * size * edgeSize * grainSize;
 
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mvPosition;
@@ -174,12 +190,12 @@ varying float vAlpha;
 void main() {
   if (vAlpha <= 0.001) discard;
 
-  // 圆形软边点。方点会让整张照片看起来像马赛克。
+  // 圆形柔核软边点：核心温润通透、边缘自然消融，兼具细颗粒的锐度与大颗粒的空气感
   vec2  c = gl_PointCoord - vec2(0.5);
   float d = length(c);
   if (d > 0.5) discard;
 
-  float a = smoothstep(0.5, 0.26, d);
+  float a = smoothstep(0.5, 0.18, d);
 
   gl_FragColor = vec4(vColor, a * vAlpha);
 
