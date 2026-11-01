@@ -44,6 +44,8 @@ uniform float uProgress;
 uniform float uScatter;
 uniform float uDissolve;
 uniform float uMaxR;
+uniform vec2  uHalfSizeA;
+uniform vec2  uHalfSizeB;
 uniform float uTime;
 uniform vec2  uPointer;
 uniform float uMouseRadius;
@@ -67,6 +69,7 @@ void main() {
   float m = smoothstep(P_SLIDE_IN, P_SLIDE_OUT, uProgress);
 
   vec3 pos = mix(aPositionA, aPositionB, m);
+  vec2 halfSize = mix(uHalfSizeA, uHalfSizeB, m);
 
   vec3 jitter = vec3(
     sin(aRandom * 31.7),
@@ -83,34 +86,50 @@ void main() {
   pos.z += lift * uScatter * 0.05;
 
   // 溶解（照片 ⇄ 粒子）
-  // 用与四边形**完全相同**的场，保证粒子出现在照片刚消失的位置。
-  //
-  // 用 aPositionA 算而不是 pos：pos 会被指针场与呼吸扰动，
-  // 那样粒子还没出现就已经离开原位，接不上碎块。
-  float dfield = snDissolveField(aPositionA.xy, uMaxR);
+  // 与原图四边形共用同一个 snDissolveProgress 空间场：
+  // 1. appear (0.0 → 0.55) 让粒子在原图尚未淡出前就已在原像素位置就位，无缝承接；
+  // 2. settle (0.18 → 1.0) 让呼吸、湍流、Z 轴起伏与边缘沙化散逸在原图淡出后柔顺展开，
+  //    返回原图时则先收拢归位再与原图融为一体，彻底消除爆裂圆环与黑边断层。
+  float localT = snDissolveProgress(pos.xy, halfSize, uDissolve);
+  float appear = smoothstep(0.0, 0.55, localT);
+  float settle = smoothstep(0.18, 1.0, localT);
 
-  // ⚠️ 阈值必须紧贴波前**内侧**，不能居中。
-  // 居中（smoothstep(d-0.03, d+0.03, ·)）意味着粒子在照片碎块消失之前
-  // 就开始出现，两者重叠 → 又变成「叠了两张图」。
-  // 四边形在 d < uDissolve 处 discard，所以粒子要在 d 刚小于 uDissolve 时出现。
-  float appear = 1.0 - smoothstep(uDissolve - 0.03, uDissolve, dfield);
+  // 转化中段极轻的微风起伏（两端严格归零）
+  float breeze = sin(localT * 3.14159265);
+  pos.xy += jitter.xy * breeze * 0.012;
+  pos.z  += jitter.z  * breeze * 0.024;
+  pos.z  *= settle;
 
-  // 刚出现时带一点随机偏移，落定才稳 —— 像碎屑落下，而不是凭空点亮
-  pos += jitter * (1.0 - appear) * 0.16;
+  // 粒子态边缘有机沙化与羽化：
+  // 消除刀切矩形硬边与 90° 尖角，使外缘粒子随随机阈值渐次稀疏、微缩并向外轻柔逸散
+  float rawEdgeDist = snEdgeDist(pos.xy, halfSize);
+  float edgeWave = (snNoise(pos.xy * 3.0 + vec2(1.7, 4.3)) - 0.5) * 0.11
+                 + (snNoise(pos.xy * 6.8 + vec2(8.1, 2.9)) - 0.5) * 0.055;
+  float dEdge = rawEdgeDist + edgeWave;
 
-  // 呼吸（06 §7）
+  float edgeCutoff = aRandom * 0.18;
+  float edgeKeep   = smoothstep(edgeCutoff - 0.03, edgeCutoff + 0.11, dEdge);
+  float edgeAlpha  = mix(1.0, edgeKeep, settle);
+  float edgeSize   = mix(1.0, mix(0.52, 1.0, smoothstep(0.0, 0.22, dEdge)), settle);
+
+  float outerBand  = 1.0 - smoothstep(-0.04, 0.24, rawEdgeDist);
+  vec2  outwardDir = normalize(pos.xy / max(halfSize, vec2(1e-4)) + vec2(1e-5));
+  vec2  sandDrift  = (outwardDir + jitter.xy * 0.55) * outerBand * outerBand * (0.015 + 0.038 * aRandom);
+  pos.xy += sandDrift * settle;
+
+  // 呼吸（06 §7）—— 随 settle 渐入，原图交接瞬间保持像素级对齐
   float ph = aRandom * 6.2831853;
   pos += vec3(
     sin(uTime * 0.35 * uNoiseSpeed + ph),
     cos(uTime * 0.29 * uNoiseSpeed + ph * 1.7),
     sin(uTime * 0.21 * uNoiseSpeed + ph * 0.6)
-  ) * (0.0045 * uMotion);
+  ) * (0.0045 * uMotion * settle);
 
   // 湍流
   pos.xy += vec2(
     sin(uTime * 1.10 * uNoiseSpeed + pos.y * 4.0 + ph),
     cos(uTime * 0.90 * uNoiseSpeed + pos.x * 4.0 + ph)
-  ) * (uTurbulence * 0.012);
+  ) * (uTurbulence * 0.012 * settle);
 
   // 指针场（06 §8）
   // 无状态：位移只是当前位置与指针的函数。指针连续移动时粒子平滑进退，
@@ -118,7 +137,7 @@ void main() {
   vec2  d       = pos.xy - uPointer;
   float r       = length(d);
   float falloff = 1.0 - smoothstep(0.0, uMouseRadius, r);
-  pos.xy += normalize(d + vec2(1e-6)) * uMouseForce * falloff * 0.16;
+  pos.xy += normalize(d + vec2(1e-6)) * uMouseForce * falloff * 0.16 * settle;
 
   // 输出
   vColor = mix(aColorA, aColorB, m);
@@ -130,10 +149,10 @@ void main() {
     cos(aRandom * 37.0),
     sin(aRandom * 53.0)
   );
-  vColor = clamp(vColor + chroma * uColorVariation * 0.12, 0.0, 1.0);
+  vColor = clamp(vColor + chroma * uColorVariation * 0.12 * settle, 0.0, 1.0);
 
-  // B 略实一点，让「落定」这一步有收束感
-  vAlpha = uOpacity * appear * (0.72 + 0.28 * m);
+  // m=0 与 m=1 两端保持相同的不透明度基准，消除 settleMorph 重置 uProgress 时的亮度跳变
+  vAlpha = uOpacity * appear * edgeAlpha * (1.0 - 0.10 * lift);
   if (vAlpha <= 0.001) {
     gl_PointSize = 0.0;
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -141,7 +160,7 @@ void main() {
   }
 
   float size = mix(aSizeA, aSizeB, m);
-  gl_PointSize = uSize * uDpr * size;
+  gl_PointSize = uSize * uDpr * size * edgeSize;
 
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mvPosition;

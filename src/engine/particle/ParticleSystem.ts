@@ -283,6 +283,8 @@ export class ParticleSystem {
     if (this.material) {
       this.material.uniforms.uProgress.value = 0;
       this.material.uniforms.uMaxR.value = maxR;
+      this.material.uniforms.uHalfSizeA.value.set(halfW, halfH);
+      this.material.uniforms.uHalfSizeB.value.set(halfW, halfH);
       const dissolve =
         this.quadMaterial?.uniforms.uDissolve.value ??
         (this.mode === "particle" ? 1 : 0);
@@ -626,6 +628,12 @@ export class ParticleSystem {
     );
 
     this.writeBuffer("aPositionB", "aColorB", "aSizeB", sample, perm);
+
+    if (this.material) {
+      const halfWB = sample.aspect >= 1 ? 1 : sample.aspect;
+      const halfHB = sample.aspect >= 1 ? 1 / sample.aspect : 1;
+      this.material.uniforms.uHalfSizeB.value.set(halfWB, halfHB);
+    }
 
     this.currentBitmap = bitmap;
     // 采样结果先留着：morph 完成后它就成为新的 A
@@ -1081,8 +1089,15 @@ export class ParticleSystem {
     // 用勾股而不是 max(halfW, halfH)：波前要扩散到**四角**才算走完，
     // 否则角落会剩一块没溶解的照片。
     const maxR = Math.hypot(halfW, halfH);
-    if (this.material) this.material.uniforms.uMaxR.value = maxR;
-    if (this.quadMaterial) this.quadMaterial.uniforms.uMaxR.value = maxR;
+    if (this.material) {
+      this.material.uniforms.uMaxR.value = maxR;
+      this.material.uniforms.uHalfSizeA.value.set(halfW, halfH);
+      this.material.uniforms.uHalfSizeB.value.set(halfW, halfH);
+    }
+    if (this.quadMaterial) {
+      this.quadMaterial.uniforms.uMaxR.value = maxR;
+      this.quadMaterial.uniforms.uHalfSize.value.set(halfW, halfH);
+    }
 
     this.quadGeometry?.dispose();
     this.quadGeometry = new PlaneGeometry(halfW * 2, halfH * 2);
@@ -1110,6 +1125,7 @@ export class ParticleSystem {
           uMap: { value: null },
           uDissolve: { value: 0 },
           uMaxR: { value: 1.5 },
+          uHalfSize: { value: new Vector2(halfW, halfH) },
         },
         transparent: true,
         depthTest: false,
@@ -1601,6 +1617,8 @@ function buildMaterial(): ShaderMaterial {
       uDissolve: { value: 0 },
       // 中心到最远角的距离，溶解场用来归一化半径
       uMaxR: { value: 1.5 },
+      uHalfSizeA: { value: new Vector2(1, 1) },
+      uHalfSizeB: { value: new Vector2(1, 1) },
       uTime: { value: 0 },
       uPointer: { value: new Vector2(999, 999) },
       uMouseRadius: { value: 0.22 },

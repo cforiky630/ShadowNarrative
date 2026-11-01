@@ -177,9 +177,9 @@ export function sampleImage(
     const px = idx % w;
     const py = (idx / w) | 0;
 
-    // 像素中心，映射到 -1..1
-    const u = (px + 0.5) / w; // 0..1
-    const v = (py + 0.5) / h; // 0..1
+    // 像素内连续随机抖动，映射到 -1..1，避免按固定像素中心对齐产生网格横纵线与生硬边界
+    const u = (px + Math.random()) / w; // 0..1
+    const v = (py + Math.random()) / h; // 0..1
 
     const x = (u * 2 - 1) * halfW;
     // 图像 y 向下，世界 y 向上，翻转

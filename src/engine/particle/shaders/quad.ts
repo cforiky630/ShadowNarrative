@@ -31,6 +31,7 @@ export const quadFragmentShader = /* glsl */ `
   uniform sampler2D uMap;
   uniform float uDissolve;
   uniform float uMaxR;
+  uniform vec2  uHalfSize;
 
   varying vec2 vWorld;
   varying vec2 vUv;
@@ -38,11 +39,17 @@ export const quadFragmentShader = /* glsl */ `
   ${DISSOLVE_GLSL}
 
   void main() {
-    // 中心先消失，向外扩散。
-    // 粒子用的是同一个场、同一个阈值方向，会在**同一个位置**接手 ——
-    // 这才是「解散」而不是「淡出」。
-    if (snDissolveField(vWorld, uMaxR) < uDissolve) discard;
+    vec4 tex = texture2D(uMap, vUv);
+    if (uDissolve <= 0.001) {
+      gl_FragColor = tex;
+      return;
+    }
 
-    gl_FragColor = texture2D(uMap, vUv);
+    // 随局部转化进度平滑淡出原图，与同位置显形的粒子层无缝交接，不产生二值圆洞
+    float localT = snDissolveProgress(vWorld, uHalfSize, uDissolve);
+    float quadAlpha = 1.0 - smoothstep(0.10, 0.88, localT);
+    if (quadAlpha <= 0.001) discard;
+
+    gl_FragColor = vec4(tex.rgb, tex.a * quadAlpha);
   }
 `;

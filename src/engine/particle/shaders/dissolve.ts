@@ -1,20 +1,13 @@
 /**
- * 溶解场 —— 原图 ⇄ 粒子切换时四边形与粒子**共用**的空间场。
+ * 溶解与边界场 —— 原图 ⇄ 粒子切换时四边形与粒子**共用**的空间场与圆角边缘度量。
  *
- * 设计形态：**从中间开始，向外扩散**。
- *   图片从中间开始消失，同时粒子从中间开始渲染。
- *
- * 所以场的主体是「到中心的半径」，不是二维噪声。
- * 但纯半径会变成一个机械的圆，所以在波前上叠了一点噪声让它不规则。
- *
- * 为什么必须共用：
- *   四边形在 `d < uDissolve` 的地方 discard，粒子在 `d < uDissolve`
- *   的地方出现。两者严丝合缝互补，看起来才是「照片自己解散」；
- *   各用各的场、或者用整体透明度淡入淡出，看到的就是两件独立的事叠在一起。
- *
- * 为什么用世界坐标而不是 UV：
- *   UV 空间被图片宽高比拉伸，在那里算半径得到的是椭圆。
- *   世界坐标天然是等比空间，半径才是圆的。
+ * 设计形态：
+ *   1. **消除中心圆孔割裂**：不再以中心单点半径做二值切割（那会在主体正中挖出
+ *      一圈突兀的圆洞），而是以等物理宽度的圆角边界向内推进，并叠加双倍频（fBm）
+ *      有机云雾噪声与宽频带（BAND = 0.42）柔性过渡，如微风拂过般由外向内自然沙化，
+ *      返回原图时则由核心向外凝聚还原。
+ *   2. **四边与四角物理等宽**：在世界坐标下依据 `halfSize` 计算圆角矩形有向距离，
+ *      消除直角的生硬感，供粒子态边缘散逸与羽化共用。
  */
 
 export const DISSOLVE_GLSL = /* glsl */ `
@@ -35,18 +28,33 @@ export const DISSOLVE_GLSL = /* glsl */ `
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
   }
 
-  // worldXY: 粒子云平面上的坐标（中心为原点）
-  // maxR:    中心到最远角的距离，用来归一化
-  //
-  // 返回 0（中心）→ 1（最远角）
-  float snDissolveField(vec2 worldXY, float maxR) {
-    vec2 n = worldXY / maxR;
-    float radius = length(n);
+  float snFbm(vec2 p) {
+    float v = 0.65 * snNoise(p);
+    v += 0.35 * snNoise(p * 2.15 + vec2(5.2, 1.3));
+    return v;
+  }
 
-    // 波前扰动：振幅 0.30 是调过的 —— 再大就不像「从中间扩散」，
-    // 再小就是一个机械的圆
-    float wobble = (snNoise(n * 5.0) - 0.5) * 0.30;
+  // 计算点到圆角相框边界的向内归一化距离：
+  // 0 = 恰在圆角边界上，< 0 = 落在被圆角削去的直角外侧，1 = 画面中心
+  float snEdgeDist(vec2 worldXY, vec2 halfSize) {
+    float shortHalf = max(min(halfSize.x, halfSize.y), 1e-4);
+    float cornerR = 0.14 * shortHalf;
+    vec2 q = abs(worldXY) - (halfSize - vec2(cornerR));
+    float sdBox = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - cornerR;
+    return -sdBox / shortHalf;
+  }
 
-    return clamp(radius + wobble, 0.0, 1.0);
+  // 计算当前位置在 uDissolve(0..1) 下的局部转化进度 (0 = 原图态, 1 = 粒子态)
+  float snDissolveProgress(vec2 worldXY, vec2 halfSize, float uDissolve) {
+    float edgeDist = clamp(snEdgeDist(worldXY, halfSize), 0.0, 1.0);
+    float cloud = snFbm(worldXY * 2.3 + vec2(3.7, 9.2));
+
+    // 外缘与云雾低谷处数值小（先沙化），画面核心数值大（后沙化 / 返回时先凝聚）
+    float field = clamp(edgeDist * 0.56 + cloud * 0.44, 0.0, 1.0);
+
+    // 宽频带柔性过渡，彻底消除硬切圆环
+    const float BAND = 0.42;
+    float start = field * (1.0 - BAND);
+    return smoothstep(start, start + BAND, uDissolve);
   }
 `;
