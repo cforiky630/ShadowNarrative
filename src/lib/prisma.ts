@@ -17,10 +17,26 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
+function createSqliteAdapter(): PrismaBetterSqlite3 {
+  const factory = new PrismaBetterSqlite3({
+    url: resolveDatabaseUrl(),
+    timeout: 5000,
+  });
+  const origConnect = factory.connect.bind(factory);
+  factory.connect = async () => {
+    const adapter = await origConnect();
+    await adapter.executeScript(
+      "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
+    );
+    return adapter;
+  };
+  return factory;
+}
+
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
-    adapter: new PrismaBetterSqlite3({ url: resolveDatabaseUrl() }),
+    adapter: createSqliteAdapter(),
   });
 
 if (process.env.NODE_ENV !== "production") {
