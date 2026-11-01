@@ -193,6 +193,107 @@ export class ParticleSystem {
   /** 当前显示的图像，用于档位/密度变化时重新采样 */
   private currentBitmap: ImageBitmap | null = null;
   private currentSample: SampleResult | null = null;
+  private sampledBitmap: ImageBitmap | null = null;
+  private sampledCount = 0;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private idleHandle: number | null = null;
+
+  /** 当前图像的宽高比。直接优先取 bitmap 宽高，无需等待粒子采样完成即可计算视口投影 */
+  private currentAspect(): number {
+    if (this.currentBitmap && this.currentBitmap.height > 0) {
+      return this.currentBitmap.width / this.currentBitmap.height;
+    }
+    return this.currentSample?.aspect ?? 1;
+  }
+
+  private clearIdleSample(): void {
+    if (this.idleTimer !== null) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    if (this.idleHandle !== null && typeof cancelIdleCallback === "function") {
+      cancelIdleCallback(this.idleHandle);
+      this.idleHandle = null;
+    }
+  }
+
+  /**
+   * 延后在主线程空闲时完成粒子采样与 Hilbert 排序（避开 800ms FLIP 进场动画窗口）。
+   */
+  private scheduleIdleSample(): void {
+    this.clearIdleSample();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.disposed) return;
+      if (typeof requestIdleCallback === "function") {
+        this.idleHandle = requestIdleCallback(
+          () => {
+            this.idleHandle = null;
+            this.ensureSampled();
+          },
+          { timeout: 1000 },
+        );
+      } else {
+        this.ensureSampled();
+      }
+    }, 850);
+  }
+
+  /**
+   * 确保当前图像已完成粒子采样、Hilbert 排序并写入 GPU 缓冲区。
+   * 已采样且容量未变时 O(1) 直接返回。
+   */
+  private ensureSampled(): void {
+    this.clearIdleSample();
+    if (this.disposed || !this.renderer || !this.currentBitmap) return;
+
+    const count = this.capacity();
+    if (
+      this.sampledBitmap === this.currentBitmap &&
+      this.sampledCount === count &&
+      this.geometry
+    ) {
+      return;
+    }
+
+    const sample = sampleImage(
+      this.currentBitmap,
+      count,
+      TIER_SPECS[this.tier].sampleLongEdge,
+    );
+    this.currentSample = sample;
+
+    const perm = uniformSlotOrder(
+      hilbertOrder(
+        pickX(sample.positions),
+        pickY(sample.positions),
+        sample.count,
+      ),
+    );
+
+    this.rebuildGeometry(count);
+    this.writeBuffer("aPositionA", "aColorA", "aSizeA", sample, perm);
+    this.writeBuffer("aPositionB", "aColorB", "aSizeB", sample, perm);
+    this.morphing = false;
+
+    const aspect = this.currentAspect();
+    const halfW = aspect >= 1 ? 1 : aspect;
+    const halfH = aspect >= 1 ? 1 / aspect : 1;
+    const maxR = Math.hypot(halfW, halfH);
+    if (this.material) {
+      this.material.uniforms.uProgress.value = 0;
+      this.material.uniforms.uMaxR.value = maxR;
+      const dissolve =
+        this.quadMaterial?.uniforms.uDissolve.value ??
+        (this.mode === "particle" ? 1 : 0);
+      this.material.uniforms.uDissolve.value = dissolve;
+      if (this.points) this.points.visible = dissolve > 0.001;
+    }
+
+    this.sampledBitmap = this.currentBitmap;
+    this.sampledCount = count;
+    this.applyDrawRange();
+  }
 
   private lastFrameMs = 0;
   private statsAccum = 0;
@@ -463,55 +564,23 @@ export class ParticleSystem {
     // 等定档完成，否则粒子数会按默认档位算错
     await this.initPromise;
     if (this.disposed || !this.renderer) return;
+    this.clearIdleSample();
     this.currentBitmap = bitmap;
-
-    /*
-     * ⚠️ **按容量采样，不按密度。** 密度靠 `applyDrawRange` 只改「画前几个」——
-     * 于是拖密度滑杆不再需要重采样 / 重排 / 重建这一串（`capacity` 那段注释）。
-     */
-    const count = this.capacity();
-    const sample = sampleImage(bitmap, count, TIER_SPECS[this.tier].sampleLongEdge);
-    this.currentSample = sample;
-
-    /*
-     * A 也按 Hilbert 排序 —— 缓冲区因此是「空间有序」的。
-     *
-     * ⚠️ **排序之后还要过一道 `uniformSlotOrder`**：密度靠
-     * `setDrawRange(0, N)` 实现，而**曲线的前 N 个是空间上的一整片**，
-     * 不是均匀抽稀 —— 少了这一步，密度一低画面就缺一块
-     * （用户 2026-10-11：「画面粒子缺失了」）。理由写在那个函数头上。
-     */
-    const perm = uniformSlotOrder(
-      hilbertOrder(
-        pickX(sample.positions),
-        pickY(sample.positions),
-        sample.count,
-      ),
-    );
-
-    this.rebuildGeometry(count);
-    this.writeBuffer("aPositionA", "aColorA", "aSizeA", sample, perm);
-    this.writeBuffer("aPositionB", "aColorB", "aSizeB", sample, perm);
     this.morphing = false;
     if (this.material) this.material.uniforms.uProgress.value = 0;
 
+    // 先同步更新原图四边形与相机视口投影（< 1ms），让 FLIP 飞行终点立即可算、零主线程阻塞
     this.syncQuad();
-    /*
-     * 只把当前模式直接应用到新几何体上，**不重置模式、也不动相机**。
-     *
-     * 这条路会被「降档」「换图」触发 —— 在重采样里重置模式，用户调个滑杆
-     * 就被踢回原图；而**重置相机等于把滚轮放大的结果抹掉**
-     * （用户 2026-10-11：「切换预设能不能不重置缩放」）。
-     *
-     * 装下整朵云那件事归 `resize()` —— 它按 `nextFit / prevFit` 等比缩放
-     * 「从目标点到相机」那段向量，方向与相对缩放都留着。
-     */
     this.setMode(this.mode, { immediate: true, keepView: true });
-
-    // 新建的几何体默认画满，这里按当前密度收回到该画的范围
-    this.applyDrawRange();
-
     this.resize();
+
+    // 若当前已在粒子态（如粒子态下触发降档重采样），立即完成采样；
+    // 若在原图态（首次进入照片页），延后到 FLIP 动画结束后的空闲期采样。
+    if (this.mode === "particle" || this.modeTween) {
+      this.ensureSampled();
+    } else {
+      this.scheduleIdleSample();
+    }
   }
 
   /**
@@ -523,13 +592,17 @@ export class ParticleSystem {
    */
   async morphTo(bitmap: ImageBitmap): Promise<void> {
     await this.initPromise;
-    if (this.disposed || !this.renderer || !this.geometry) return;
+    if (this.disposed || !this.renderer) return;
 
     // 原图态下无粒子可见，直接更新图像与四边形（满足「上传后立刻看到原图」）
     if (this.mode === "photo" && !this.modeTween) {
       await this.setImage(bitmap);
       return;
     }
+
+    // 确保起点 A 的几何体与缓冲区已就绪
+    this.ensureSampled();
+    if (!this.geometry) return;
 
     /*
      * ⚠️ **B 也按容量采样**（不是 `activeCount()`）：A 与 B 是按**秩**配对的
@@ -579,9 +652,12 @@ export class ParticleSystem {
     this.morphing = false;
     this.currentSample = this.pendingSample;
     this.pendingSample = null;
+    this.sampledBitmap = this.currentBitmap;
+    this.sampledCount = this.capacity();
 
     // 目标图现在成了当前图，同步原图四边形（尺寸与贴图都可能变了）
     this.syncQuad();
+    this.resize();
   }
 
   /** 参数与档位更新 */
@@ -865,7 +941,7 @@ export class ParticleSystem {
 
     cam.updateMatrixWorld(true);
 
-    const aspect = this.currentSample?.aspect ?? 1;
+    const aspect = this.currentAspect();
     const halfW = aspect >= 1 ? 1 : aspect;
     const halfH = aspect >= 1 ? 1 / aspect : 1;
 
@@ -906,7 +982,7 @@ export class ParticleSystem {
 
     this.renderer.setSize(w, h, false);
 
-    const aspect = this.currentSample?.aspect ?? 1;
+    const aspect = this.currentAspect();
     const halfW = aspect >= 1 ? 1 : aspect;
     const halfH = aspect >= 1 ? 1 / aspect : 1;
 
@@ -994,7 +1070,7 @@ export class ParticleSystem {
   private syncQuad(): void {
     if (!this.scene || !this.currentBitmap) return;
 
-    const aspect = this.currentSample?.aspect ?? 1;
+    const aspect = this.currentAspect();
     const halfW = aspect >= 1 ? 1 : aspect;
     const halfH = aspect >= 1 ? 1 / aspect : 1;
 
@@ -1141,6 +1217,9 @@ export class ParticleSystem {
     this.resize();
 
     const toParticle = mode === "particle";
+    if (toParticle) {
+      this.ensureSampled();
+    }
 
     // 缓动不能直接作用在 Three 的对象上，用代理对象承载中间值。
     // 只有一个数：0 = 完全照片，1 = 完全粒子。
@@ -1415,6 +1494,8 @@ export class ParticleSystem {
   dispose(): void {
     if (this.disposed) return; // 幂等：StrictMode 与快速导航会重复调用
     this.disposed = true;
+    this.clearIdleSample();
+    this.sampledBitmap = null;
     this.stop();
 
     this.controls?.dispose();
